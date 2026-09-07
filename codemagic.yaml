@@ -10,41 +10,36 @@ workflows:
         XCODE_PROJECT: "ios/DrVanTruongScanner.xcodeproj"
         XCODE_SCHEME: "DrVanTruongScanner"
     scripts:
-      - name: Inspect project schemes & SDKs
+      - name: Build and Package iOS IPA
         script: |
-          echo "=== List Schemes & Targets ==="
-          xcodebuild -list -project "$XCODE_PROJECT"
-          echo "=== List SDKs ==="
-          xcodebuild -showsdks
-      - name: Build iOS Application Archive & Package IPA
-        script: |
-          mkdir -p build/ios/ipa build/DrVanTruongScanner.xcarchive
-          echo "=== Running xcodebuild Archive ==="
+          set -e
+          echo "=== 1. Building Xcode Release Archive ==="
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
             -configuration Release \
             -destination "generic/platform=iOS" \
-            -archivePath "build/DrVanTruongScanner.xcarchive" \
+            -archivePath "$PWD/build/DrVanTruongScanner.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             AD_HOC_CODE_SIGNING_ALLOWED=YES
 
-          echo "=== Packaging Application IPA ==="
-          APP_PATH=$(find build/DrVanTruongScanner.xcarchive/Products/Applications -name "*.app" -maxdepth 1 | head -n 1)
-          if [ -d "$APP_PATH" ]; then
-            mkdir -p build/Payload
-            cp -r "$APP_PATH" build/Payload/
-            cd build
-            zip -r ios/ipa/DrVanTruongScanner.ipa Payload
-            cd ..
-            echo "Successfully generated build/ios/ipa/DrVanTruongScanner.ipa"
-          else
-            echo "Warning: .app bundle not found in archive, searching build directory"
-          fi
+          echo "=== 2. Creating IPA Package ==="
+          mkdir -p "$PWD/build/Payload"
+          cp -r "$PWD/build/DrVanTruongScanner.xcarchive/Products/Applications/DrVanTruongScanner.app" "$PWD/build/Payload/"
+          
+          cd "$PWD/build"
+          zip -r "DrVanTruongScanner.ipa" Payload
+          cp "DrVanTruongScanner.ipa" "$CM_BUILD_DIR/" 2>/dev/null || true
+          cd "$CM_BUILD_DIR"
+
+          echo "=== 3. Verify Artifacts Created ==="
+          ls -la "$PWD/build/"
+          ls -la "$PWD/build/Payload/"
     artifacts:
-      - build/ios/ipa/*.ipa
+      - build/*.ipa
+      - build/**/*.ipa
+      - "*.ipa"
       - build/DrVanTruongScanner.xcarchive
       - build/**/*.app
-      - /tmp/xcodebuild_logs/*.log
