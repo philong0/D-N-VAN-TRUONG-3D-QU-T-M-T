@@ -5,6 +5,7 @@
 
 import Foundation
 import ARKit
+import simd
 
 public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case front = "front"
@@ -38,19 +39,26 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     public var yawToleranceDeg: Float {
         switch self {
         case .front: return 10.0
-        case .left45: return 10.0
-        case .leftProfile: return 10.0
-        case .right45: return 10.0
-        case .rightProfile: return 10.0
+        case .left45, .right45: return 9.0
+        case .leftProfile, .rightProfile: return 10.0
         }
     }
 
-    /// A reproducible acceptance specification used by both the live HUD and
-    /// the capture gate.  A labelled view is never accepted merely because a
-    /// frame happened to arrive while the patient was turning their head.
-    public var pitchToleranceDeg: Float { 10.0 }
+    /// One policy is used by the HUD, manual gate and auto-capture gate.
+    /// Values are deliberately centralised here so they can be calibrated on
+    /// real TrueDepth devices without creating conflicting thresholds.
+    public var pitchToleranceDeg: Float { 8.0 }
+    public var rollToleranceDeg: Float { 8.0 }
     public var minDistanceMeters: Float { 0.28 }
     public var maxDistanceMeters: Float { 0.55 }
+    public var stabilityWindowSeconds: Double { 0.65 }
+    public var holdDurationSeconds: Double { 0.65 }
+    public var maxYawStandardDeviationDeg: Float { 2.4 }
+    public var maxPitchStandardDeviationDeg: Float { 1.8 }
+    public var maxRollStandardDeviationDeg: Float { 1.8 }
+    public var maxAngularVelocityDegPerSecond: Float { 18.0 }
+    public var minimumStabilitySamples: Int { 8 }
+    public var captureCooldownSeconds: Double { 0.75 }
     
     public var instruction: String {
         switch self {
@@ -60,6 +68,33 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
         case .right45: return "Từ từ xoay mặt sang PHẢI một góc 45°"
         case .rightProfile: return "Quay hẳn mặt sang PHẢI (góc ngang 80°)"
         }
+    }
+}
+
+/// Pose expressed in the camera coordinate system for one exact ARFrame.
+/// `transform` is `inverse(cameraToWorld) * faceToWorld`; distance therefore
+/// remains meaningful if ARKit's world origin moves or a rear configuration is
+/// used. The angle convention is deliberately the existing scanner convention:
+/// front ~= 0, left < 0, right > 0 (to be calibrated on real hardware).
+public struct CameraRelativeFacePose {
+    public let transform: simd_float4x4
+    public let yawDeg: Float
+    public let pitchDeg: Float
+    public let rollDeg: Float
+    public let distanceMeters: Float
+    public let translationMeters: SIMD3<Float>
+
+    public init(faceToCamera transform: simd_float4x4) {
+        self.transform = transform
+        let pitch = asin(-transform.columns.2.y)
+        let yaw = atan2(transform.columns.2.x, transform.columns.2.z)
+        let roll = atan2(transform.columns.0.y, transform.columns.1.y)
+        self.pitchDeg = pitch * 180.0 / .pi
+        self.yawDeg = yaw * 180.0 / .pi
+        self.rollDeg = roll * 180.0 / .pi
+        let translation = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        self.translationMeters = translation
+        self.distanceMeters = simd_length(translation)
     }
 }
 
@@ -103,7 +138,7 @@ public struct FrameQualityEvaluation: Codable {
     public let yawDeg: Float
     public let pitchDeg: Float
     public let distanceMeters: Float
-    public let isDistanceOptimal: Bool // 30cm - 60cm
+    public let isDistanceOptimal: Bool // ScanAngleStep camera-relative distance policy
 }
 
 public struct CapturedFramePackage: Identifiable {

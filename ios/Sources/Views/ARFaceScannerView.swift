@@ -143,12 +143,18 @@ public struct ARFaceScannerView: View {
                     .background(Color.black.opacity(0.85))
                     .cornerRadius(20)
                     
-                    // Angle & Distance Telemetry
-                    HStack(spacing: 24) {
+                    // Guided camera-relative pose telemetry. These values use
+                    // the same filtered pose and policy as the capture gate.
+                    VStack(spacing: 8) {
+                        Text(captureSession.turnGuidance)
+                            .font(.system(size: 16, weight: .black))
+                            .foregroundColor(captureSession.isPoseAligned ? .green : .white)
+
+                        HStack(spacing: 18) {
                         HStack(spacing: 4) {
                             Image(systemName: "gyroscope")
                                 .font(.caption)
-                            Text(String(format: "Góc: %.1f°", captureSession.currentYawDeg))
+                            Text(String(format: "Yaw %.1f° / %.0f°", captureSession.currentYawDeg, captureSession.currentStep.targetYawDeg))
                                 .font(.caption)
                                 .bold()
                         }
@@ -162,6 +168,22 @@ public struct ARFaceScannerView: View {
                                 .bold()
                         }
                         .foregroundColor(.white)
+                        }
+
+                        HStack(spacing: 14) {
+                            Text(String(format: "Sai số %.1f°", abs(captureSession.currentYawErrorDeg)))
+                            Text(String(format: "Pitch %.1f°", captureSession.currentPitchDeg))
+                            Text(String(format: "Roll %.1f°", captureSession.currentRollDeg))
+                        }
+                        .font(.caption2.weight(.semibold))
+                        .foregroundColor(.white.opacity(0.9))
+
+                        Text(captureSession.isPoseStable ? "ỔN ĐỊNH: ĐẠT" : "ỔN ĐỊNH: ĐANG KIỂM TRA")
+                            .font(.caption2.weight(.bold))
+                            .foregroundColor(captureSession.isPoseStable ? .green : .yellow)
+                        Text(captureSession.qualityStatus)
+                            .font(.caption2)
+                            .foregroundColor(.white.opacity(0.75))
                     }
                     
                     // Bottom Buttons Row: Retake, Big Shutter, Reset
@@ -183,7 +205,8 @@ public struct ARFaceScannerView: View {
                             do {
                                 try captureSession.captureCurrentStep()
                             } catch {
-                                print("Capture error:", error)
+                                // captureCurrentStep has already placed a
+                                // concrete gate reason in the native HUD.
                             }
                         }) {
                             HStack(spacing: 8) {
@@ -199,7 +222,7 @@ public struct ARFaceScannerView: View {
                             .cornerRadius(30)
                             .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(!captureSession.isTracking || captureSession.isUploading)
+                        .disabled(!captureSession.isTracking || captureSession.isUploading || captureSession.isAutoCapturing)
                     }
                     .padding(.bottom, 25)
                 }

@@ -14,7 +14,8 @@ public final class QualityEvaluator {
     /// Evaluates frame quality, sharpness, lighting, distance, and pose compliance
     public static func evaluate(
         pixelBuffer: CVPixelBuffer,
-        faceAnchor: ARFaceAnchor?,
+        pose: CameraRelativeFacePose,
+        isFaceTracked: Bool,
         targetStep: ScanAngleStep
     ) -> FrameQualityEvaluation {
         // 1. Lighting and blur estimation
@@ -80,27 +81,9 @@ public final class QualityEvaluator {
             }
         }
         
-        // 2. Pose & Distance estimation from ARFaceAnchor
-        var isTracked = false
-        var yawDeg: Float = 0.0
-        var pitchDeg: Float = 0.0
-        var distanceMeters: Float = 0.45
-        
-        if let anchor = faceAnchor, anchor.isTracked {
-            isTracked = true
-            let m = anchor.transform
-            let pitch = asin(-m.columns.2.y)
-            let yaw = atan2(m.columns.2.x, m.columns.2.z)
-            pitchDeg = pitch * 180.0 / .pi
-            yawDeg = yaw * 180.0 / .pi
-            
-            // Translation column 3: [x, y, z, 1]
-            let tz = abs(anchor.transform.columns.3.z)
-            distanceMeters = tz > 0 ? tz : 0.45
-        }
-        
         let isLightingAdequate = meanLuma >= 0.20 && meanLuma <= 0.90
-        let isDistanceOptimal = distanceMeters >= 0.25 && distanceMeters <= 0.70
+        let isDistanceOptimal = pose.distanceMeters >= targetStep.minDistanceMeters
+            && pose.distanceMeters <= targetStep.maxDistanceMeters
         // Variance of Laplacian is calculated from the actual camera luma
         // plane; a constant placeholder would let motion-blurred RGB enter
         // an otherwise accurate TrueDepth surface.
@@ -111,10 +94,10 @@ public final class QualityEvaluator {
             isBlurry: isBlurry,
             lightingScore: meanLuma,
             isLightingAdequate: isLightingAdequate,
-            isTracked: isTracked,
-            yawDeg: yawDeg,
-            pitchDeg: pitchDeg,
-            distanceMeters: distanceMeters,
+            isTracked: isFaceTracked,
+            yawDeg: pose.yawDeg,
+            pitchDeg: pose.pitchDeg,
+            distanceMeters: pose.distanceMeters,
             isDistanceOptimal: isDistanceOptimal
         )
     }
