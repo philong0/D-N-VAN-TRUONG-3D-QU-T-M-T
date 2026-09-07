@@ -1,8 +1,8 @@
 import { execFile } from "child_process";
-import { readdir, writeFile, readFile } from "fs/promises";
+import { readdir, writeFile, readFile, copyFile } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
-import { ensureDir, scanFramesDir, scanSessionDir } from "@/lib/storage";
+import { ensureDir, scanFramesDir, scanSessionDir, DATA_DIR } from "@/lib/storage";
 import type { ScanFrame, ScanQualityReport, ScanSession, ScannerKind } from "@/lib/types";
 import { selectReconstructionFrames, type BurstFrameCandidate } from "./reconstruction-frame-selection";
 
@@ -222,6 +222,14 @@ export class PythonGNMReconstructionService implements IReconstructionService {
           if (jsonStart !== -1 && jsonEnd !== -1) {
             const parsed = JSON.parse(nativeOut.slice(jsonStart, jsonEnd + 1));
             if (parsed.ok) {
+              const dataModelsDir = path.join(DATA_DIR, "patients", patientId, "models");
+              await ensureDir(dataModelsDir);
+              try {
+                await copyFile(path.join(outputDir, "baseline.glb"), path.join(dataModelsDir, "baseline.glb"));
+                await copyFile(path.join(outputDir, "face_HD.png"), path.join(dataModelsDir, "face_HD.png"));
+              } catch (copyErr) {
+                console.warn("[reconstruction-service] copy to dataModelsDir note:", copyErr);
+              }
               return {
                 status: "completed",
                 provider: "Patient-Specific Native TrueDepth Fusion",
@@ -355,6 +363,18 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       await readdir(outputDir).then((files) => {
         if (!files.includes("baseline.glb")) throw new Error("Worker báo hoàn thành nhưng không tạo baseline.glb.");
       });
+
+      // Synchronize to data directory locations for guaranteed availability
+      try {
+        const patientDataDir = path.join(DATA_DIR, "patients", patientId);
+        await ensureDir(patientDataDir);
+        await ensureDir(path.join(patientDataDir, "reconstruction"));
+        await copyFile(generatedGlb, path.join(patientDataDir, "model.glb"));
+        await copyFile(generatedGlb, path.join(patientDataDir, "reconstruction", "baseline.glb"));
+        await copyFile(generatedGlb, path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
+      } catch (copyErr) {
+        console.warn("[reconstruction-service] Sync copy error:", copyErr);
+      }
 
       return {
         status: "completed",

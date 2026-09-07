@@ -932,11 +932,11 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
           <div className="flex items-center justify-center gap-2 mb-1">
             <span className="text-xl animate-pulse">⚡📱</span>
             <h4 className="text-xs font-black uppercase text-emerald-300 tracking-wide">
-              PHÁT HIỆN IPHONE TRUEDEPTH LIDAR
+              PHÁT HIỆN IPHONE TRUEDEPTH / ARKIT
             </h4>
           </div>
           <p className="text-[10px] text-zinc-300 mb-2">
-            Quét 3D thực tế với cảm biến Apple ARKit (1.220 điểm không gian + độ sâu LiDAR).
+            Quét 3D thực tế với cảm biến Apple ARKit & TrueDepth (1.220 điểm không gian + độ sâu TrueDepth).
           </p>
           <button
             type="button"

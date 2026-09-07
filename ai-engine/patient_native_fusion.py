@@ -72,11 +72,10 @@ def transform_to_patient_coordinate_system(
     face_pose_4x4: np.ndarray | None = None,
 ) -> np.ndarray:
     """
-    Transforms camera-space metric points into the unified Patient Face Coordinate System.
-    If face_pose is provided (from ARFaceAnchor):
-      P_patient = T_face^{-1} * T_camera^{-1} * P_cam
-    If face_pose is identity:
-      P_patient = T_camera^{-1} * P_cam
+    Transforms camera-space metric points into the unified patient face
+    coordinate system. `camera_pose_4x4` is the measured face-local ->
+    OpenCV-camera transform, hence its inverse maps a depth point directly
+    into ARFace local coordinates.
 
     D-poseconvention — `camera_pose_4x4` here follows the SAME convention
     every other camera_pose in this codebase already uses (this file's own
@@ -109,14 +108,9 @@ def transform_to_patient_coordinate_system(
     except np.linalg.LinAlgError:
         camera_to_world = np.eye(4, dtype=np.float64)
 
-    if face_pose_4x4 is not None:
-        try:
-            face_inv = np.linalg.inv(face_pose_4x4)
-            transform_mat = face_inv @ camera_to_world
-        except np.linalg.LinAlgError:
-            transform_mat = camera_to_world
-    else:
-        transform_mat = camera_to_world
+    # `face_pose_4x4` is retained only for backwards-compatible callers.
+    # Applying it here would transform the same measurement twice.
+    transform_mat = camera_to_world
 
     points_patient = (transform_mat @ homo.T).T[:, :3]
     return points_patient
@@ -262,7 +256,7 @@ class PatientNativeReconstructor:
             except Exception:
                 pass
 
-        # Scan all RGB frames
+            # Scan all RGB frames
         for img_file in sorted(frames_dir.glob("*.*")):
             if img_file.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
                 continue
@@ -271,18 +265,35 @@ class PatientNativeReconstructor:
             if img_bgr is None:
                 continue
 
+            # Auto-orient landscape images (1440x1080) from TrueDepth/iOS sensors to upright portrait (1080x1440)
+            was_rotated_cw = False
+            if img_bgr.shape[1] > img_bgr.shape[0]:
+                orig_h, orig_w = img_bgr.shape[:2]
+                img_bgr = cv2.rotate(img_bgr, cv2.ROTATE_90_CLOCKWISE)
+                was_rotated_cw = True
+
             frame_entry = {
                 "stem": stem,
                 "rgb_file": img_file,
                 "image_bgr": img_bgr,
                 "shape": img_bgr.shape[:2],
-                "intrinsics": global_intrinsics,
+                "intrinsics": global_intrinsics.copy() if global_intrinsics is not None else None,
                 "camera_pose": np.eye(4, dtype=np.float64),
                 "face_pose": np.eye(4, dtype=np.float64),
                 "arface_vertices": None,
                 "arface_triangles": None,
                 "depth_f32": None,
+                "landmarks_98": None,
             }
+
+            # Detect WFLW 98 facial landmarks on the upright portrait frame
+            try:
+                from detect_pose import detect_face_landmarks
+                lms_res = detect_face_landmarks(img_bgr)
+                if lms_res.get("has_face") and lms_res.get("landmarks_98") is not None:
+                    frame_entry["landmarks_98"] = np.array(lms_res["landmarks_98"], dtype=np.float64)
+            except Exception as lms_exc:
+                print(f"Landmark detection note for {stem}: {lms_exc}")
 
             manifest_entry = manifest_by_view.get(stem)
 
@@ -323,9 +334,26 @@ class PatientNativeReconstructor:
                     except Exception as exc:
                         print(f"Warning reading intrinsics for {stem}: {exc}")
             if idata:
-                frame_entry["intrinsics"] = np.array(
+                raw_K = np.array(
                     [[idata["fx"], 0, idata["cx"]], [0, idata["fy"], idata["cy"]], [0, 0, 1]], dtype=np.float64
                 )
+                if was_rotated_cw:
+                    # Adjust camera intrinsics for 90-degree CW image rotation
+                    orig_h = idata.get("imageHeight", 1080)
+                    frame_entry["intrinsics"] = np.array([
+                        [raw_K[1, 1], 0, orig_h - 1 - raw_K[1, 2]],
+                        [0, raw_K[0, 0], raw_K[0, 2]],
+                        [0, 0, 1]
+                    ], dtype=np.float64)
+                else:
+                    frame_entry["intrinsics"] = raw_K
+            elif was_rotated_cw and frame_entry["intrinsics"] is not None:
+                raw_K = frame_entry["intrinsics"]
+                frame_entry["intrinsics"] = np.array([
+                    [raw_K[1, 1], 0, orig_h - 1 - raw_K[1, 2]],
+                    [0, raw_K[0, 0], raw_K[0, 2]],
+                    [0, 0, 1]
+                ], dtype=np.float64)
 
             # --- pose: manifest-embedded first, legacy per-file fallback ---
             pdata = manifest_entry.get("pose") if manifest_entry else None
@@ -348,7 +376,12 @@ class PatientNativeReconstructor:
                         pdata = None
             if pdata:
                 try:
-                    if "cameraTransformColumnMajor" in pdata:
+                    if "cameraTransformColumnMajor" in pdata and "faceTransformColumnMajor" in pdata:
+                        camera_to_world = _column_major_4x4(pdata["cameraTransformColumnMajor"])
+                        face_to_world = _column_major_4x4(pdata["faceTransformColumnMajor"])
+                        face_to_arkit_camera = np.linalg.inv(camera_to_world) @ face_to_world
+                        frame_entry["camera_pose"] = np.diag([1.0, -1.0, -1.0, 1.0]) @ face_to_arkit_camera
+                    elif "cameraTransformColumnMajor" in pdata:
                         frame_entry["camera_pose"] = _column_major_4x4(pdata["cameraTransformColumnMajor"])
                     elif "cameraPose" in pdata:
                         frame_entry["camera_pose"] = np.array(pdata["cameraPose"], dtype=np.float64).reshape(4, 4)
@@ -368,6 +401,22 @@ class PatientNativeReconstructor:
                 arkit_to_opencv = np.diag([1.0, -1.0, -1.0, 1.0])
                 frame_entry["camera_pose"] = arkit_to_opencv @ frame_entry["camera_pose"]
 
+            depth_idata = manifest_entry.get("depthIntrinsics") if manifest_entry else None
+            if depth_idata:
+                depth_K = np.array([
+                    [depth_idata["fx"], 0, depth_idata["cx"]],
+                    [0, depth_idata["fy"], depth_idata["cy"]],
+                    [0, 0, 1],
+                ], dtype=np.float64)
+                if was_rotated_cw:
+                    source_h = depth_idata["imageHeight"]
+                    depth_K = np.array([
+                        [depth_K[1, 1], 0, source_h - 1 - depth_K[1, 2]],
+                        [0, depth_K[0, 0], depth_K[0, 2]],
+                        [0, 0, 1],
+                    ], dtype=np.float64)
+                frame_entry["depth_intrinsics"] = depth_K
+
             # --- depth: manifest tells us the real filename; also try the legacy guesses ---
             depth_filename = manifest_entry.get("depthFileName") if manifest_entry else None
             depth_candidates = [depth_dir / depth_filename] if depth_filename else []
@@ -376,7 +425,11 @@ class PatientNativeReconstructor:
                 if depth_file.exists():
                     try:
                         d_raw = np.fromfile(str(depth_file), dtype=np.float32)
-                        if len(d_raw) == 640 * 480:
+                        declared_w = manifest_entry.get("depthWidth") if manifest_entry else None
+                        declared_h = manifest_entry.get("depthHeight") if manifest_entry else None
+                        if declared_w and declared_h and len(d_raw) == declared_w * declared_h:
+                            frame_entry["depth_f32"] = d_raw.reshape(declared_h, declared_w)
+                        elif len(d_raw) == 640 * 480:
                             frame_entry["depth_f32"] = d_raw.reshape(480, 640)
                         elif len(d_raw) == 256 * 192:
                             frame_entry["depth_f32"] = d_raw.reshape(192, 256)
@@ -384,6 +437,10 @@ class PatientNativeReconstructor:
                             d_sq = int(np.sqrt(len(d_raw)))
                             if d_sq * d_sq == len(d_raw):
                                 frame_entry["depth_f32"] = d_raw.reshape(d_sq, d_sq)
+
+                        if was_rotated_cw and frame_entry["depth_f32"] is not None:
+                            if frame_entry["depth_f32"].shape[1] > frame_entry["depth_f32"].shape[0]:
+                                frame_entry["depth_f32"] = np.rot90(frame_entry["depth_f32"], -1)
                         break
                     except Exception as exc:
                         print(f"Warning reading depth for {stem}: {exc}")
@@ -431,11 +488,13 @@ class PatientNativeReconstructor:
         # first and skips the sparser estimates entirely when available —
         # they remain exactly what they were designed for: fallbacks for
         # when no real depth exists.
-        if has_native_depth:
-            fused_mesh = self._refine_surface_with_truedepth(None, depth_frames)
-        elif has_native_arface:
-            # 1. Fuse Native ARFaceGeometry from all available poses
+        if has_native_arface:
+            # 1. Fuse Native Apple ARFaceGeometry from all available poses (1,220 vertices, 2,304 faces)
             fused_mesh = self._fuse_arface_geometry(arface_frames)
+            if has_native_depth:
+                fused_mesh = self._refine_surface_with_truedepth(fused_mesh, depth_frames)
+        elif has_native_depth:
+            fused_mesh = self._refine_surface_with_truedepth(None, depth_frames)
         else:
             # 2. Photogrammetric dense point cloud & surface reconstruction
             fused_mesh = self._reconstruct_from_rgb_multiview(self.frames)
@@ -493,6 +552,12 @@ class PatientNativeReconstructor:
                 f"(minimum {MIN_PATIENT_MESH_VERTICES} required for a real patient-specific mesh) — "
                 "QC rejects sparse/degenerate reconstructions rather than exporting them as a passing baseline."
             )
+        measured_vertex_count = int(fused_mesh.get("measured_vertex_count", len(mesh.vertices)))
+        if measured_vertex_count < MIN_PATIENT_MESH_VERTICES:
+            raise RuntimeError(
+                f"Reconstruction contains only {measured_vertex_count} independently measured vertices "
+                f"(minimum 1000 required); subdivided/interpolated vertices cannot satisfy patient-mesh QC."
+            )
 
         # 2026-09-07 fix — D-densitygate above checks vertex COUNT but never
         # checked real-world SIZE. Found on two separate real ios_native
@@ -544,6 +609,7 @@ class PatientNativeReconstructor:
             "region_errors_mm": fused_mesh.get("region_errors_mm"),
             "metrics": {
                 "vertex_count": len(mesh.vertices),
+                "measured_vertex_count": measured_vertex_count,
                 "face_count": len(mesh.faces),
                 "is_watertight": mesh.is_watertight,
                 "bounding_box_meters": mesh.extents.tolist(),
@@ -588,6 +654,7 @@ class PatientNativeReconstructor:
         return {
             "vertices": sub_mesh.vertices,
             "faces": sub_mesh.faces,
+            "measured_vertex_count": len(fused_verts),
         }
 
     def _reconstruct_from_rgb_multiview(self, frames: list[dict]) -> dict:
@@ -1109,6 +1176,7 @@ class PatientNativeReconstructor:
         return {
             "vertices": dense_mesh.vertices,
             "faces": dense_mesh.faces,
+            "measured_vertex_count": len(pts_3d),
             "region_errors_mm": region_errors_mm,
         }
 
@@ -1155,7 +1223,7 @@ class PatientNativeReconstructor:
         n_used = 0
         for f in depth_frames:
             depth = f["depth_f32"]
-            K = f.get("intrinsics")
+            K = f.get("depth_intrinsics")
             if K is None or depth is None:
                 continue
             cam_pose = f.get("camera_pose", np.eye(4, dtype=np.float64))
@@ -1165,7 +1233,8 @@ class PatientNativeReconstructor:
             if grid_faces is None or len(grid_faces) == 0:
                 continue
 
-            points_patient = transform_to_patient_coordinate_system(grid_verts, cam_pose, face_pose)
+            grid_verts_cv = (np.diag([1.0, -1.0, -1.0]) @ grid_verts.T).T
+            points_patient = transform_to_patient_coordinate_system(grid_verts_cv, cam_pose, face_pose)
             frame_vert_arrays.append(points_patient)
             frame_face_arrays.append(grid_faces)
             n_used += 1
@@ -1226,6 +1295,7 @@ class PatientNativeReconstructor:
         return {
             "vertices": fused_verts,
             "faces": fused_faces,
+            "measured_vertex_count": len(fused_verts),
             "region_errors_mm": (fused_mesh or {}).get("region_errors_mm"),
         }
 

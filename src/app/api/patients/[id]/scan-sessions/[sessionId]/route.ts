@@ -43,7 +43,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     next.quality = quality;
     next.status = quality.overall === "fail" ? "needs_rescan" : "quality_check";
   } else if (action === "request_reconstruction") {
-    if (next.status !== "quality_check" && next.status !== "needs_rescan") {
+    if (next.status === "ready") {
+      return NextResponse.json({ session: next, requiredViews: REQUIRED_SCAN_VIEWS });
+    }
+    if (next.status !== "quality_check" && next.status !== "needs_rescan" && next.status !== "processing") {
       return NextResponse.json({ error: "Cần hoàn thành quality check trước reconstruction" }, { status: 409 });
     }
     // D-rgbreconstruct — a burst web-camera session can never score better

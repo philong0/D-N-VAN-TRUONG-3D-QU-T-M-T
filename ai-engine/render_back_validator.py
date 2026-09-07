@@ -139,12 +139,20 @@ def validate_render_back_fidelity(
             mm_per_px = float(np.median(visible_depth) * 1000.0 / ((K[0, 0] + K[1, 1]) / 2.0))
             reprojection_error_mm = contour_error_px * mm_per_px
             measured_view_errors_mm.append(reprojection_error_mm)
+        # This is a release gate, not a cosmetic warning: a projection that
+        # misses the observed contour by more than 5 mm cannot be presented
+        # as a patient-matching baseline.
+        view_status = "pass" if (
+            silhouette_iou >= 0.80
+            and reprojection_error_mm is not None
+            and reprojection_error_mm <= 5.0
+        ) else "warning"
         view_errors[stem] = {
             "silhouetteCoverage": round(render_coverage, 4) if np.isfinite(render_coverage) else 0.0,
             "silhouetteIoU": round(silhouette_iou, 4) if np.isfinite(silhouette_iou) else 0.0,
             "contourErrorPx": round(contour_error_px, 2) if np.isfinite(contour_error_px) else None,
             "reprojectionErrorMm": round(reprojection_error_mm, 2) if (reprojection_error_mm is not None and np.isfinite(reprojection_error_mm)) else None,
-            "status": "pass" if silhouette_iou >= 0.5 else "warning",
+            "status": view_status,
         }
     valid_view_errors = [e for e in measured_view_errors_mm if np.isfinite(e) and e > 0]
     avg_error_mm = float(np.median(valid_view_errors)) if valid_view_errors else float("inf")
@@ -196,17 +204,33 @@ def validate_render_back_fidelity(
     worst_measured_region_mm = max(measured_region_vals) if measured_region_vals else 0.0
     anatomical_gate_failed = worst_measured_region_mm > ANATOMICAL_FAIL_THRESHOLD_MM
 
-    # If a valid mesh with vertices was generated, mark completed for clinical review
+    # A mesh alone is not evidence that it resembles the input patient.  A
+    # clinical baseline may complete only after actual image-space checks;
+    # null metrics must never be replaced by plausible-looking constants.
     mesh_vert_count = len(mesh.vertices) if hasattr(mesh, "vertices") else 0
-    reconstruction_status = "completed" if (mesh_vert_count >= 500) else "reconstruction_failed"
+    measured_views = len(valid_view_errors)
+    required_measured_views = len(frames)
+    all_measured_views_pass = (
+        measured_views >= required_measured_views
+        and all(
+            item.get("status") == "pass"
+            for item in view_errors.values()
+            if item.get("reprojectionErrorMm") is not None
+        )
+    )
+    reconstruction_status = "completed" if (
+        mesh_vert_count >= 1000
+        and all_measured_views_pass
+        and not anatomical_gate_failed
+    ) else "reconstruction_failed"
 
     report = {
         "reconstructionStatus": reconstruction_status,
         "frameCountUsed": len(frames),
         "depthFrameCount": sum(1 for f in frames if f.get("depth_f32") is not None),
         "trackedFrameCount": sum(1 for f in frames if f.get("arface_vertices") is not None),
-        "registrationErrorMm": round(avg_error_mm, 2) if np.isfinite(avg_error_mm) else 1.5,
-        "worstAnatomicalRegionErrorMm": round(worst_measured_region_mm, 2) if np.isfinite(worst_measured_region_mm) else 2.5,
+        "registrationErrorMm": round(avg_error_mm, 2) if np.isfinite(avg_error_mm) else None,
+        "worstAnatomicalRegionErrorMm": round(worst_measured_region_mm, 2) if measured_region_vals and np.isfinite(worst_measured_region_mm) else None,
         "anatomicalGateThresholdMm": ANATOMICAL_FAIL_THRESHOLD_MM,
         "depthCoverage": (
             "native_depth_map" if reconstruction_metrics.get("has_native_depth")
@@ -216,6 +240,10 @@ def validate_render_back_fidelity(
         "surfaceCoverage": round(reconstruction_metrics.get("metrics", {}).get("vertex_count", 0), 0),
         "textureCoverage": "photographic texture baked; coverage is not independently measured",
         "renderBackErrorPerView": view_errors,
+        "measuredViewCount": measured_views,
+        "requiredMeasuredViewCount": required_measured_views,
+        "maxViewReprojectionErrorMm": 5.0,
+        "minViewSilhouetteIoU": 0.80,
         "anatomicalRegionErrors": anatomical_errors,
         "evaluatedAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }

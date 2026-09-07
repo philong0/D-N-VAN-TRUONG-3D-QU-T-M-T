@@ -45,10 +45,10 @@ function applySurgicalDeformationToMesh(mesh: THREE.Mesh, params: MorphParams) {
   }
 
   const count = pos.count;
-  const noseHeight = params.nose.heightMm || 0; // Sống mũi (0 to 6mm)
-  const tipProj = params.nose.tipProjectionMm || 0; // Đầu mũi (0 to 5mm)
-  const chinPog = params.chin.pogPositionMm || 0; // Độn cằm (-2 to 6mm)
-  const chinVLine = Math.abs(params.chin.vlineAngleDeg || 0);
+  const noseHeight = params?.nose?.heightMm || 0; // Sống mũi (0 to 6mm)
+  const tipProj = params?.nose?.tipProjectionMm || 0; // Đầu mũi (0 to 5mm)
+  const chinPog = params?.chin?.pogPositionMm || 0; // Độn cằm (-2 to 6mm)
+  const chinVLine = Math.abs(params?.chin?.vlineAngleDeg || 0);
 
   // Tìm bounding box và tâm khuôn mặt để tự động co dãn theo tỉ lệ từng bệnh nhân
   let minZ = Infinity, maxZ = -Infinity;
@@ -190,25 +190,6 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     leftControls.enablePan = false;
     leftControls.screenSpacePanning = false;
 
-    // D-photoreallight2 — 2026-09-03, real measurement (headless-browser
-    // screenshot of this exact patient's live render vs its own source
-    // photo, HSV means): the render came out Value 66 / Sat 129 / Hue 11
-    // against the source photo's Value 119 / Sat 77 / Hue 26 — roughly HALF
-    // the brightness, near-DOUBLE the saturation, and shifted redder. Root
-    // cause: D-photoreallight (below, superseded) correctly identified that
-    // material.map is a real, already-lit photograph, but still fed it
-    // through a lit MeshStandardMaterial + ACESFilmicToneMapping — a
-    // physically-based pipeline meant for scene-linear HDR radiance, not a
-    // finished sRGB photo. Multiplying an already-correct photographic
-    // pixel by scene lights and then compressing it through a filmic tone
-    // curve is exactly what darkened/oversaturated/reddened it — dialing
-    // light intensity up or down (D-photoreallight's own fix, and the
-    // original pre-fix version before it) only moves along the same wrong
-    // curve, never removes the double-processing itself. Real fix: an
-    // unlit MeshBasicMaterial (see enhanceMesh below) displays this texture
-    // verbatim — no relighting, no tone-mapping needed — so the lights that
-    // used to drive the old lit material are removed entirely rather than
-    // left as dead, misleading scene state.
     const leftGroup = new THREE.Group();
     leftScene.add(leftGroup);
 
@@ -253,9 +234,6 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       rightControls.enablePan = false;
       rightControls.screenSpacePanning = false;
 
-      // No lights added (see D-photoreallight2 above) — the unlit head
-      // material shows this scene's real baked photo texture directly.
-
       const rightGroup = new THREE.Group();
       rightScene.add(rightGroup);
 
@@ -282,23 +260,9 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       });
     }
 
-    // 3. LOAD KHỐI 3D THẬT TỪ SERVER (CACHE-BUSTED TO ENSURE FRESH MODEL)
+    // 3. LOAD KHỐI 3D THẬT TỪ SERVER
     const gltfLoader = new GLTFLoader();
     const objLoader = new OBJLoader();
-    const vTime = Date.now();
-    // Clinical Studio intentionally accepts one provenance-controlled asset:
-    // the baseline emitted by the scan-session reconstruction worker. Legacy
-    // `head.glb`/`model.glb` uploads had no link to a verified session, so
-    // loading them here could present a template or another person's mesh as
-    // this patient's baseline.
-    const tryUrls = patientId
-      ? [
-          `/models/patients/${patientId}/reconstruction/baseline.glb?v=${vTime}`,
-          `/data/patients/${patientId}/model.glb?v=${vTime}`,
-          `/models/patients/${patientId}/model.glb?v=${vTime}`,
-          `/models/patients/${patientId}/baseline.glb?v=${vTime}`,
-        ]
-      : [];
 
     const cloneModelWithDeepGeometry = (root: THREE.Object3D) => {
       const clonedRoot = root.clone(true);
@@ -341,10 +305,6 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       let leftMesh: THREE.Mesh | null = null;
       let rightMesh: THREE.Mesh | null = null;
 
-      // D-photoreallight2 (see the light-rig removal comment above): an
-      // unlit MeshBasicMaterial displays this mesh's baked photo texture
-      // verbatim — no scene lights, no PBR shading model, no tone-mapping
-      // curve standing between the real photo pixel and the screen pixel.
       const enhanceMesh = (child: THREE.Object3D, isLeft: boolean) => {
         if ((child as THREE.Mesh).isMesh) {
           const mesh = child as THREE.Mesh;
@@ -378,45 +338,70 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       setIsLoading(false);
     };
 
-    const loadHeadModel = (urlIndex: number) => {
-      if (urlIndex >= tryUrls.length) {
-        // A 2D photo-to-mesh approximation is not a verified patient
-        // baseline. Keep the Studio explicitly empty if the provenance-bound
-        // reconstruction asset is unavailable instead of substituting it.
-        setNoValidBaseline(true);
-        setIsLoading(false);
-        return;
+    let isCancelled = false;
+    let retryAttempt = 0;
+    const maxRetryAttempts = 30; // Chờ tối đa 45 giây cho AI Engine
+
+    const fetchAndLoadModel = async (): Promise<boolean> => {
+      if (!patientId || isCancelled) return false;
+
+      const now = Date.now();
+      const urls = [
+        `/api/patients/${patientId}/model-file?t=${now}&retry=${retryAttempt}`,
+        `/models/patients/${patientId}/reconstruction/baseline.glb?t=${now}`,
+        `/models/patients/${patientId}/baseline.glb?t=${now}`,
+        `/data/patients/${patientId}/model.glb?t=${now}`,
+      ];
+
+      for (const url of urls) {
+        if (isCancelled) return false;
+        try {
+          const res = await fetch(url, { cache: "no-store", headers: { Pragma: "no-cache" } });
+          if (res.ok && res.status === 200) {
+            const buffer = await res.arrayBuffer();
+            if (buffer && buffer.byteLength > 500) {
+              // Parse GLB binary
+              return await new Promise<boolean>((resolve) => {
+                gltfLoader.parse(
+                  buffer,
+                  "",
+                  (gltf) => {
+                    if (isCancelled) return resolve(false);
+                    const modelLeft = cloneModelWithDeepGeometry(gltf.scene);
+                    const modelRight = cloneModelWithDeepGeometry(gltf.scene);
+                    attachLoadedScene(modelLeft, modelRight);
+                    resolve(true);
+                  },
+                  () => {
+                    resolve(false);
+                  }
+                );
+              });
+            }
+          }
+        } catch {
+          // Continue to next candidate URL
+        }
       }
+      return false;
+    };
 
-      const targetUrl = tryUrls[urlIndex];
-      const isObj = targetUrl.toLowerCase().endsWith(".obj");
+    const startModelPolling = async () => {
+      const success = await fetchAndLoadModel();
+      if (success || isCancelled) return;
 
-      if (isObj) {
-        objLoader.load(
-          targetUrl,
-          (obj) => {
-            const modelLeft = cloneModelWithDeepGeometry(obj);
-            const modelRight = cloneModelWithDeepGeometry(obj);
-            attachLoadedScene(modelLeft, modelRight);
-          },
-          undefined,
-          () => loadHeadModel(urlIndex + 1)
-        );
+      if (retryAttempt < maxRetryAttempts) {
+        retryAttempt++;
+        setTimeout(startModelPolling, 1500);
       } else {
-        gltfLoader.load(
-          targetUrl,
-          (gltf) => {
-            const modelLeft = cloneModelWithDeepGeometry(gltf.scene);
-            const modelRight = cloneModelWithDeepGeometry(gltf.scene);
-            attachLoadedScene(modelLeft, modelRight);
-          },
-          undefined,
-          () => loadHeadModel(urlIndex + 1)
-        );
+        if (!isCancelled) {
+          setNoValidBaseline(true);
+          setIsLoading(false);
+        }
       }
     };
 
-    loadHeadModel(0);
+    startModelPolling();
 
     let animId: number;
     const animate = () => {
@@ -449,6 +434,7 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     window.addEventListener("resize", handleResize);
 
     return () => {
+      isCancelled = true;
       cancelAnimationFrame(animId);
       window.removeEventListener("resize", handleResize);
       leftRenderer.dispose();
