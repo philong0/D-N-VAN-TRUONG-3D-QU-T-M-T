@@ -37,13 +37,20 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 18.0
-        case .left45: return 22.0
-        case .leftProfile: return 25.0
-        case .right45: return 22.0
-        case .rightProfile: return 25.0
+        case .front: return 10.0
+        case .left45: return 10.0
+        case .leftProfile: return 10.0
+        case .right45: return 10.0
+        case .rightProfile: return 10.0
         }
     }
+
+    /// A reproducible acceptance specification used by both the live HUD and
+    /// the capture gate.  A labelled view is never accepted merely because a
+    /// frame happened to arrive while the patient was turning their head.
+    public var pitchToleranceDeg: Float { 10.0 }
+    public var minDistanceMeters: Float { 0.28 }
+    public var maxDistanceMeters: Float { 0.55 }
     
     public var instruction: String {
         switch self {
@@ -107,6 +114,9 @@ public struct CapturedFramePackage: Identifiable {
     public let depthData: Data? // Float32 millimeters
     public let depthWidth: Int?
     public let depthHeight: Int?
+    /// Intrinsics in the depth-map pixel coordinate system. RGB intrinsics
+    /// cannot be reused unscaled for a lower-resolution depth map.
+    public let depthIntrinsics: CameraIntrinsicsDTO?
     public let intrinsics: CameraIntrinsicsDTO
     public let pose: ARKitTransformDTO
     public let geometry: ARKitFaceGeometryDTO
@@ -140,11 +150,54 @@ public struct ScanPackageManifestDTO: Codable {
         public let timestamp: Double
         public let rgbFileName: String
         public let depthFileName: String?
+        public let depthWidth: Int?
+        public let depthHeight: Int?
+        public let depthIntrinsics: CameraIntrinsicsDTO?
         public let isTracked: Bool
         public let yawDeg: Float
         public let pitchDeg: Float
         public let geometry: ARKitFaceGeometryDTO?
         public let intrinsics: CameraIntrinsicsDTO
         public let pose: ARKitTransformDTO
+        public let quality: FrameQualityEvaluation
     }
+}
+
+public struct QualityMetricDTO: Codable {
+    public let status: String
+    public let detail: String?
+}
+
+public struct ScanQualityReportDTO: Codable {
+    public let overall: String
+    public let coverage: QualityMetricDTO?
+    public let frameQuality: QualityMetricDTO?
+    public let trackingQuality: QualityMetricDTO?
+    public let poseCoverage: QualityMetricDTO?
+    public let regions: [String: QualityMetricDTO]?
+    public let evaluatedAt: String?
+}
+
+public struct ReconstructionDTO: Codable {
+    public let provider: String?
+    public let requestedAt: String?
+    public let baselineModelFileName: String?
+    public let error: String?
+}
+
+public struct ScanSessionDTO: Codable {
+    public let id: String?
+    public let status: String?
+    public let quality: ScanQualityReportDTO?
+    public let reconstruction: ReconstructionDTO?
+}
+
+public struct PackageUploadResponseDTO: Codable {
+    public let success: Bool?
+    public let message: String?
+    public let error: String?
+    public let details: String?
+    public let studioUrl: String?
+    public let session: ScanSessionDTO?
+    public let quality: ScanQualityReportDTO?
 }

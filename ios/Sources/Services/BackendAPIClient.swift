@@ -144,12 +144,16 @@ public final class BackendAPIClient: ObservableObject {
                 timestamp: frame.timestamp,
                 rgbFileName: "\(step.rawValue).jpg",
                 depthFileName: frame.depthData != nil ? "\(step.rawValue)_depth.raw" : nil,
+                depthWidth: frame.depthWidth,
+                depthHeight: frame.depthHeight,
+                depthIntrinsics: frame.depthIntrinsics,
                 isTracked: frame.geometry.isTracked,
                 yawDeg: frame.quality.yawDeg,
                 pitchDeg: frame.quality.pitchDeg,
                 geometry: frame.geometry.vertexCount > 0 ? frame.geometry : nil,
                 intrinsics: frame.intrinsics,
-                pose: frame.pose
+                pose: frame.pose,
+                quality: frame.quality
             )
             frameDTOs.append(entry)
         }
@@ -204,85 +208,109 @@ public final class BackendAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
-        // Same reasoning as triggerReconstruction's own timeoutInterval fix
-        // below — real depth+RGB payloads for 5 views can be slow to
-        // upload on a weak connection; 60s default is too tight a margin.
-        request.timeoutInterval = 180
+        request.timeoutInterval = 480
         
         DispatchQueue.main.async {
-            self.uploadProgress = 0.4
-            self.uploadStatusMessage = "Đang tải dữ liệu lên máy chủ..."
+            self.uploadProgress = 0.3
+            self.uploadStatusMessage = "Đang tải dữ liệu TrueDepth / ARKit & Dựng 3D..."
         }
         
         URLSession.shared.dataTask(with: request) { data, response, error in
+            DispatchQueue.main.async {
+                self.isUploading = false
+            }
+            
             if let error = error {
                 DispatchQueue.main.async {
-                    self.isUploading = false
+                    self.uploadStatusMessage = "Lỗi kết nối: \(error.localizedDescription)"
                     completion(.failure(error))
                 }
                 return
             }
             
-            DispatchQueue.main.async {
-                self.uploadProgress = 0.7
-                self.uploadStatusMessage = "Đang kích hoạt Tái tạo 3D (Reconstruction)..."
+            guard let httpResponse = response as? HTTPURLResponse else {
+                let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Phản hồi không hợp lệ từ máy chủ."])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = err.localizedDescription
+                    completion(.failure(err))
+                }
+                return
             }
             
-            self.triggerReconstruction(patientId: patientId, sessionId: sessionId) { recResult in
+            guard let data = data else {
+                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Máy chủ không trả về dữ liệu (HTTP \(httpResponse.statusCode))."])
                 DispatchQueue.main.async {
-                    self.isUploading = false
-                    switch recResult {
-                    case .success(let studioURL):
-                        self.studioURL = studioURL
-                        self.uploadProgress = 1.0
-                        self.uploadStatusMessage = "✓ Tái tạo baseline.glb thành công!"
-                        completion(.success(studioURL))
-                    case .failure(let recErr):
-                        completion(.failure(recErr))
-                    }
+                    self.uploadStatusMessage = err.localizedDescription
+                    completion(.failure(err))
                 }
+                return
             }
-        }.resume()
-    }
-    
-    private func triggerReconstruction(
-        patientId: String,
-        sessionId: String,
-        completion: @escaping (Result<URL, Error>) -> Void
-    ) {
-        guard let url = URL(string: "\(serverBaseURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)") else {
-            completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL reconstruction không hợp lệ."])))
-            return
-        }
-        
-        var req = URLRequest(url: url)
-        req.httpMethod = "PATCH"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try? JSONSerialization.data(withJSONObject: ["action": "request_reconstruction"])
-        // 2026-09-07 fix — `URLSession.shared`'s default
-        // `timeoutIntervalForRequest` is 60s (Apple's own default). This
-        // one request stays open, with zero bytes sent back, for the
-        // ENTIRE real 3D reconstruction (backend's own `execFile` budget
-        // just raised to 480s — see reconstruction-service.ts's own fix
-        // note for the real measured evidence this came from: a real scan
-        // whose reconstruction kept running and wrote a real baseline.glb
-        // minutes after the app had already given up and fallen back to a
-        // fresh scan). Set per-request here to stay in sync with that
-        // budget without swapping `URLSession.shared` for a custom session
-        // everywhere else in this file.
-        req.timeoutInterval = 500
-
-        URLSession.shared.dataTask(with: req) { data, resp, err in
-            if let err = err {
-                completion(.failure(err))
+            
+            let decoder = JSONDecoder()
+            let parsedResponse = try? decoder.decode(PackageUploadResponseDTO.self, from: data)
+            
+            // 1. Kiểm tra HTTP Status (200..299)
+            if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
+                let errReason = parsedResponse?.error ?? parsedResponse?.details ?? "Lỗi máy chủ (\(httpResponse.statusCode))."
+                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errReason])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = errReason
+                    completion(.failure(err))
+                }
+                return
+            }
+            
+            // 2. Kiểm tra JSON response
+            guard let respObj = parsedResponse, respObj.success == true else {
+                let errReason = parsedResponse?.error ?? "Gói dữ liệu quét không được chấp nhận."
+                let err = NSError(domain: "API", code: 422, userInfo: [NSLocalizedDescriptionKey: errReason])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = errReason
+                    completion(.failure(err))
+                }
+                return
+            }
+            
+            // 3. Kiểm tra Quality Gate
+            if let quality = respObj.quality, quality.overall == "fail" {
+                let qualityReason = quality.coverage?.detail ?? quality.frameQuality?.detail ?? "Chất lượng quét chưa đạt yêu cầu của Quality Gate."
+                let err = NSError(domain: "QualityGate", code: 422, userInfo: [NSLocalizedDescriptionKey: qualityReason])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = qualityReason
+                    completion(.failure(err))
+                }
+                return
+            }
+            
+            // 4. Kiểm tra session status "ready" và baseline GLB hợp lệ
+            let sessionStatus = respObj.session?.status
+            let glbFileName = respObj.session?.reconstruction?.baselineModelFileName
+            
+            guard sessionStatus == "ready" && glbFileName != nil && !glbFileName!.isEmpty else {
+                let reconErr = respObj.session?.reconstruction?.error ?? "Chưa tạo được mô hình baseline 3D hợp lệ từ dữ liệu quét."
+                let err = NSError(domain: "Reconstruction", code: 500, userInfo: [NSLocalizedDescriptionKey: reconErr])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = reconErr
+                    completion(.failure(err))
+                }
                 return
             }
             
             guard let studio = URL(string: "\(self.serverBaseURL)/patients/\(patientId)/studio") else {
-                completion(.failure(NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi tạo Studio URL."])))
+                let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi tạo đường dẫn 3D Studio."])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = err.localizedDescription
+                    completion(.failure(err))
+                }
                 return
             }
-            completion(.success(studio))
+            
+            DispatchQueue.main.async {
+                self.studioURL = studio
+                self.uploadProgress = 1.0
+                self.uploadStatusMessage = "✓ Tái tạo baseline.glb thành công!"
+                completion(.success(studio))
+            }
         }.resume()
     }
 }

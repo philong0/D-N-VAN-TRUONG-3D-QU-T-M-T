@@ -32,6 +32,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var holdProgress: Float = 0.0
     @Published public var isUploading: Bool = false
     @Published public var uploadProgress: Float = 0.0
+    @Published public var lastErrorMessage: String? = nil
     
     public var patientId: String = ""
     public var sessionId: String = ""
@@ -53,6 +54,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     // are correctly bounded, but long enough that a genuine sweep-through
     // (not a deliberate stop) won't hold long enough to trigger.
     private let holdDurationSeconds: Double = 0.9
+    private let maximumNeutralExpression: Float = 0.18
     
     public override init() {
         super.init()
@@ -172,11 +174,31 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         // the web app's camera-normalization.ts) — flip the effective
         // target's sign, not the tolerance.
         let effectiveTarget = (cameraPosition == .back) ? -target : target
-        let matched = abs(yaw - effectiveTarget) <= tolerance
-        let message = matched ? "✓ ĐÚNG GÓC: Giữ yên..." : currentStep.title
+        let yawMatched = abs(yaw - effectiveTarget) <= tolerance
+        let pitchMatched = abs(currentPitchDeg) <= currentStep.pitchToleranceDeg
+        let distanceMatched = currentDistanceMeters >= currentStep.minDistanceMeters && currentDistanceMeters <= currentStep.maxDistanceMeters
+        let expressionMatched = currentFaceAnchor.map(isNeutralExpression) ?? false
 
-        isPoseAligned = matched
-        guidanceFeedback = message
+        isPoseAligned = yawMatched && pitchMatched && distanceMatched && expressionMatched
+        if !yawMatched {
+            guidanceFeedback = currentStep.instruction
+        } else if !pitchMatched {
+            guidanceFeedback = "Giữ đầu thẳng, không ngước/cúi (pitch \(Int(currentPitchDeg))°)"
+        } else if !distanceMatched {
+            guidanceFeedback = "Giữ khoảng cách 28–55 cm"
+        } else if !expressionMatched {
+            guidanceFeedback = "Thả lỏng môi, mắt và hàm rồi giữ yên"
+        } else {
+            guidanceFeedback = "✓ ĐÚNG GÓC: Giữ yên..."
+        }
+    }
+
+    private func isNeutralExpression(_ anchor: ARFaceAnchor) -> Bool {
+        let keys: [ARFaceAnchor.BlendShapeLocation] = [
+            .jawOpen, .mouthSmileLeft, .mouthSmileRight, .mouthFrownLeft,
+            .mouthFrownRight, .eyeBlinkLeft, .eyeBlinkRight,
+        ]
+        return keys.allSatisfy { (anchor.blendShapes[$0]?.floatValue ?? 0) <= maximumNeutralExpression }
     }
     
     // MARK: - Auto-Capture
@@ -224,19 +246,31 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     // MARK: - Capture Action
 
     public func captureCurrentStep() throws {
-        guard let frame = currentFrame else {
+        guard let frame = currentFrame, let faceAnchor = currentFaceAnchor, faceAnchor.isTracked else {
             throw NSError(domain: "Scanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "Chưa có dữ liệu camera frame."])
+        }
+
+        // Manual capture uses the same non-bypassable clinical gate as
+        // auto-capture. A file named "left_profile" therefore represents a
+        // measured 80° profile, never an arbitrary selfie frame.
+        guard isPoseAligned else {
+            throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Chưa đạt đúng góc, tư thế, khoảng cách hoặc trạng thái khuôn mặt cho ảnh này."])
         }
         
         let pixelBuffer = frame.capturedImage
         let quality = QualityEvaluator.evaluate(
             pixelBuffer: pixelBuffer,
-            faceAnchor: currentFaceAnchor,
+            faceAnchor: faceAnchor,
             targetStep: currentStep
         )
+        guard quality.isTracked, quality.isDistanceOptimal, quality.isLightingAdequate, !quality.isBlurry else {
+            throw NSError(domain: "Scanner", code: 422, userInfo: [
+                NSLocalizedDescriptionKey: "Frame chưa đạt chất lượng TrueDepth (tracking/ánh sáng/độ nét/khoảng cách)."
+            ])
+        }
         
-        // 1. Convert PixelBuffer to JPEG Data
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        // 1. Convert PixelBuffer to JPEG Data (portrait oriented)
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
             throw NSError(domain: "Scanner", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi xử lý ảnh RGB."])
@@ -250,12 +284,25 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         var depthData: Data? = nil
         var depthW: Int? = nil
         var depthH: Int? = nil
+        var depthIntrinsics: CameraIntrinsicsDTO? = nil
         
         if let capturedDepth = frame.capturedDepthData,
            let processed = DepthDataProcessor.processDepthData(capturedDepth) {
             depthData = processed.rawData
             depthW = processed.width
             depthH = processed.height
+            if let calibration = capturedDepth.cameraCalibrationData {
+                let ref = calibration.intrinsicMatrixReferenceDimensions
+                let sx = Float(processed.width) / Float(ref.width)
+                let sy = Float(processed.height) / Float(ref.height)
+                let k = calibration.intrinsicMatrix
+                depthIntrinsics = CameraIntrinsicsDTO(
+                    fx: k[0, 0] * sx, fy: k[1, 1] * sy,
+                    cx: k[2, 0] * sx, cy: k[2, 1] * sy,
+                    imageWidth: processed.width, imageHeight: processed.height,
+                    lensDistortionCoefficients: nil
+                )
+            }
         }
         
         // 3. Camera Intrinsics (Exact Apple Hardware Intrinsics)
@@ -291,7 +338,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 m.columns.3.x, m.columns.3.y, m.columns.3.z, m.columns.3.w,
             ]
         }
-        let faceTransform = currentFaceAnchor?.transform ?? matrix_identity_float4x4
+        let faceTransform = faceAnchor.transform
         let cameraTransform = frame.camera.transform
         let poseDTO = ARKitTransformDTO(
             faceTransformColumnMajor: flattenColumnMajor(faceTransform),
@@ -306,7 +353,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         var uvsFlat: [Float] = []
         var blendShapesMap: [String: Float] = [:]
         
-        if let geometry = currentFaceAnchor?.geometry {
+        if let geometry = faceAnchor.geometry {
             for v in geometry.vertices {
                 verticesFlat.append(v.x)
                 verticesFlat.append(v.y)
@@ -348,7 +395,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 ])
             }
         }
-        if let blendShapes = currentFaceAnchor?.blendShapes {
+        if let blendShapes = faceAnchor.blendShapes {
             for (k, v) in blendShapes {
                 blendShapesMap[k.rawValue] = v.floatValue
             }
@@ -371,6 +418,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             depthData: depthData,
             depthWidth: depthW,
             depthHeight: depthH,
+            depthIntrinsics: depthIntrinsics,
             intrinsics: intrinsicsDTO,
             pose: poseDTO,
             geometry: geometryDTO,
@@ -418,9 +466,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             completion(.failure(NSError(domain: "Scanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Thiếu PatientID hoặc SessionID."])))
             return
         }
+        guard !isUploading else { return }
         
         self.isUploading = true
-        self.guidanceFeedback = "✓ Đang tải gói TrueDepth lên máy chủ & Dựng 3D..."
+        self.lastErrorMessage = nil
+        self.guidanceFeedback = "✓ Đang tải gói TrueDepth / ARKit lên máy chủ & Dựng 3D..."
         
         let client = BackendAPIClient()
         client.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: capturedFrames) { [weak self] result in
@@ -428,11 +478,13 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 self?.isUploading = false
                 switch result {
                 case .success(let studioURL):
+                    self?.lastErrorMessage = nil
                     self?.guidanceFeedback = "✓ Tải lên thành công! Đang chuyển vào 3D Studio..."
                     self?.onScanCompleted?(studioURL)
                     completion(.success(studioURL))
                 case .failure(let error):
-                    self?.guidanceFeedback = "Lỗi tải lên máy chủ: \(error.localizedDescription)"
+                    self?.lastErrorMessage = error.localizedDescription
+                    self?.guidanceFeedback = "Lỗi: \(error.localizedDescription)"
                     completion(.failure(error))
                 }
             }
@@ -446,6 +498,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         self.alignedSince = nil
         self.holdProgress = 0.0
         self.isAutoCapturing = false
+        self.lastErrorMessage = nil
     }
 }
 
@@ -458,4 +511,3 @@ extension ARFaceAnchor {
         return simd_float3(pitch, yaw, roll)
     }
 }
-

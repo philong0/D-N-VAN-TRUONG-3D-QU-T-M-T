@@ -182,11 +182,6 @@ public struct ARFaceScannerView: View {
                         Button(action: {
                             do {
                                 try captureSession.captureCurrentStep()
-                                if captureSession.capturedFrames.count >= 5 {
-                                    captureSession.triggerPackageUpload { _ in
-                                        isCompleted = true
-                                    }
-                                }
                             } catch {
                                 print("Capture error:", error)
                             }
@@ -194,7 +189,7 @@ public struct ARFaceScannerView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "camera.fill")
                                     .font(.title3)
-                                Text(captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT & TẢI LÊN" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
+                                Text(captureSession.capturedFrames.count >= 5 ? "ĐANG XỬ LÝ..." : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
                                     .font(.system(size: 15, weight: .black))
                             }
                             .foregroundColor(.white)
@@ -224,7 +219,7 @@ public struct ARFaceScannerView: View {
                             .bold()
                             .foregroundColor(.white)
                         
-                        Text("Hệ thống đang nén gói dữ liệu LiDAR và gửi lên AI Engine để dựng hình...")
+                        Text("Hệ thống đang nén gói dữ liệu TrueDepth / ARKit và gửi lên AI Engine để dựng hình 3D...")
                             .font(.footnote)
                             .foregroundColor(.white.opacity(0.8))
                             .multilineTextAlignment(.center)
@@ -236,6 +231,52 @@ public struct ARFaceScannerView: View {
                     .overlay(
                         RoundedRectangle(cornerRadius: 24)
                             .stroke(Color.green.opacity(0.5), lineWidth: 1.5)
+                    )
+                }
+            }
+            
+            // 4. Quality Gate / Upload Error Overlay
+            if let errorMsg = captureSession.lastErrorMessage {
+                ZStack {
+                    Color.black.opacity(0.85).edgesIgnoringSafeArea(.all)
+                    VStack(spacing: 16) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 44))
+                            .foregroundColor(.yellow)
+                        
+                        Text("Chất Lượng Quét Chưa Đạt")
+                            .font(.title3)
+                            .bold()
+                            .foregroundColor(.white)
+                        
+                        Text(errorMsg)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.9))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 20)
+                        
+                        Button(action: {
+                            captureSession.resetScan()
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Quét Lại Ngay")
+                                    .bold()
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 28)
+                            .padding(.vertical, 14)
+                            .background(Color.blue)
+                            .cornerRadius(24)
+                        }
+                        .padding(.top, 8)
+                    }
+                    .padding(28)
+                    .background(Color.black.opacity(0.95))
+                    .cornerRadius(24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(Color.yellow.opacity(0.5), lineWidth: 1.5)
                     )
                 }
             }
