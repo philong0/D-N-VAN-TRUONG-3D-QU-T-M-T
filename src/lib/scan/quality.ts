@@ -90,9 +90,22 @@ export function evaluateScanQuality(frames: ScanFrame[], scannerKind: ScannerKin
   const captured = new Set(frames.map((frame) => frame.view));
   const missing = REQUIRED_SCAN_VIEWS.filter((view) => !captured.has(view));
   const complete = missing.length === 0;
+  // 2026-09-07 fix — this always evaluated false for every real ios_native
+  // scan, no exceptions: `frame.geometryFileName`/`frame.intrinsicsFileName`
+  // are never actually set by the /package upload route (confirmed by
+  // reading that route directly) — real ARKit geometry/intrinsics are
+  // saved inline under `poseMetadata.geometry`/`cameraMetadata` instead
+  // (same route, same commit). Every native TrueDepth scan was therefore
+  // silently mislabeled "Web camera: Không có cảm biến TrueDepth/LiDAR"
+  // even with real depth+pose data present and successfully used by the
+  // actual reconstruction pipeline downstream (which reads the real
+  // per-frame data directly, not through this quality-report gate). Fixed
+  // to check the fields that are actually populated.
   const nativeDepth = scannerKind === "ios_native" && REQUIRED_SCAN_VIEWS.every((view) => {
     const frame = frames.find((item) => item.view === view);
-    return Boolean(frame?.depthAvailable && frame.geometryFileName && frame.intrinsicsFileName);
+    const geometry = frame?.poseMetadata?.geometry as { vertexCount?: number } | undefined;
+    const intrinsics = frame?.cameraMetadata as { fx?: number } | undefined;
+    return Boolean(frame?.depthAvailable && geometry?.vertexCount && intrinsics?.fx);
   });
 
   const regions: ScanQualityReport["regions"] = {};
