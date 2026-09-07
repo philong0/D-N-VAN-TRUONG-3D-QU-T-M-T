@@ -101,22 +101,38 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     private func updateGuidance() {
         guard isTracking else {
             guidanceFeedback = "Đang tìm khuôn mặt — Hãy nhìn vào màn hình"
+            isPoseAligned = false
+            alignedSince = nil
             return
         }
         
-        isPoseAligned = true
-        guidanceFeedback = "✓ Đang quét 3D: \(currentStep.title)"
+        let yaw = currentYawDeg
+        var matched = false
+        var message = ""
+        
+        switch currentStep {
+        case .front:
+            matched = abs(yaw) <= 15.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nhìn thẳng" : "Nhìn thẳng vào camera (0°)"
+        case .left45:
+            matched = yaw <= -25.0 && yaw >= -65.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng trái" : "Từ từ quay mặt sang Trái 45°"
+        case .leftProfile:
+            matched = yaw <= -55.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện trái" : "Quay ngang hẳn sang Trái (70°-90°)"
+        case .right45:
+            matched = yaw >= 25.0 && yaw <= 65.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng phải" : "Từ từ quay mặt sang Phải 45°"
+        case .rightProfile:
+            matched = yaw >= 55.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện phải" : "Quay ngang hẳn sang Phải (70°-90°)"
+        }
+        
+        isPoseAligned = matched
+        guidanceFeedback = message
     }
     
     // MARK: - Auto-Capture
-
-    /// Continuously auto-captures the instant real ARKit tracking confirms
-    /// the current angle/distance is correct (`isPoseAligned`) AND that
-    /// holds steady for a short dwell (avoids grabbing a frame mid-turn,
-    /// which would be motion-blurred). This replaces requiring a manual
-    /// shutter tap for each of the 5 angles — the shutter button in the UI
-    /// still works as a manual override at any time by calling
-    /// `captureCurrentStep()` directly.
     private func evaluateAutoCapture() {
         guard capturedFrames.count < ScanAngleStep.allCases.count else {
             alignedSince = nil
@@ -131,15 +147,20 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             alignedSince = now
             return
         }
+        
+        // Cần giữ yên đúng góc 0.6 giây để chống rung nhòe và tránh chụp liên tiếp
+        guard now.timeIntervalSince(since) >= 0.6 else {
+            return
+        }
 
         alignedSince = nil
         isAutoCapturing = true
-        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         do {
             try captureCurrentStep()
         } catch {
             isAutoCapturing = false
-            guidanceFeedback = "Lỗi tự động chụp — hãy thử bấm chụp thủ công."
+            guidanceFeedback = "Lỗi tự động chụp — hãy bấm nút chụp thủ công bên dưới."
         }
     }
 

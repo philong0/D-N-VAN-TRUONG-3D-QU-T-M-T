@@ -52,7 +52,10 @@ public struct RootView: View {
                     .fullScreenCover(isPresented: $scanBridge.isPresentingScanner) {
                         ARFaceScannerView(
                             captureSession: scanBridge.captureSession,
-                            isCompleted: .constant(false)
+                            isCompleted: Binding(
+                                get: { !scanBridge.isPresentingScanner },
+                                set: { if $0 { scanBridge.isPresentingScanner = false } }
+                            )
                         )
                     }
             } else {

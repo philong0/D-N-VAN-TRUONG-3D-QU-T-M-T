@@ -37,9 +37,17 @@ public struct ARFaceScannerView: View {
             
             // 2. Clinical HUD & Guidance Overlay
             VStack {
-                // Top Progress Bar
+                // Top Progress Bar & Close Button
                 VStack(spacing: 8) {
                     HStack {
+                        Button {
+                            isCompleted = true
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2)
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                        
                         Text(captureSession.currentStep.title)
                             .font(.headline)
                             .foregroundColor(.white)
@@ -61,7 +69,7 @@ public struct ARFaceScannerView: View {
                     .padding(.horizontal)
                 }
                 .padding(.vertical, 12)
-                .background(Color.black.opacity(0.65))
+                .background(Color.black.opacity(0.75))
                 .cornerRadius(16)
                 .padding(.horizontal)
                 .padding(.top, 40)
@@ -91,7 +99,7 @@ public struct ARFaceScannerView: View {
                         .multilineTextAlignment(.center)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 10)
-                        .background(Color.black.opacity(0.75))
+                        .background(Color.black.opacity(0.85))
                         .cornerRadius(20)
                     
                     // Angle Metrics
@@ -106,7 +114,7 @@ public struct ARFaceScannerView: View {
                             .foregroundColor(.white)
                     }
                     
-                    // Big Shutter Button
+                    // Big Shutter Button (Allows manual capture anytime)
                     Button(action: {
                         do {
                             try captureSession.captureCurrentStep()
@@ -126,9 +134,9 @@ public struct ARFaceScannerView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 24)
                         .padding(.vertical, 14)
-                        .background(captureSession.isTracking ? Color.green : Color.gray)
+                        .background(captureSession.isPoseAligned ? Color.green : Color.blue)
                         .cornerRadius(30)
-                        .shadow(color: Color.black.opacity(0.4), radius: 8, x: 0, y: 4)
+                        .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
                     }
                     .disabled(!captureSession.isTracking)
                     .padding(.bottom, 25)
