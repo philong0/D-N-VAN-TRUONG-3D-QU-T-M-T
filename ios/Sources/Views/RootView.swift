@@ -39,7 +39,7 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://traveling-counter-trainers-migration.trycloudflare.com"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://electron-section-arizona-delivers.trycloudflare.com"
     @State private var showingSettings = false
 
     public init() {}
