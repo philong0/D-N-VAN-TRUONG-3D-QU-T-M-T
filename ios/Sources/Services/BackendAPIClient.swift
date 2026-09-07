@@ -204,6 +204,10 @@ public final class BackendAPIClient: ObservableObject {
         request.httpMethod = "POST"
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
         request.httpBody = body
+        // Same reasoning as triggerReconstruction's own timeoutInterval fix
+        // below — real depth+RGB payloads for 5 views can be slow to
+        // upload on a weak connection; 60s default is too tight a margin.
+        request.timeoutInterval = 180
         
         DispatchQueue.main.async {
             self.uploadProgress = 0.4
@@ -255,7 +259,19 @@ public final class BackendAPIClient: ObservableObject {
         req.httpMethod = "PATCH"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["action": "request_reconstruction"])
-        
+        // 2026-09-07 fix — `URLSession.shared`'s default
+        // `timeoutIntervalForRequest` is 60s (Apple's own default). This
+        // one request stays open, with zero bytes sent back, for the
+        // ENTIRE real 3D reconstruction (backend's own `execFile` budget
+        // just raised to 480s — see reconstruction-service.ts's own fix
+        // note for the real measured evidence this came from: a real scan
+        // whose reconstruction kept running and wrote a real baseline.glb
+        // minutes after the app had already given up and fallen back to a
+        // fresh scan). Set per-request here to stay in sync with that
+        // budget without swapping `URLSession.shared` for a custom session
+        // everywhere else in this file.
+        req.timeoutInterval = 500
+
         URLSession.shared.dataTask(with: req) { data, resp, err in
             if let err = err {
                 completion(.failure(err))

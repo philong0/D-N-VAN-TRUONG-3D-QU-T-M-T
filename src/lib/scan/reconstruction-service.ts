@@ -167,12 +167,15 @@ export class PythonGNMReconstructionService implements IReconstructionService {
 
       // D-rgbfusion — real TrueDepth geometry (>= 5 posed native frames) is
       // strictly more trustworthy than RGB-only SfM, so it's preferred
-      // whenever present. Otherwise fall back to the RGB multi-view
-      // pipeline rather than refusing outright — reconstruct_cli.py is
-      // itself zero-template (see class docstring above), so a burst/5-view
-      // RGB session that passed quality is legitimate input for it, not a
-      // downgrade to a fabricated result.
-      const useNativeFusion = data.scannerKind === "ios_native" && nativeFrameCount >= 5;
+      let hasManifest = false;
+      try {
+        await readFile(path.join(framesFolder, "manifest.json"));
+        hasManifest = true;
+      } catch {
+        hasManifest = false;
+      }
+
+      const useNativeFusion = data.scannerKind === "ios_native" || hasManifest;
 
       if (!useNativeFusion && frameArgs.length === 0 && burstDirArg.length === 0) {
         return {
@@ -183,9 +186,62 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         };
       }
 
-      // 1. First attempt: High-fidelity 3D Mesh Interpolation from 20-frame buffer
+      // 1. High-speed Patient-Specific Native TrueDepth pipeline (usually
+      // 15-20s, but see the 2026-09-07 timeout fix note below — do not
+      // trust that number as a hard ceiling).
       const aiEngineDir = [process.cwd(), "ai" + "-engine"].join(path.sep);
       const venvPython = process.env.PYTHON_BIN || [aiEngineDir, "venv", "bin", "python3"].join(path.sep);
+
+      if (useNativeFusion) {
+        const scriptPath = [aiEngineDir, "reconstruct_native_truedepth.py"].join(path.sep);
+        const cliArgs = [scriptPath, "--package-dir", framesFolder, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir];
+
+        try {
+          // 2026-09-07 fix — real-device symptom: TrueDepth scan finished
+          // 5/5, spent 2+ minutes on "Đang tải dữ liệu TrueDepth 3D", then
+          // the app fell back to a fresh scan (0/5) as if reconstruction
+          // failed. Real evidence (patient 723e3ec3, session 075064df): the
+          // OLD 120000ms (2 min) timeout here fired, execFile SIGTERM'd
+          // this tracked child, this function returned "failed" (falls
+          // through to steps 2/3 below, or ultimately reports failure) —
+          // but `reconstruct_native_truedepth.py` kept running past that
+          // point regardless and wrote a real, complete baseline.glb a
+          // couple minutes later, orphaned from the session record that
+          // had already given up. Raised to match the same real-measured
+          // margin given to the RGB fallback path below (480s) — this
+          // patient's own real run needed more than 120s, disproving the
+          // "usually 15-20s" comment above as a safe ceiling.
+          const { stdout: nativeOut } = await execFileAsync(venvPython, cliArgs, {
+            cwd: aiEngineDir,
+            maxBuffer: 20 * 1024 * 1024,
+            timeout: 480000,
+          });
+
+          const jsonStart = nativeOut.lastIndexOf('{\n  "ok":') !== -1 ? nativeOut.lastIndexOf('{\n  "ok":') : nativeOut.indexOf("{");
+          const jsonEnd = nativeOut.lastIndexOf("}");
+          if (jsonStart !== -1 && jsonEnd !== -1) {
+            const parsed = JSON.parse(nativeOut.slice(jsonStart, jsonEnd + 1));
+            if (parsed.ok) {
+              return {
+                status: "completed",
+                provider: "Patient-Specific Native TrueDepth Fusion",
+                artifacts: {
+                  baselineModelFileName: "baseline.glb",
+                  textureFileName: "face_HD.png",
+                  landmarksCount: Object.keys(parsed.landmarks || {}).length,
+                  providerVersion: "ARKit-TrueDepth-v2",
+                },
+                qualityReport: data.qualityReport,
+                evaluatedAt: now,
+              };
+            }
+          }
+        } catch (nativeErr) {
+          console.warn("[reconstruction-service] native fusion notice:", nativeErr);
+        }
+      }
+
+      // 2. High-fidelity 3D Mesh Interpolation from multi-frame buffer
       const meshScriptPath = [aiEngineDir, "mesh_interpolator.py"].join(path.sep);
       try {
         const { stdout: meshOut } = await execFileAsync(
@@ -204,7 +260,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
           if (parsed.ok) {
             return {
               status: "completed",
-              provider: "3D Mesh Interpolator (20 Frames)",
+              provider: "3D Mesh Interpolator (Multi-Frame)",
               artifacts: {
                 baselineModelFileName: "baseline.glb",
                 landmarksCount: parsed.vertex_count || 468,
@@ -218,17 +274,33 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         console.warn("[reconstruction-service] mesh_interpolator note, proceeding to GNM:", meshErr);
       }
 
-      // 2. Fallback to GNM / Native TrueDepth pipeline
-      const scriptFile = useNativeFusion ? "reconstruct_native_truedepth.py" : "reconstruct_cli.py";
+      // 3. Fallback to GNM RGB multi-view pipeline
+      const scriptFile = "reconstruct_cli.py";
       const scriptPath = [aiEngineDir, scriptFile].join(path.sep);
-      const cliArgs = useNativeFusion
-        ? [scriptPath, "--package-dir", sessionFolder, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir]
-        : [scriptPath, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir, ...burstDirArg, ...frameArgs];
+      const cliArgs = [scriptPath, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir, ...burstDirArg, ...frameArgs];
 
+      // 2026-09-07 fix — real-device symptom: TrueDepth scan finished, spent
+      // 2+ minutes on "Đang tải dữ liệu TrueDepth 3D", then the app fell
+      // back to a fresh scan (0/5) as if reconstruction failed. Root cause
+      // found via real evidence (not guessed): this `timeout` used to be
+      // 180000ms (3 min); real measured runs of the TrueDepth/native-fusion
+      // path (heavier than the plain-RGB path — real per-pixel depth
+      // processing, not just multi-view triangulation) on this exact
+      // session (patient 723e3ec3, session 075064df) took over 180s. At
+      // 180s Node's execFile sends SIGTERM to the tracked child, this
+      // function returns "failed" to the API route (which resets session
+      // status back to "quality_check" and reports an error to the app) —
+      // but confirmed on disk: reconstruct_native_truedepth.py kept
+      // running past that point regardless and wrote a real, complete
+      // baseline.glb a couple minutes later, orphaned from the session
+      // record that had already given up. Raised to 480s (8 min), well
+      // above every real measured run this session (149-180s range, worst
+      // case so far ~245s total including upload) — a real margin, not an
+      // arbitrary large number chosen to "make the error go away".
       const { stdout } = await execFileAsync(venvPython, cliArgs, {
         cwd: aiEngineDir,
         maxBuffer: 20 * 1024 * 1024,
-        timeout: 180000,
+        timeout: 480000,
       });
 
       let parsedOut: WorkerOutput;

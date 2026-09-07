@@ -386,16 +386,8 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
       // 4. Chờ quét 5 góc và upload package xong
       await bridgePromise;
 
-      // 5. Đồng bộ ảnh và chuyển sang màn hình hoàn tất
-      try {
-        await fetch(`/api/patients/${patientId}/profile-preview`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId: currentSession.id }),
-        });
-      } catch {}
-
-      setStage("result");
+      // 5. Chuyển thẳng vào 3D Studio để xem mô hình 3D lập tức
+      window.location.href = `/patients/${patientId}/studio`;
     } catch (err) {
       console.warn("Native ARKit scan error:", err);
       setIsArkitScanning(false);
