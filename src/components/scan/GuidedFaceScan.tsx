@@ -743,22 +743,22 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
         // Xác định góc lọt vào vùng quét mục tiêu
         let isAngleMatch = false;
         if (activeTargetKey === "FRONT") {
-          isAngleMatch = Math.abs(normalizedYaw) <= 15;
+          isAngleMatch = Math.abs(normalizedYaw) <= 18;
         } else if (activeTargetKey === "LEFT45") {
-          isAngleMatch = normalizedYaw <= -25 && normalizedYaw >= -65;
+          isAngleMatch = normalizedYaw <= -22 && normalizedYaw >= -68 && (analysis.landmarksReal || Math.abs(normalizedYaw) >= 30);
         } else if (activeTargetKey === "LEFT80") {
-          isAngleMatch = normalizedYaw <= -55;
+          isAngleMatch = normalizedYaw <= -50;
         } else if (activeTargetKey === "RIGHT45") {
-          isAngleMatch = normalizedYaw >= 25 && normalizedYaw <= 65;
+          isAngleMatch = normalizedYaw >= 22 && normalizedYaw <= 68 && (analysis.landmarksReal || Math.abs(normalizedYaw) >= 30);
         } else if (activeTargetKey === "RIGHT80") {
-          isAngleMatch = normalizedYaw >= 55;
+          isAngleMatch = normalizedYaw >= 50;
         }
 
         // Ưu tiên chất lượng: nhận diện mặt, đủ sáng
-        const isQualityAcceptable = analysis.faceDetected && analysis.brightness >= 10;
+        const isQualityAcceptable = analysis.faceDetected && analysis.brightness >= 8;
 
         const onTarget = isAngleMatch && isQualityAcceptable;
-        const REQUIRED_STABLE_TICKS = 2; // ~240ms giữ yên (cực kỳ nhanh, nhạy, không trượt)
+        const REQUIRED_STABLE_TICKS = 5; // ~600ms giữ yên chính xác, chống nhảy bước
 
         setVoiceInstruction(`GỢI Ý GIỌNG NÓI: ${targetCfg.prompt}`);
         setCanManuallySkip(false);
@@ -795,6 +795,13 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
             if (remaining.length > 0) {
               const nextTarget = TARGET_ANGLES[remaining[0]];
               speakGuidance(nextTarget.prompt, true);
+            } else {
+              // Đã chụp đủ cả 5 góc -> Chuyển ngay sang Review & Dựng 3D
+              clearInterval(interval);
+              setTimeout(() => {
+                openReviewGallery();
+              }, 400);
+              return;
             }
           }
         } else {
@@ -818,7 +825,7 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
 
       // Chuyển sang màn hình thẩm định ảnh khi đã thu đủ các góc
       const allCaptured = ORDERED_TARGET_KEYS.every((k) => targetsStateRef.current[k]?.captured);
-      if (allCaptured && frameBufferBlobsRef.current.length >= RECONSTRUCTION_TARGET_COUNT && !isFinalizingRef.current) {
+      if (allCaptured && !isFinalizingRef.current) {
         clearInterval(interval);
         openReviewGallery();
       }

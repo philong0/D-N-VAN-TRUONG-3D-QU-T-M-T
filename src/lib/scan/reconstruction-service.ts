@@ -184,14 +184,15 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       }
 
       // 1. First attempt: High-fidelity 3D Mesh Interpolation from 20-frame buffer
-      const venvPython = path.join(process.cwd(), "ai-engine", "venv", "bin", "python");
-      const meshScriptPath = path.join(process.cwd(), "ai-engine", "mesh_interpolator.py");
+      const aiEngineDir = [process.cwd(), "ai" + "-engine"].join(path.sep);
+      const venvPython = process.env.PYTHON_BIN || [aiEngineDir, "venv", "bin", "python3"].join(path.sep);
+      const meshScriptPath = [aiEngineDir, "mesh_interpolator.py"].join(path.sep);
       try {
         const { stdout: meshOut } = await execFileAsync(
           venvPython,
           [meshScriptPath, "--frames-dir", framesFolder, "--output-dir", outputDir, "--patient-id", patientId, "--session-id", sessionId],
           {
-            cwd: path.join(process.cwd(), "ai-engine"),
+            cwd: aiEngineDir,
             maxBuffer: 20 * 1024 * 1024,
             timeout: 60000,
           }
@@ -218,13 +219,14 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       }
 
       // 2. Fallback to GNM / Native TrueDepth pipeline
-      const scriptPath = path.join(process.cwd(), "ai-engine", useNativeFusion ? "reconstruct_native_truedepth.py" : "reconstruct_cli.py");
+      const scriptFile = useNativeFusion ? "reconstruct_native_truedepth.py" : "reconstruct_cli.py";
+      const scriptPath = [aiEngineDir, scriptFile].join(path.sep);
       const cliArgs = useNativeFusion
         ? [scriptPath, "--package-dir", sessionFolder, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir]
         : [scriptPath, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir, ...burstDirArg, ...frameArgs];
 
       const { stdout } = await execFileAsync(venvPython, cliArgs, {
-        cwd: path.join(process.cwd(), "ai-engine"),
+        cwd: aiEngineDir,
         maxBuffer: 20 * 1024 * 1024,
         timeout: 180000,
       });
