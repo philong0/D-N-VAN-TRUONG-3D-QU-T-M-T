@@ -27,6 +27,9 @@ struct WebView: UIViewRepresentable {
 
         let webView = WKWebView(frame: .zero, configuration: config)
         bridge.webView = webView
+        webView.isOpaque = false
+        webView.backgroundColor = .systemBackground
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.load(URLRequest(url: url))
         return webView
     }
@@ -36,43 +39,16 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-
-    // D-nofloatingbutton — the previous floating "Quét TrueDepth" button
-    // opened a SEPARATE native scan flow hardcoded to one fixed test
-    // patient ID, regardless of which patient page was actually open in
-    // the WebView underneath — it could never scan the right patient, and
-    // every real attempt at using it left no scan session behind at all
-    // (confirmed: zero `ios_native` sessions ever recorded server-side).
-    // Removed rather than fixed: the user explicitly does not want a
-    // separate native scan screen — the bridge below already puts real
-    // TrueDepth capture behind the web app's own "Quét mặt mới" button,
-    // for whichever patient is actually open, with no second UI to keep
-    // in sync.
-    //
-    // 2026-09-05 fix — this URL used to be a hardcoded `let` pointing at a
-    // dead, one-time tunnel address from a past session
-    // (expo-correct-quote-seal.trycloudflare.com), with NO way to change it
-    // from inside the app at all: every real test silently tried to reach a
-    // server that no longer exists. Tunnel addresses (trycloudflare.com,
-    // loca.lt, etc.) are only ever temporary — they change every time the
-    // tunnel is restarted — so this MUST be editable at runtime, not baked
-    // into the binary. Switched to `@AppStorage` (persists across app
-    // launches, same mechanism `ios-app/DrVanTruongScannerApp.swift`'s own
-    // working settings screen already uses) plus a real settings sheet.
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://YOUR-SERVER-URL-HERE"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://traveling-counter-trainers-migration.trycloudflare.com"
     @State private var showingSettings = false
 
     public init() {}
 
     public var body: some View {
-        ZStack(alignment: .topTrailing) {
-            if let url = URL(string: serverURLString), serverURLString != "https://YOUR-SERVER-URL-HERE" {
-                // GIAO DIỆN VIP CRM: QUẢN LÝ HỒ SƠ + 3D STUDIO — cùng 1 trang
-                // web này giờ tự nhận ra `arkitScanBridge` và bước "Quét mặt
-                // mới" bên trong nó tự chuyển sang quét TrueDepth thật, cho
-                // đúng bệnh nhân đang mở trên màn hình.
+        ZStack(alignment: .bottomTrailing) {
+            if let url = URL(string: serverURLString), !serverURLString.isEmpty {
                 WebView(url: url, bridge: scanBridge)
-                    .edgesIgnoringSafeArea(.all)
+                    .ignoresSafeArea(.all)
                     .fullScreenCover(isPresented: $scanBridge.isPresentingScanner) {
                         ARFaceScannerView(
                             captureSession: scanBridge.captureSession,
@@ -82,7 +58,7 @@ public struct RootView: View {
             } else {
                 VStack(spacing: 16) {
                     Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
-                    Text("Bấm nút cài đặt (góc trên bên phải) để nhập địa chỉ web hiện tại của bạn.")
+                    Text("Bấm nút cài đặt để nhập địa chỉ web hiện tại của bạn.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
@@ -90,14 +66,19 @@ public struct RootView: View {
                 }
             }
 
+            // Nút cài đặt nhỏ gọn, tinh tế ở góc dưới phải tránh che header
             Button {
                 showingSettings = true
             } label: {
                 Image(systemName: "gearshape.fill")
-                    .padding(10)
-                    .background(.ultraThinMaterial, in: Circle())
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .padding(8)
+                    .background(Color.black.opacity(0.4), in: Circle())
+                    .shadow(radius: 4)
             }
-            .padding()
+            .padding(.trailing, 16)
+            .padding(.bottom, 70)
         }
         .sheet(isPresented: $showingSettings) {
             NavigationView {
