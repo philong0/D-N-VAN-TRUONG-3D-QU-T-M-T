@@ -101,6 +101,20 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
   const [lastEvaluation, setLastEvaluation] = useState<FrameEvaluation | null>(null);
   const [canManuallySkip, setCanManuallySkip] = useState(false);
 
+  // Native ARKit TrueDepth Bridge State
+  const [isArkitAvailable, setIsArkitAvailable] = useState(false);
+  const [isArkitScanning, setIsArkitScanning] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const hasBridge = Boolean(
+        (window as unknown as { webkit?: { messageHandlers?: { arkitScanBridge?: unknown } } })
+          ?.webkit?.messageHandlers?.arkitScanBridge
+      );
+      setIsArkitAvailable(hasBridge);
+    }
+  }, []);
+
   const lastSpokenTextRef = useRef<string>("");
   const lastSpokenTimeRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -307,6 +321,83 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
       console.warn("Session init error:", err);
     }
   }, [patientId]);
+
+  // Kích hoạt quét ARKit TrueDepth Native 3D của iOS
+  const startNativeArkitScan = useCallback(async () => {
+    try {
+      setIsArkitScanning(true);
+      stopCamera();
+
+      // 1. Tạo session ios_native
+      const res = await fetch(`/api/patients/${patientId}/scan-sessions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scannerKind: "ios_native" }),
+      });
+      const data = await res.json();
+      const currentSession = data.session;
+      if (!currentSession?.id) throw new Error("Không khởi tạo được phiên quét TrueDepth.");
+
+      setSession(currentSession);
+
+      // 2. Cài đặt bridge callback
+      const w = window as unknown as {
+        webkit?: { messageHandlers?: { arkitScanBridge?: { postMessage: (b: unknown) => void } } };
+        __arkitBridgeResolve?: (reqId: string, payload: unknown) => void;
+        __arkitBridgeReject?: (reqId: string, err: string) => void;
+        __arkitBridgePending?: Map<string, { resolve: (v: unknown) => void; reject: (e: Error) => void }>;
+      };
+
+      if (!w.__arkitBridgePending) {
+        w.__arkitBridgePending = new Map();
+        w.__arkitBridgeResolve = (reqId, payload) => {
+          const p = w.__arkitBridgePending?.get(reqId);
+          if (p) {
+            w.__arkitBridgePending?.delete(reqId);
+            p.resolve(payload);
+          }
+        };
+        w.__arkitBridgeReject = (reqId, msg) => {
+          const p = w.__arkitBridgePending?.get(reqId);
+          if (p) {
+            w.__arkitBridgePending?.delete(reqId);
+            p.reject(new Error(msg));
+          }
+        };
+      }
+
+      const reqId = `arkit-${Date.now()}`;
+      const bridgePromise = new Promise((resolve, reject) => {
+        w.__arkitBridgePending?.set(reqId, { resolve, reject });
+      });
+
+      // 3. Gửi lệnh cho native app mở ARFaceScannerView toàn màn hình
+      w.webkit?.messageHandlers?.arkitScanBridge?.postMessage({
+        action: "start",
+        requestId: reqId,
+        patientId,
+        sessionId: currentSession.id,
+      });
+
+      // 4. Chờ quét 5 góc và upload package xong
+      await bridgePromise;
+
+      // 5. Đồng bộ ảnh và chuyển sang màn hình hoàn tất
+      try {
+        await fetch(`/api/patients/${patientId}/profile-preview`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId: currentSession.id }),
+        });
+      } catch {}
+
+      setStage("result");
+    } catch (err) {
+      console.warn("Native ARKit scan error:", err);
+      setIsArkitScanning(false);
+      startCamera(cameraFacing);
+    }
+  }, [cameraFacing, patientId, stopCamera]);
 
   useEffect(() => {
     let cancelled = false;
@@ -833,8 +924,31 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
       {/* ------------------------------------------------------------------ */}
       {/* 3. DẢI TIẾN TRÌNH CÁC GÓC ĐỘ (ĐẶT Ở TRÊN CAO, KHÔNG NẰM GIỮA MẶT) */}
       {/* ------------------------------------------------------------------ */}
+      {stage === "scanning" && isArkitAvailable && (
+        <div className="relative z-40 mx-4 mt-[calc(env(safe-area-inset-top,44px)+4.5rem)] rounded-2xl bg-gradient-to-r from-emerald-950/95 to-teal-950/95 border-2 border-emerald-400 p-3.5 text-center shadow-2xl backdrop-blur-xl pointer-events-auto">
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <span className="text-xl animate-pulse">⚡📱</span>
+            <h4 className="text-xs font-black uppercase text-emerald-300 tracking-wide">
+              PHÁT HIỆN IPHONE TRUEDEPTH LIDAR
+            </h4>
+          </div>
+          <p className="text-[10px] text-zinc-300 mb-2">
+            Quét 3D thực tế với cảm biến Apple ARKit (1.220 điểm không gian + độ sâu LiDAR).
+          </p>
+          <button
+            type="button"
+            onClick={startNativeArkitScan}
+            disabled={isArkitScanning}
+            className="w-full rounded-xl bg-emerald-400 hover:bg-emerald-300 active:scale-95 py-2.5 text-xs font-black text-black shadow-xl flex items-center justify-center gap-2 transition"
+          >
+            <span>🚀</span>
+            <span>{isArkitScanning ? "ĐANG QUÉT TRUEDEPTH..." : "MỞ MÁY QUÉT TRUEDEPTH 3D APPLE"}</span>
+          </button>
+        </div>
+      )}
+
       {stage === "scanning" && (
-        <div className="relative z-30 flex justify-center px-4 mt-[calc(env(safe-area-inset-top,44px)+4.5rem)] pointer-events-none">
+        <div className="relative z-30 flex justify-center px-4 mt-[calc(env(safe-area-inset-top,44px)+1rem)] pointer-events-none">
           <div className="pointer-events-auto w-full max-w-sm rounded-2xl bg-black/85 backdrop-blur-md border border-white/20 p-2.5 flex items-center justify-between shadow-2xl">
             {ORDERED_TARGET_KEYS.map((key) => {
               const cfg = TARGET_ANGLES[key];
