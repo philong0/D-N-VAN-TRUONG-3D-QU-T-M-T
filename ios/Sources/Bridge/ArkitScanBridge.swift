@@ -50,9 +50,21 @@ public final class ArkitScanBridge: NSObject, ObservableObject, WKScriptMessageH
             }
             self.patientId = pid
             self.sessionId = sid
+            captureSession.patientId = pid
+            captureSession.sessionId = sid
             captureSession.resetScan()
+            
+            captureSession.onScanCompleted = { [weak self] studioURL in
+                self?.isPresentingScanner = false
+                self?.resolve(requestId, payload: ["completed": true, "studioURL": studioURL.absoluteString])
+                self?.runJS("window.location.href = '/patients/\(pid)/studio';")
+            }
+            captureSession.onScanCancelled = { [weak self] in
+                self?.isPresentingScanner = false
+                self?.reject(requestId, "Người dùng đã hủy phiên quét.")
+            }
+            
             isPresentingScanner = true
-            resolve(requestId, payload: ["started": true])
 
         case "capture":
             guard let view = body["view"] as? String else {

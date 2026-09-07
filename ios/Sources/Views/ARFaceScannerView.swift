@@ -41,6 +41,7 @@ public struct ARFaceScannerView: View {
                 VStack(spacing: 8) {
                     HStack {
                         Button {
+                            captureSession.onScanCancelled?()
                             isCompleted = true
                         } label: {
                             Image(systemName: "xmark.circle.fill")
@@ -182,7 +183,9 @@ public struct ARFaceScannerView: View {
                             do {
                                 try captureSession.captureCurrentStep()
                                 if captureSession.capturedFrames.count >= 5 {
-                                    isCompleted = true
+                                    captureSession.triggerPackageUpload { _ in
+                                        isCompleted = true
+                                    }
                                 }
                             } catch {
                                 print("Capture error:", error)
@@ -191,7 +194,7 @@ public struct ARFaceScannerView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "camera.fill")
                                     .font(.title3)
-                                Text(captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
+                                Text(captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT & TẢI LÊN" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
                                     .font(.system(size: 15, weight: .black))
                             }
                             .foregroundColor(.white)
@@ -201,9 +204,39 @@ public struct ARFaceScannerView: View {
                             .cornerRadius(30)
                             .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(!captureSession.isTracking)
+                        .disabled(!captureSession.isTracking || captureSession.isUploading)
                     }
                     .padding(.bottom, 25)
+                }
+            }
+            
+            // 3. Uploading & 3D Reconstruction Overlay
+            if captureSession.isUploading {
+                ZStack {
+                    Color.black.opacity(0.85).edgesIgnoringSafeArea(.all)
+                    VStack(spacing: 20) {
+                        ProgressView()
+                            .scaleEffect(1.8)
+                            .progressViewStyle(CircularProgressViewStyle(tint: .green))
+                        
+                        Text("ĐANG TẢI DỮ LIỆU TRUEDEPTH 3D")
+                            .font(.headline)
+                            .bold()
+                            .foregroundColor(.white)
+                        
+                        Text("Hệ thống đang nén gói dữ liệu LiDAR và gửi lên AI Engine để dựng hình...")
+                            .font(.footnote)
+                            .foregroundColor(.white.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 32)
+                    }
+                    .padding(28)
+                    .background(Color.black.opacity(0.9))
+                    .cornerRadius(24)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 24)
+                            .stroke(Color.green.opacity(0.5), lineWidth: 1.5)
+                    )
                 }
             }
         }

@@ -30,6 +30,13 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var guidanceFeedback: String = "Đang khởi động camera..."
     @Published public var isPoseAligned: Bool = false
     @Published public var holdProgress: Float = 0.0
+    @Published public var isUploading: Bool = false
+    @Published public var uploadProgress: Float = 0.0
+    
+    public var patientId: String = ""
+    public var sessionId: String = ""
+    public var onScanCompleted: ((URL) -> Void)?
+    public var onScanCancelled: (() -> Void)?
     
     public let arSession = ARSession()
     private var currentFrame: ARFrame?
@@ -334,6 +341,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             self.advanceToNextStep()
             self.isAutoCapturing = false
             self.holdProgress = 0.0
+            
+            if self.capturedFrames.count >= ScanAngleStep.allCases.count {
+                self.triggerPackageUpload { _ in }
+            }
         }
     }
     
@@ -359,6 +370,32 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         holdProgress = 0.0
         isAutoCapturing = false
         guidanceFeedback = "Đang chụp lại góc: \(prevStep.title)"
+    }
+    
+    public func triggerPackageUpload(completion: @escaping (Result<URL, Error>) -> Void) {
+        guard !patientId.isEmpty, !sessionId.isEmpty else {
+            completion(.failure(NSError(domain: "Scanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Thiếu PatientID hoặc SessionID."])))
+            return
+        }
+        
+        self.isUploading = true
+        self.guidanceFeedback = "✓ Đang tải gói TrueDepth lên máy chủ & Dựng 3D..."
+        
+        let client = BackendAPIClient()
+        client.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: capturedFrames) { [weak self] result in
+            DispatchQueue.main.async {
+                self?.isUploading = false
+                switch result {
+                case .success(let studioURL):
+                    self?.guidanceFeedback = "✓ Tải lên thành công! Đang chuyển vào 3D Studio..."
+                    self?.onScanCompleted?(studioURL)
+                    completion(.success(studioURL))
+                case .failure(let error):
+                    self?.guidanceFeedback = "Lỗi tải lên máy chủ: \(error.localizedDescription)"
+                    completion(.failure(error))
+                }
+            }
+        }
     }
     
     public func resetScan() {

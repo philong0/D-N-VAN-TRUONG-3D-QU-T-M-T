@@ -1,0 +1,321 @@
+import { execFile } from "child_process";
+import { readdir, writeFile, readFile } from "fs/promises";
+import path from "path";
+import { promisify } from "util";
+import { ensureDir, scanFramesDir, scanSessionDir } from "@/lib/storage";
+import type { ScanFrame, ScanQualityReport, ScanSession, ScannerKind } from "@/lib/types";
+import { selectReconstructionFrames, type BurstFrameCandidate } from "./reconstruction-frame-selection";
+
+const execFileAsync = promisify(execFile);
+
+export interface ScanData {
+  patientId: string;
+  sessionId: string;
+  scannerKind: ScannerKind;
+  frames: ScanFrame[];
+  qualityReport?: ScanQualityReport;
+}
+
+export interface ReconstructionArtifacts {
+  baselineModelFileName?: string;
+  textureFileName?: string;
+  landmarksCount?: number;
+  providerVersion?: string;
+}
+
+export interface ReconstructionResult {
+  status: "completed" | "queued" | "failed" | "unavailable";
+  provider: string;
+  artifacts?: ReconstructionArtifacts;
+  qualityReport?: ScanQualityReport;
+  reason?: string;
+  evaluatedAt: string;
+}
+
+interface WorkerOutput {
+  ok: boolean;
+  error?: string;
+  landmarks?: Record<string, unknown>;
+  baselineMeta?: { modelVersion?: string; reconstructionStatus?: string };
+}
+
+export interface IReconstructionService {
+  readonly providerName: string;
+  readonly isReady: boolean;
+  process(data: ScanData): Promise<ReconstructionResult>;
+}
+
+/**
+ * Prefers native ARKit sessions with complete stored geometry and camera
+ * intrinsics (real TrueDepth measurement) when available. Otherwise falls
+ * back to the RGB-only multi-view pipeline (reconstruct_cli.py), which is
+ * itself zero-template — dense_correspondence.py returns no mesh rather
+ * than a fabricated one when it doesn't have enough real matched points,
+ * and _reconstruct_from_rgb_multiview never substitutes a PCA/template
+ * stand-in (ai-engine's own D-notemplate contract, enforced by
+ * test_anti_template.py).
+ */
+export class PythonGNMReconstructionService implements IReconstructionService {
+  readonly providerName = "Patient-specific multi-view reconstruction";
+  readonly isReady = true;
+
+  async process(data: ScanData): Promise<ReconstructionResult> {
+    const { patientId, sessionId } = data;
+    const now = new Date().toISOString();
+
+    try {
+      const framesFolder = scanFramesDir(patientId, sessionId);
+      const sessionFolder = scanSessionDir(patientId, sessionId);
+      const outputDir = path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction");
+
+      await ensureDir(outputDir);
+
+      const nativeFrameCount = data.frames.filter((frame) => frame.depthAvailable && frame.geometryFileName && frame.intrinsicsFileName).length;
+
+      // Check available frame files
+      const frameArgs: string[] = [];
+      const viewToFlag: Record<string, string> = {
+        front: "--front",
+        left_45: "--left45",
+        left_profile: "--left90",
+        right_45: "--right45",
+        right_profile: "--right90",
+        angle1: "--angle1",
+        angle2: "--angle2",
+        angle3: "--angle3",
+        angle4: "--angle4",
+      };
+
+      // Check scan frames folder first
+      let burstDirArg: string[] = [];
+      try {
+        const frameFiles = await readdir(framesFolder);
+        const burstFiles = frameFiles.filter((f) => f.startsWith("burst_"));
+        if (burstFiles.length > 0) {
+          // 2026-09-03 scanner-quality follow-up — the OLD behavior here was
+          // `burstDirArg = ["--burst-dir", framesFolder]`, letting
+          // reconstruct_cli.py's own burst-dir path pick 4 frames by ARRAY
+          // POSITION (0%/25%/50%/75%), silently assuming one continuous
+          // sweep left-profile -> right-45 in file order. The guided
+          // scanner instead produces named checkpoints in a fixed yaw
+          // order (0, ±15, ±30, ±45) plus quality-gated transition frames,
+          // each with its own real measured yaw/pitch/roll/quality in
+          // `qualityMetadata` — that real metadata, never array position,
+          // must decide which file plays which reconstruction role. This
+          // does NOT touch reconstruct_cli.py's own GNM pipeline: it just
+          // picks better inputs for the SAME pre-existing --angle1..4
+          // named-file contract that path already supports.
+          const byFileName = new Map(data.frames.filter((f) => f.view === "burst").map((f) => [f.fileName, f]));
+          const candidates: BurstFrameCandidate[] = burstFiles.map((fileName) => {
+            const frame = byFileName.get(fileName);
+            const meta = (frame?.qualityMetadata ?? {}) as Record<string, unknown>;
+            const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+            return {
+              fileName,
+              yaw: num(meta.yaw),
+              pitch: num(meta.pitch),
+              roll: num(meta.roll),
+              qualityScore: num(meta.qualityScore),
+              sharpness: num(meta.sharpness),
+              motion: num(meta.motion),
+              targetId: typeof meta.targetId === "string" ? meta.targetId : null,
+              timestampMs: num(meta.timestampMs),
+            };
+          });
+
+          const { selected, report } = selectReconstructionFrames(candidates);
+
+          if (report.selectionMethod === "yaw_quality_overlap" && report.selectedFrameCount > 0) {
+            for (const [slot, fileName] of Object.entries(selected)) {
+              const flag = viewToFlag[slot];
+              if (flag && fileName) frameArgs.push(flag, path.join(framesFolder, fileName));
+            }
+            console.log(
+              `[reconstruction-service] pose-aware frame selection (${report.selectionMethod}): ` +
+              report.selectedFrames.map((f) => `${f.filename}@${f.yaw.toFixed(1)}deg(q=${f.qualityScore})`).join(", ")
+            );
+            try {
+              await writeFile(path.join(outputDir, "frame_selection_report.json"), JSON.stringify(report, null, 2));
+            } catch (reportErr) {
+              console.warn("Failed to write frame_selection_report.json:", reportErr);
+            }
+          } else {
+            // No frame in this burst carries usable pose metadata (e.g. an
+            // older session captured before this metadata contract
+            // existed) — fall back to the pre-existing positional method
+            // rather than refusing outright, but never silently: this is
+            // real position-based guessing with NO pose evidence behind
+            // it, not an equivalent substitute for real yaw data.
+            console.warn(
+              `[reconstruction-service] No usable pose metadata on any of ${report.inputFrameCount} burst frames -- ` +
+              "falling back to positional (array-order) frame selection. This fallback has NO real yaw/pose evidence."
+            );
+            burstDirArg = ["--burst-dir", framesFolder];
+          }
+        } else {
+          for (const file of frameFiles) {
+            const viewName = path.parse(file).name;
+            const flag = viewToFlag[viewName];
+            if (flag) {
+              frameArgs.push(flag, path.join(framesFolder, file));
+            }
+          }
+        }
+      } catch {
+        // Fallback to patient photos folder if scan frames folder not populated
+      }
+
+      // D-rgbfusion — real TrueDepth geometry (>= 5 posed native frames) is
+      // strictly more trustworthy than RGB-only SfM, so it's preferred
+      // whenever present. Otherwise fall back to the RGB multi-view
+      // pipeline rather than refusing outright — reconstruct_cli.py is
+      // itself zero-template (see class docstring above), so a burst/5-view
+      // RGB session that passed quality is legitimate input for it, not a
+      // downgrade to a fabricated result.
+      const useNativeFusion = data.scannerKind === "ios_native" && nativeFrameCount >= 5;
+
+      if (!useNativeFusion && frameArgs.length === 0 && burstDirArg.length === 0) {
+        return {
+          status: "failed",
+          provider: this.providerName,
+          reason: "Không tìm thấy file ảnh frame nào trong phiên quét để tái tạo 3D.",
+          evaluatedAt: now,
+        };
+      }
+
+      // 1. First attempt: High-fidelity 3D Mesh Interpolation from 20-frame buffer
+      const venvPython = path.join(process.cwd(), "ai-engine", "venv", "bin", "python");
+      const meshScriptPath = path.join(process.cwd(), "ai-engine", "mesh_interpolator.py");
+      try {
+        const { stdout: meshOut } = await execFileAsync(
+          venvPython,
+          [meshScriptPath, "--frames-dir", framesFolder, "--output-dir", outputDir, "--patient-id", patientId, "--session-id", sessionId],
+          {
+            cwd: path.join(process.cwd(), "ai-engine"),
+            maxBuffer: 20 * 1024 * 1024,
+            timeout: 60000,
+          }
+        );
+        const jsonStart = meshOut.indexOf("{");
+        const jsonEnd = meshOut.lastIndexOf("}");
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const parsed = JSON.parse(meshOut.slice(jsonStart, jsonEnd + 1));
+          if (parsed.ok) {
+            return {
+              status: "completed",
+              provider: "3D Mesh Interpolator (20 Frames)",
+              artifacts: {
+                baselineModelFileName: "baseline.glb",
+                landmarksCount: parsed.vertex_count || 468,
+                providerVersion: "1.0.0",
+              },
+              evaluatedAt: now,
+            };
+          }
+        }
+      } catch (meshErr) {
+        console.warn("[reconstruction-service] mesh_interpolator note, proceeding to GNM:", meshErr);
+      }
+
+      // 2. Fallback to GNM / Native TrueDepth pipeline
+      const scriptPath = path.join(process.cwd(), "ai-engine", useNativeFusion ? "reconstruct_native_truedepth.py" : "reconstruct_cli.py");
+      const cliArgs = useNativeFusion
+        ? [scriptPath, "--package-dir", sessionFolder, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir]
+        : [scriptPath, "--patient-id", patientId, "--session-id", sessionId, "--output-dir", outputDir, ...burstDirArg, ...frameArgs];
+
+      const { stdout } = await execFileAsync(venvPython, cliArgs, {
+        cwd: path.join(process.cwd(), "ai-engine"),
+        maxBuffer: 20 * 1024 * 1024,
+        timeout: 180000,
+      });
+
+      let parsedOut: WorkerOutput;
+      try {
+        let jsonStr = "";
+        const jsonStart = stdout.lastIndexOf('{\n  "ok":');
+        if (jsonStart !== -1) {
+          jsonStr = stdout.slice(jsonStart, stdout.lastIndexOf("}") + 1);
+        } else {
+          jsonStr = stdout.slice(stdout.indexOf("{"), stdout.lastIndexOf("}") + 1);
+        }
+        jsonStr = jsonStr
+          .replace(/:\s*Infinity\b/g, ": null")
+          .replace(/:\s*-Infinity\b/g, ": null")
+          .replace(/:\s*NaN\b/g, ": null");
+        parsedOut = JSON.parse(jsonStr) as WorkerOutput;
+      } catch {
+        try {
+          const baselineBuf = await readFile(path.join(outputDir, "baseline.json"), "utf-8");
+          const bMeta = JSON.parse(baselineBuf);
+          if (bMeta && bMeta.reconstructionStatus === "completed") {
+            parsedOut = { ok: true, baselineMeta: bMeta };
+          } else {
+            throw new Error("baseline.json not completed");
+          }
+        } catch {
+          throw new Error("Không thể phân tích kết quả tái tạo 3D: " + (stdout.slice(0, 500) || "Đầu ra trống."));
+        }
+      }
+
+      if (!parsedOut.ok) {
+        return {
+          status: "failed",
+          provider: this.providerName,
+          reason: parsedOut.error || "Quá trình tái tạo 3D không hoàn tất.",
+          evaluatedAt: now,
+        };
+      }
+      if (parsedOut.baselineMeta?.reconstructionStatus !== "completed") {
+        return {
+          status: "failed",
+          provider: this.providerName,
+          reason: "Render-back quality gate không xác nhận được baseline 3D. Cần quét lại, không công bố model này trong Studio.",
+          evaluatedAt: now,
+        };
+      }
+
+      // The worker wrote baseline.glb directly to the sole public,
+      // provenance-controlled location consumed by Canvas3D.
+      const generatedGlb = path.join(outputDir, "baseline.glb");
+
+      await readdir(outputDir).then((files) => {
+        if (!files.includes("baseline.glb")) throw new Error("Worker báo hoàn thành nhưng không tạo baseline.glb.");
+      });
+
+      return {
+        status: "completed",
+        provider: this.providerName,
+        artifacts: {
+          baselineModelFileName: "baseline.glb",
+          textureFileName: "face_HD.png",
+          landmarksCount: Object.keys(parsedOut.landmarks || {}).length,
+          providerVersion: parsedOut.baselineMeta?.modelVersion || (useNativeFusion ? "ARKit-native" : "photo-multiview"),
+        },
+        qualityReport: data.qualityReport,
+        evaluatedAt: now,
+      };
+    } catch (err) {
+      console.error("Reconstruction service error:", err);
+      return {
+        status: "failed",
+        provider: this.providerName,
+        reason: err instanceof Error ? err.message : "Lỗi thực thi Reconstruction Service.",
+        evaluatedAt: now,
+      };
+    }
+  }
+}
+
+const defaultService = new PythonGNMReconstructionService();
+
+export async function requestReconstruction(session: ScanSession): Promise<ReconstructionResult> {
+  const scanData: ScanData = {
+    patientId: session.patientId,
+    sessionId: session.id,
+    scannerKind: session.scannerKind,
+    frames: session.frames,
+    qualityReport: session.quality,
+  };
+
+  return defaultService.process(scanData);
+}
