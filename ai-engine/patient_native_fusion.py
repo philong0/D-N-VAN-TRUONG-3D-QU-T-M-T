@@ -494,6 +494,33 @@ class PatientNativeReconstructor:
                 "QC rejects sparse/degenerate reconstructions rather than exporting them as a passing baseline."
             )
 
+        # 2026-09-07 fix — D-densitygate above checks vertex COUNT but never
+        # checked real-world SIZE. Found on two separate real ios_native
+        # TrueDepth sessions this session (patients 7d973726 and
+        # 85c6ef6c, both via `_fuse_arface_geometry`): a real, correctly-
+        # dense (6133/3139-vertex) mesh that nonetheless measured only
+        # ~4-8mm across in every axis (confirmed by reading the exported
+        # baseline.glb's own accessor min/max directly) -- roughly 20-30x
+        # smaller than a real adult face (~120-180mm wide). That mesh
+        # rendered in the 3D Studio as an unrecognizable dark speck, not a
+        # face, but sailed through every existing gate (vertex count,
+        # `mesh.is_watertight`, render_back's silhouette check) because
+        # none of them look at absolute scale. Root cause not yet found (no
+        # physical device available to debug live ARKit capture) -- this
+        # gate does not fix the underlying scale bug, it stops the pipeline
+        # from silently exporting a degenerate result AS IF it were a valid
+        # clinical baseline, same discipline as the vertex-count gate right
+        # above. A real adult human face's own bounding box is used as the
+        # real-world reference, not an invented number.
+        bbox_m = mesh.bounds[1] - mesh.bounds[0]  # (3,) real extents in meters
+        MIN_FACE_DIMENSION_M = 0.05  # 50mm -- well under even a small child's face width, so this only catches genuinely degenerate output
+        if float(np.max(bbox_m)) < MIN_FACE_DIMENSION_M:
+            raise RuntimeError(
+                f"Reconstructed surface bounding box is only {(bbox_m * 1000).round(1).tolist()}mm (X,Y,Z) -- "
+                f"implausibly small for a real face (expected roughly 120-180mm). QC rejects this as a degenerate "
+                "reconstruction rather than exporting a mesh that cannot be a real patient face."
+            )
+
         # Smooth boundary vertices while keeping central features 100% sharp
         trimesh.smoothing.filter_laplacian(mesh, lamb=0.3, iterations=2)
 

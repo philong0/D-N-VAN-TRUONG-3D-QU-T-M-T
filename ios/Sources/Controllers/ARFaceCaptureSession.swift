@@ -319,6 +319,34 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 uvsFlat.append(uv.x)
                 uvsFlat.append(uv.y)
             }
+
+            // 2026-09-07 fix — real-device symptom: TrueDepth scan finished
+            // 5/5, backend reconstruction "succeeded", but the exported
+            // baseline.glb measured only ~4-8mm across (confirmed by
+            // reading the exported file's own accessor bounds directly) —
+            // an unrecognizable dark speck in the 3D Studio, not a face.
+            // Root cause not yet found (no physical device available here
+            // to debug live `ARFaceGeometry.vertices` output), but this
+            // check catches it at the earliest possible point — right when
+            // the frame is captured — instead of only discovering it
+            // minutes later after a full upload + reconstruction cycle. A
+            // real adult face's own real-world size is the reference, not
+            // an invented number (mirrors the same check added server-side
+            // in patient_native_fusion.py's reconstruct_patient_surface).
+            var minV = geometry.vertices.first ?? SIMD3<Float>(0, 0, 0)
+            var maxV = minV
+            for v in geometry.vertices {
+                minV = SIMD3(min(minV.x, v.x), min(minV.y, v.y), min(minV.z, v.z))
+                maxV = SIMD3(max(maxV.x, v.x), max(maxV.y, v.y), max(maxV.z, v.z))
+            }
+            let extent = maxV - minV
+            let maxExtentM = max(extent.x, max(extent.y, extent.z))
+            if maxExtentM < 0.05 {
+                let mm = (extent * 1000).description
+                throw NSError(domain: "Scanner", code: 422, userInfo: [
+                    NSLocalizedDescriptionKey: "Dữ liệu khuôn mặt ARKit bất thường (kích thước chỉ \(mm)mm, quá nhỏ so với mặt người thật). Vui lòng thử lại — đưa mặt vào giữa khung hình, đợi vòng tracking ổn định (viền quanh mặt) trước khi bấm chụp."
+                ])
+            }
         }
         if let blendShapes = currentFaceAnchor?.blendShapes {
             for (k, v) in blendShapes {

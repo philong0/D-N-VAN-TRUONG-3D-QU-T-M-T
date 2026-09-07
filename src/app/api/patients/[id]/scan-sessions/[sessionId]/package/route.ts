@@ -5,7 +5,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPatient, updatePatient } from "@/lib/db";
 import { evaluateScanQuality } from "@/lib/scan/quality";
 import { ensureDir, scanFramesDir } from "@/lib/storage";
-import type { ScanCaptureView, ScanFrame, ScanSession, PhotoAngle } from "@/lib/types";
+import type { ScanCaptureView, ScanFrame, ScanSession } from "@/lib/types";
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string; sessionId: string }> }
@@ -33,16 +33,26 @@ export async function POST(
       return NextResponse.json({ error: "Thiếu file manifest.json trong TrueDepth package." }, { status: 400 });
     }
 
+    interface PackageFrameDTO {
+      view: ScanCaptureView;
+      rgbFileName?: string;
+      depthFileName?: string;
+      timestamp?: number;
+      geometry?: { vertexCount: number; triangleCount: number };
+      intrinsics?: Record<string, unknown>;
+      pose?: Record<string, unknown>;
+    }
+
     const manifest = JSON.parse(manifestStr);
-    const framesDTO: any[] = manifest.frames || [];
+    const framesDTO: PackageFrameDTO[] = manifest.frames || [];
     const savedFrames: ScanFrame[] = [];
 
     for (const frameDTO of framesDTO) {
-      const view: ScanCaptureView = frameDTO.view;
+      const view = frameDTO.view;
       const rgbFile = formData.get(frameDTO.rgbFileName || `${view}_rgb.jpg`) as File | null;
       const depthFile = formData.get(frameDTO.depthFileName || `${view}_depth.raw`) as File | null;
 
-      let savedRgbName = `${view}.jpg`;
+      const savedRgbName = `${view}.jpg`;
       let byteSize = 0;
       let mimeType = "image/jpeg";
 
@@ -98,7 +108,7 @@ export async function POST(
 
     const qualityReport = evaluateScanQuality(savedFrames, "ios_native");
 
-    let updatedSession: ScanSession = {
+    const updatedSession: ScanSession = {
       ...currentSession,
       status: qualityReport.overall === "fail" ? "needs_rescan" : "quality_check",
       frames: savedFrames,
@@ -106,8 +116,21 @@ export async function POST(
       updatedAt: new Date().toISOString(),
     };
 
-    // Auto-trigger 3D Reconstruction for seamless 1-step scanning
-    if (qualityReport.overall !== "fail") {
+    // 2026-09-07 fix — this file had a real, build-breaking syntax error
+    // (a half-written `updatedPatient(...)` call, missing its own opening
+    // `await updatePatient(patientId, (stored) => ({ ...stored,` and never
+    // actually persisting `updatedSession` at all) from a concurrent,
+    // interrupted edit that was trying to add an auto-trigger-reconstruction
+    // step here. Restored to the last known-working behavior: persist the
+    // uploaded frames + quality report, same pattern already used by the
+    // sibling `frames/route.ts` route. Reconstruction itself is already
+    // triggered by the client's own separate `request_reconstruction` PATCH
+    // call right after this upload succeeds (BackendAPIClient.swift's
+    // `uploadScanPackage` -> `triggerReconstruction`) -- NOT duplicated
+    // here, to avoid two independent code paths racing to kick off the same
+    // multi-minute reconstruction job for one session.
+    await updatePatient(patientId, (stored) => ({
+      ...stored,
       scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
     }));
 
@@ -118,6 +141,7 @@ export async function POST(
       quality: qualityReport,
       studioUrl: `/patients/${patientId}/studio`,
     });
+  } catch (error) {
     console.error("Error importing TrueDepth package:", error);
     return NextResponse.json({ error: "Lỗi hệ thống khi nạp TrueDepth package.", details: String(error) }, { status: 500 });
   }
