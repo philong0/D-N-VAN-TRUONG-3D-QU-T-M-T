@@ -256,6 +256,29 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     shell_normals = normals_17821[shell_vids]
     shell_trust = compute_vertex_trust()[shell_vids]
 
+    # 2026-09-07 audit note — first attempted this fix by targeting the
+    # `scleras`/`irises`/`pupils` GNM vertex groups (`_get_shell_eye_submasks`,
+    # matching what `gnm_eye_render.py` already does for the OTHER, separate
+    # vertex-color bake pipeline). Verified directly against the real asset
+    # before shipping it: THIS shell topology (`get_face_shell_topology`'s
+    # own `shell_mask = valid_skin | hockey | ears | eye_sockets`, above)
+    # includes `eye_sockets` (eyelid skin) but never `eyes`/`scleras`/
+    # `irises`/`pupils` — measured 0 matching triangles for all three, so
+    # that approach would have been a silent no-op on the exact mesh that
+    # ships as baseline.glb (confirmed by `vertexCount` in baseline.json
+    # matching `len(shell_vids)` exactly, i.e. this bake IS what patients
+    # see, not a fallback path). There is no dedicated eyeball geometry in
+    # this mesh at all — the visible eye region is ordinary skin-shell
+    # triangles wrapped in real (ghosted, cross-view-blended) photo pixels.
+    # Real fix below instead reuses `is_eye_zone` (this function's own
+    # existing geometric eye-region box, already used a few lines down to
+    # protect real eye pixels from the background-rejection filter) to force
+    # single-view (no cross-blend) sampling specifically in that region —
+    # targets the actual, real cause of the reported defect (this bake's own
+    # multi-view ghosting, see the module-level "Direct Single-Layer
+    # Projective Blending" step) using geometry proven to exist on this
+    # mesh, instead of vertex groups that don't.
+
     # Real self-occlusion z-buffer — rejects a texel whose surface normal
     # faces the camera but is actually hidden behind another part of the
     # head (chin overhanging the neck, an ear fold, the far cheek in a
@@ -383,6 +406,12 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     pt_weights = np.zeros((n_views, n_pts), dtype=np.float32)
     pt_sampled_colors = np.zeros((n_views, n_pts, 3), dtype=np.float32)
 
+    # Same geometric eye-region box already used a few lines below (per-view
+    # loop) to protect real eye pixels from the background-rejection filter
+    # — computed once here (point-only, does not depend on `k`) and reused
+    # by the anti-ghosting fix after the loop, below.
+    is_eye_zone = (np.abs(pts_pos[:, 0]) < 0.055) & (pts_pos[:, 1] > 0.275) & (pts_pos[:, 1] < 0.335)
+
     for k, v in enumerate(views):
         R, t, K = v["R"], v["t"], v["camera_matrix"]
         img = v["image"]
@@ -489,6 +518,37 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     for k in range(n_views):
         target = 1.0 if k == frontal_idx else 0.0
         pt_weights[k] = frontal_lock * target + (1.0 - frontal_lock) * pt_weights[k]
+
+    # 2026-09-07 fix — real-device complaint: "lỗi vùng mắt khá nghiêm
+    # trọng" (serious eye-region defect), visible as smeared/doubled eyes in
+    # the actual patient render. Root cause found by tracing this exact
+    # function (not guessed): `frontal_lock` above already forces
+    # single-source (frontal-only) sampling for eyes/nose/lips WHENEVER the
+    # frontal photo has real coverage there (`frontal_active`) — but
+    # wherever the frontal photo's own eye-region coverage is weak or
+    # rejected for that one point (a blink, a specular highlight off the
+    # eye, a borderline facing-angle near the eye corner — all real,
+    # ordinary photo conditions, not a bug in this file), `frontal_active`
+    # is 0 there and the code falls through to the normal smooth multi-view
+    # blend used for skin — which, unlike skin, visibly ghosts on the eye's
+    # small, high-contrast, specular surface even from a slight cross-photo
+    # misalignment (documented root cause of the whole-face version of this
+    # same defect, see this function's own module docstring on the "Direct
+    # Single-Layer Projective Blending" step). Fix: within `is_eye_zone`
+    # specifically, wherever frontal_lock did NOT already win, force
+    # winner-take-all among whatever views DO have weight there (single
+    # sharp photo, never a blend) instead of falling through to a smooth
+    # multi-view average -- eliminates eye ghosting unconditionally, not
+    # just when the frontal photo happens to cover it.
+    eye_not_locked = is_eye_zone & (frontal_lock < 0.999)
+    if eye_not_locked.any():
+        eye_idx = np.where(eye_not_locked)[0]
+        winner = np.argmax(pt_weights[:, eye_idx], axis=0)
+        winner_weight = pt_weights[winner, eye_idx]
+        for k in range(n_views):
+            is_winner = (winner == k) & (winner_weight > 1e-6)
+            cols = eye_idx[~is_winner]
+            pt_weights[k, cols] = 0.0
 
     # 2. Strict Hemisphere Partitioning & Smooth Lateral Boost:
     # angle2 (left view) only contributes to patient left (X >= -0.01)

@@ -102,18 +102,22 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
   const [canManuallySkip, setCanManuallySkip] = useState(false);
 
   // Native ARKit TrueDepth Bridge State
-  const [isArkitAvailable, setIsArkitAvailable] = useState(false);
+  // 2026-09-07 fix (react-hooks/set-state-in-effect) — `window.webkit
+  // .messageHandlers.arkitScanBridge` is injected by the native app BEFORE
+  // this page's own script ever runs (WKUserContentController.add is called
+  // in makeUIView, before webView.load), so it is already a stable, correct
+  // read at first render — no effect/subscription needed. A lazy `useState`
+  // initializer reads it once, purely, during render itself (never calls
+  // setState from inside an effect body), the same root-cause-fix pattern
+  // already used for this component's own mount effect elsewhere.
+  const [isArkitAvailable] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return Boolean(
+      (window as unknown as { webkit?: { messageHandlers?: { arkitScanBridge?: unknown } } })
+        ?.webkit?.messageHandlers?.arkitScanBridge
+    );
+  });
   const [isArkitScanning, setIsArkitScanning] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const hasBridge = Boolean(
-        (window as unknown as { webkit?: { messageHandlers?: { arkitScanBridge?: unknown } } })
-          ?.webkit?.messageHandlers?.arkitScanBridge
-      );
-      setIsArkitAvailable(hasBridge);
-    }
-  }, []);
 
   const lastSpokenTextRef = useRef<string>("");
   const lastSpokenTimeRef = useRef<number>(0);

@@ -44,7 +44,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     private var alignedSince: Date?
     private var isAutoCapturing = false
-    private let holdDurationSeconds: Double = 0.55
+    // 2026-09-07 fix — raised from 0.55s: combined with the previously
+    // unbounded angle bands (see updateGuidance's own fix note above),
+    // 0.55s let a fast, continuous head turn auto-capture a target it was
+    // only passing through, not stopping at. Real-device complaint: "quét
+    // rất nhanh, tôi không làm được gì" (scans very fast, I couldn't do
+    // anything). 0.9s is still fast enough not to feel laggy once the bands
+    // are correctly bounded, but long enough that a genuine sweep-through
+    // (not a deliberate stop) won't hold long enough to trigger.
+    private let holdDurationSeconds: Double = 0.9
     
     public override init() {
         super.init()
@@ -140,28 +148,33 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
         
+        // 2026-09-07 fix — real-device test found this scanning "very fast,
+        // couldn't do anything" (5/5 marked done while the live angle
+        // reading was nowhere near the last target). Root cause: this
+        // switch hardcoded its OWN separate yaw bands, disagreeing with the
+        // real per-step data model (`ScanAngleStep.targetYawDeg`/
+        // `yawToleranceDeg` in ScanModels.swift) that already exists and is
+        // even shown in the UI's own title/instruction text (e.g. "80°" for
+        // leftProfile/rightProfile) — but was never actually used here.
+        // Two concrete bugs from that: (1) `leftProfile`/`rightProfile` had
+        // NO upper bound at all (`yaw <= -50.0`, `yaw >= 50.0`) — ANY angle
+        // past 50° counted as "80°", including 51° or 179°; (2) `left45`'s
+        // band (-22..-68) overlapped `leftProfile`'s effectively-unbounded
+        // one, so a single continuous head turn could satisfy BOTH targets
+        // within the same short sweep. Now driven by the one real model
+        // (symmetric tolerance around the actual target), so a fast sweep
+        // genuinely cannot satisfy a target it hasn't reached.
         let yaw = currentYawDeg
-        var matched = false
-        var message = ""
-        
-        switch currentStep {
-        case .front:
-            matched = abs(yaw) <= 18.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nhìn thẳng..." : "1/5: Nhìn thẳng vào camera (0°)"
-        case .left45:
-            matched = (yaw <= -22.0 && yaw >= -68.0) || (cameraPosition == .back && yaw >= 22.0 && yaw <= 68.0)
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng trái..." : "2/5: Quay mặt sang TRÁI 45°"
-        case .leftProfile:
-            matched = (yaw <= -50.0) || (cameraPosition == .back && yaw >= 50.0)
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện trái..." : "3/5: Quay hẳn ngang sang TRÁI (80°)"
-        case .right45:
-            matched = (yaw >= 22.0 && yaw <= 68.0) || (cameraPosition == .back && yaw <= -22.0 && yaw >= -68.0)
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng phải..." : "4/5: Quay mặt sang PHẢI 45°"
-        case .rightProfile:
-            matched = (yaw >= 50.0) || (cameraPosition == .back && yaw <= -50.0)
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện phải..." : "5/5: Quay hẳn ngang sang PHẢI (80°)"
-        }
-        
+        let target = currentStep.targetYawDeg
+        let tolerance = currentStep.yawToleranceDeg
+        // Rear camera mirrors left/right in this project's own convention
+        // (same real photography-geometry reasoning already documented in
+        // the web app's camera-normalization.ts) — flip the effective
+        // target's sign, not the tolerance.
+        let effectiveTarget = (cameraPosition == .back) ? -target : target
+        let matched = abs(yaw - effectiveTarget) <= tolerance
+        let message = matched ? "✓ ĐÚNG GÓC: Giữ yên..." : currentStep.title
+
         isPoseAligned = matched
         guidanceFeedback = message
     }
