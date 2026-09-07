@@ -9,12 +9,19 @@ import AVFoundation
 import UIKit
 import Combine
 
+public enum CameraPosition: String {
+    case front = "front"
+    case back = "back"
+}
+
 public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDelegate {
     
     // Observable UI states
     @Published public var isTrueDepthSupported: Bool = false
     @Published public var isCameraAuthorized: Bool = false
     @Published public var isTracking: Bool = false
+    @Published public var cameraPosition: CameraPosition = .front
+    
     @Published public var currentYawDeg: Float = 0.0
     @Published public var currentPitchDeg: Float = 0.0
     @Published public var currentDistanceMeters: Float = 0.45
@@ -22,15 +29,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var capturedFrames: [ScanAngleStep: CapturedFramePackage] = [:]
     @Published public var guidanceFeedback: String = "Đang khởi động camera..."
     @Published public var isPoseAligned: Bool = false
+    @Published public var holdProgress: Float = 0.0
     
     public let arSession = ARSession()
     private var currentFrame: ARFrame?
     private var currentFaceAnchor: ARFaceAnchor?
 
-    // D-autocapture — dwell timer + re-entrancy guard for automatic
-    // capture (see evaluateAutoCapture below).
     private var alignedSince: Date?
     private var isAutoCapturing = false
+    private let holdDurationSeconds: Double = 0.55
     
     public override init() {
         super.init()
@@ -58,17 +65,36 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
     
     public func startSession() {
-        guard isTrueDepthSupported else {
-            self.guidanceFeedback = "Thiết bị không có camera TrueDepth (Cần iPhone X trở lên hoặc iPad Pro)."
-            return
+        arSession.pause()
+        
+        if cameraPosition == .front {
+            guard isTrueDepthSupported else {
+                self.guidanceFeedback = "Thiết bị không hỗ trợ camera TrueDepth trước."
+                return
+            }
+            let config = ARFaceTrackingConfiguration()
+            config.isLightEstimationEnabled = true
+            config.maximumNumberOfTrackedFaces = 1
+            arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
+            self.guidanceFeedback = "Camera trước TrueDepth: Nhìn thẳng vào màn hình"
+        } else {
+            let config = ARWorldTrackingConfiguration()
+            if ARWorldTrackingConfiguration.supportsUserFaceTracking {
+                config.userFaceTrackingEnabled = true
+            }
+            if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) {
+                config.frameSemantics.insert(.sceneDepth)
+            }
+            arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
+            self.guidanceFeedback = "Camera sau: Hướng camera vào khuôn mặt bệnh nhân"
         }
-        
-        let config = ARFaceTrackingConfiguration()
-        config.isLightEstimationEnabled = true
-        config.maximumNumberOfTrackedFaces = 1
-        
-        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
-        self.guidanceFeedback = "Đang tìm khuôn mặt..."
+    }
+    
+    public func switchCamera() {
+        cameraPosition = (cameraPosition == .front) ? .back : .front
+        alignedSince = nil
+        holdProgress = 0.0
+        startSession()
     }
     
     public func pauseSession() {
@@ -100,9 +126,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     
     private func updateGuidance() {
         guard isTracking else {
-            guidanceFeedback = "Đang tìm khuôn mặt — Hãy nhìn vào màn hình"
+            guidanceFeedback = (cameraPosition == .front) ? "Đang tìm khuôn mặt — Hãy nhìn vào màn hình" : "Đang tìm khuôn mặt — Hướng camera vào bệnh nhân"
             isPoseAligned = false
             alignedSince = nil
+            holdProgress = 0.0
             return
         }
         
@@ -112,20 +139,20 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         
         switch currentStep {
         case .front:
-            matched = abs(yaw) <= 15.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nhìn thẳng" : "Nhìn thẳng vào camera (0°)"
+            matched = abs(yaw) <= 18.0
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nhìn thẳng..." : "1/5: Nhìn thẳng vào camera (0°)"
         case .left45:
-            matched = yaw <= -25.0 && yaw >= -65.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng trái" : "Từ từ quay mặt sang Trái 45°"
+            matched = (yaw <= -22.0 && yaw >= -68.0) || (cameraPosition == .back && yaw >= 22.0 && yaw <= 68.0)
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng trái..." : "2/5: Quay mặt sang TRÁI 45°"
         case .leftProfile:
-            matched = yaw <= -55.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện trái" : "Quay ngang hẳn sang Trái (70°-90°)"
+            matched = (yaw <= -50.0) || (cameraPosition == .back && yaw >= 50.0)
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện trái..." : "3/5: Quay hẳn ngang sang TRÁI (80°)"
         case .right45:
-            matched = yaw >= 25.0 && yaw <= 65.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng phải" : "Từ từ quay mặt sang Phải 45°"
+            matched = (yaw >= 22.0 && yaw <= 68.0) || (cameraPosition == .back && yaw <= -22.0 && yaw >= -68.0)
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên nghiêng phải..." : "4/5: Quay mặt sang PHẢI 45°"
         case .rightProfile:
-            matched = yaw >= 55.0
-            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện phải" : "Quay ngang hẳn sang Phải (70°-90°)"
+            matched = (yaw >= 50.0) || (cameraPosition == .back && yaw <= -50.0)
+            message = matched ? "✓ ĐÚNG GÓC: Giữ yên trắc diện phải..." : "5/5: Quay hẳn ngang sang PHẢI (80°)"
         }
         
         isPoseAligned = matched
@@ -136,31 +163,41 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     private func evaluateAutoCapture() {
         guard capturedFrames.count < ScanAngleStep.allCases.count else {
             alignedSince = nil
+            holdProgress = 0.0
             return
         }
         guard isPoseAligned, !isAutoCapturing else {
             alignedSince = nil
+            holdProgress = 0.0
             return
         }
         let now = Date()
         guard let since = alignedSince else {
             alignedSince = now
+            holdProgress = 0.1
             return
         }
         
-        // Cần giữ yên đúng góc 0.6 giây để chống rung nhòe và tránh chụp liên tiếp
-        guard now.timeIntervalSince(since) >= 0.6 else {
+        let elapsed = now.timeIntervalSince(since)
+        holdProgress = min(1.0, Float(elapsed / holdDurationSeconds))
+        
+        guard elapsed >= holdDurationSeconds else {
             return
         }
 
         alignedSince = nil
+        holdProgress = 1.0
         isAutoCapturing = true
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+        
+        let generator = UIImpactFeedbackGenerator(style: .heavy)
+        generator.prepare()
+        generator.impactOccurred()
+        
         do {
             try captureCurrentStep()
         } catch {
             isAutoCapturing = false
-            guidanceFeedback = "Lỗi tự động chụp — hãy bấm nút chụp thủ công bên dưới."
+            guidanceFeedback = "Lỗi tự động chụp — Hãy bấm nút chụp thủ công bên dưới."
         }
     }
 
@@ -296,6 +333,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             self.capturedFrames[self.currentStep] = package
             self.advanceToNextStep()
             self.isAutoCapturing = false
+            self.holdProgress = 0.0
         }
     }
     
@@ -309,11 +347,26 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         }
     }
     
+    public func retakePreviousStep() {
+        let allSteps = ScanAngleStep.allCases
+        guard let currentIndex = allSteps.firstIndex(of: currentStep), currentIndex > 0 else {
+            return
+        }
+        let prevStep = allSteps[currentIndex - 1]
+        capturedFrames.removeValue(forKey: prevStep)
+        currentStep = prevStep
+        alignedSince = nil
+        holdProgress = 0.0
+        isAutoCapturing = false
+        guidanceFeedback = "Đang chụp lại góc: \(prevStep.title)"
+    }
+    
     public func resetScan() {
         self.capturedFrames.removeAll()
         self.currentStep = .front
         self.guidanceFeedback = "Đã sẵn sàng quét lại."
         self.alignedSince = nil
+        self.holdProgress = 0.0
         self.isAutoCapturing = false
     }
 }

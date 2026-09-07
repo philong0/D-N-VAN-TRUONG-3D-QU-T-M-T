@@ -125,9 +125,6 @@ public final class ArkitScanBridge: NSObject, ObservableObject, WKScriptMessageH
             sessionId: sessionId,
             frames: captureSession.capturedFrames
         ) { [weak self] result in
-            DispatchQueue.main.async {
-                self?.isPresentingScanner = false
-            }
             switch result {
             case .success:
                 self?.resolve(requestId, payload: ["fileUrl": fileUrl, "vertexCount": vertexCount])

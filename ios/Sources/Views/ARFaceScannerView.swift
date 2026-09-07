@@ -37,7 +37,7 @@ public struct ARFaceScannerView: View {
             
             // 2. Clinical HUD & Guidance Overlay
             VStack {
-                // Top Progress Bar & Close Button
+                // Top Header: Close, Title, Camera Switch, Progress
                 VStack(spacing: 8) {
                     HStack {
                         Button {
@@ -45,24 +45,45 @@ public struct ARFaceScannerView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(.white.opacity(0.8))
+                                .foregroundColor(.white.opacity(0.85))
                         }
                         
                         Text(captureSession.currentStep.title)
-                            .font(.headline)
+                            .font(.system(size: 16, weight: .bold))
                             .foregroundColor(.white)
+                        
                         Spacer()
-                        Text("\(captureSession.capturedFrames.count) / 5 Đạt")
+                        
+                        // Switch Front / Back Camera Button
+                        Button {
+                            captureSession.switchCamera()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "camera.rotate.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text(captureSession.cameraPosition == .front ? "Cam Trước" : "Cam Sau")
+                                    .font(.system(size: 12, weight: .bold))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color.blue.opacity(0.8))
+                            .cornerRadius(12)
+                        }
+                        
+                        Text("\(captureSession.capturedFrames.count)/5")
                             .font(.subheadline)
                             .bold()
                             .foregroundColor(.green)
+                            .padding(.leading, 4)
                     }
                     .padding(.horizontal)
                     
+                    // 5 Progress segments
                     HStack(spacing: 6) {
                         ForEach(ScanAngleStep.allCases) { step in
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(captureSession.capturedFrames[step] != nil ? Color.green : (step == captureSession.currentStep ? Color.blue : Color.gray.opacity(0.4)))
+                                .fill(captureSession.capturedFrames[step] != nil ? Color.green : (step == captureSession.currentStep ? Color.yellow : Color.gray.opacity(0.4)))
                                 .frame(height: 6)
                         }
                     }
@@ -76,11 +97,22 @@ public struct ARFaceScannerView: View {
                 
                 Spacer()
                 
-                // Center Face Reticle Oval
+                // Center Face Reticle Oval with Hold Progress Ring
                 ZStack {
+                    // Outer guide oval
                     Ellipse()
-                        .stroke(captureSession.isPoseAligned ? Color.green : Color.white.opacity(0.6), lineWidth: captureSession.isPoseAligned ? 4 : 2)
+                        .stroke(captureSession.isPoseAligned ? Color.green : Color.white.opacity(0.5), lineWidth: captureSession.isPoseAligned ? 4 : 2)
                         .frame(width: 260, height: 350)
+                    
+                    // Circular hold progress indicator when aligned
+                    if captureSession.isPoseAligned && captureSession.holdProgress > 0.0 {
+                        Circle()
+                            .trim(from: 0.0, to: CGFloat(captureSession.holdProgress))
+                            .stroke(Color.green, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                            .frame(width: 90, height: 90)
+                            .rotationEffect(.degrees(-90))
+                            .animation(.linear(duration: 0.1), value: captureSession.holdProgress)
+                    }
                     
                     // Crosshair Alignment Mark
                     Image(systemName: "plus")
@@ -91,54 +123,86 @@ public struct ARFaceScannerView: View {
                 Spacer()
                 
                 // Bottom Feedback and Capture Controls
-                VStack(spacing: 16) {
+                VStack(spacing: 14) {
                     // Guidance Pill
-                    Text(captureSession.guidanceFeedback)
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(captureSession.isPoseAligned ? .green : .yellow)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 10)
-                        .background(Color.black.opacity(0.85))
-                        .cornerRadius(20)
-                    
-                    // Angle Metrics
-                    HStack(spacing: 20) {
-                        Text(String(format: "Góc: %.1f°", captureSession.currentYawDeg))
-                            .font(.caption)
-                            .bold()
-                            .foregroundColor(.white)
-                        Text(String(format: "Cự ly: %.2fm", captureSession.currentDistanceMeters))
-                            .font(.caption)
-                            .bold()
-                            .foregroundColor(.white)
-                    }
-                    
-                    // Big Shutter Button (Allows manual capture anytime)
-                    Button(action: {
-                        do {
-                            try captureSession.captureCurrentStep()
-                            if captureSession.capturedFrames.count >= 5 {
-                                isCompleted = true
-                            }
-                        } catch {
-                            print("Capture error:", error)
+                    VStack(spacing: 4) {
+                        Text(captureSession.guidanceFeedback)
+                            .font(.system(size: 15, weight: .black))
+                            .foregroundColor(captureSession.isPoseAligned ? .green : .yellow)
+                            .multilineTextAlignment(.center)
+                        
+                        if !captureSession.isPoseAligned && captureSession.isTracking {
+                            Text(captureSession.currentStep.instruction)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white.opacity(0.8))
                         }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "camera.fill")
-                                .font(.title3)
-                            Text("BẤM CHỤP GÓC NÀY (\(captureSession.capturedFrames.count)/5)")
-                                .font(.system(size: 14, weight: .black))
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(Color.black.opacity(0.85))
+                    .cornerRadius(20)
+                    
+                    // Angle & Distance Telemetry
+                    HStack(spacing: 24) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "gyroscope")
+                                .font(.caption)
+                            Text(String(format: "Góc: %.1f°", captureSession.currentYawDeg))
+                                .font(.caption)
+                                .bold()
                         }
                         .foregroundColor(.white)
-                        .padding(.horizontal, 24)
-                        .padding(.vertical, 14)
-                        .background(captureSession.isPoseAligned ? Color.green : Color.blue)
-                        .cornerRadius(30)
-                        .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
+                        
+                        HStack(spacing: 4) {
+                            Image(systemName: "ruler.fill")
+                                .font(.caption)
+                            Text(String(format: "Cự ly: %.2fm", captureSession.currentDistanceMeters))
+                                .font(.caption)
+                                .bold()
+                        }
+                        .foregroundColor(.white)
                     }
-                    .disabled(!captureSession.isTracking)
+                    
+                    // Bottom Buttons Row: Retake, Big Shutter, Reset
+                    HStack(spacing: 16) {
+                        // Retake Previous Step Button
+                        if captureSession.capturedFrames.count > 0 {
+                            Button {
+                                captureSession.retakePreviousStep()
+                            } label: {
+                                Image(systemName: "arrow.uturn.backward.circle.fill")
+                                    .font(.system(size: 32))
+                                    .foregroundColor(.orange)
+                            }
+                            .accessibilityLabel("Chụp lại góc trước")
+                        }
+                        
+                        // Big Shutter Button
+                        Button(action: {
+                            do {
+                                try captureSession.captureCurrentStep()
+                                if captureSession.capturedFrames.count >= 5 {
+                                    isCompleted = true
+                                }
+                            } catch {
+                                print("Capture error:", error)
+                            }
+                        }) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "camera.fill")
+                                    .font(.title3)
+                                Text(captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
+                                    .font(.system(size: 15, weight: .black))
+                            }
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 26)
+                            .padding(.vertical, 15)
+                            .background(captureSession.isPoseAligned ? Color.green : Color.blue)
+                            .cornerRadius(30)
+                            .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
+                        }
+                        .disabled(!captureSession.isTracking)
+                    }
                     .padding(.bottom, 25)
                 }
             }

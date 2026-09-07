@@ -53,10 +53,6 @@ public struct RootView: View {
                         ARFaceScannerView(
                             captureSession: scanBridge.captureSession,
                             isCompleted: Binding(
-                                get: { !scanBridge.isPresentingScanner },
-                                set: { if $0 { scanBridge.isPresentingScanner = false } }
-                            )
-                        )
                     }
             } else {
                 VStack(spacing: 16) {

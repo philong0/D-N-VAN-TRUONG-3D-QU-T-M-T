@@ -17,41 +17,41 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     
     public var title: String {
         switch self {
-        case .front: return "Chính Diện 0°"
-        case .left45: return "Nghiêng Trái 45°"
-        case .leftProfile: return "Góc Nghiêng Trái 60°-75°"
-        case .right45: return "Nghiêng Phải 45°"
-        case .rightProfile: return "Góc Nghiêng Phải 60°-75°"
+        case .front: return "1/5: Chính Diện (0°)"
+        case .left45: return "2/5: Nghiêng Trái (45°)"
+        case .leftProfile: return "3/5: Trắc Diện Trái (80°)"
+        case .right45: return "4/5: Nghiêng Phải (45°)"
+        case .rightProfile: return "5/5: Trắc Diện Phải (80°)"
         }
     }
     
     public var targetYawDeg: Float {
         switch self {
         case .front: return 0.0
-        case .left45: return -30.0
-        case .leftProfile: return -50.0
-        case .right45: return 30.0
-        case .rightProfile: return 50.0
+        case .left45: return -45.0
+        case .leftProfile: return -80.0
+        case .right45: return 45.0
+        case .rightProfile: return 80.0
         }
     }
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 20.0
-        case .left45: return 25.0
-        case .leftProfile: return 28.0
-        case .right45: return 25.0
-        case .rightProfile: return 28.0
+        case .front: return 18.0
+        case .left45: return 22.0
+        case .leftProfile: return 25.0
+        case .right45: return 22.0
+        case .rightProfile: return 25.0
         }
     }
     
     public var instruction: String {
         switch self {
-        case .front: return "Nhìn thẳng vào camera, giữ nét mặt tự nhiên"
-        case .left45: return "Từ từ quay đầu sang bên phải của bạn (máy nghiêng trái)"
-        case .leftProfile: return "Nghiêng sâu hơn sang phải để lấy đường viền sống mũi"
-        case .right45: return "Từ từ quay đầu sang bên trái của bạn (máy nghiêng phải)"
-        case .rightProfile: return "Nghiêng sâu hơn sang trái để lấy đường viền đối diện"
+        case .front: return "Nhìn thẳng trực tiếp vào camera (0°)"
+        case .left45: return "Từ từ xoay mặt sang TRÁI một góc 45°"
+        case .leftProfile: return "Quay hẳn mặt sang TRÁI (góc ngang 80°)"
+        case .right45: return "Từ từ xoay mặt sang PHẢI một góc 45°"
+        case .rightProfile: return "Quay hẳn mặt sang PHẢI (góc ngang 80°)"
         }
     }
 }
