@@ -1,0 +1,31 @@
+workflows:
+  ios-scanner:
+    name: Dr Van Truong 3D Scanner iOS App
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      xcode: latest
+      cocoapods: default
+      vars:
+        XCODE_PROJECT: "ios/DrVanTruongScanner.xcodeproj"
+        XCODE_SCHEME: "DrVanTruongScanner"
+    scripts:
+      - name: Initialize & Validate project files
+        script: |
+          echo "Project Directory Structure:"
+          ls -la ios/
+          ls -la ios/Sources/
+      - name: Build iOS Application
+        script: |
+          xcode-project build-ipa \
+            --project "$XCODE_PROJECT" \
+            --scheme "$XCODE_SCHEME" \
+            --archive-flags "-destination 'generic/platform=iOS'" \
+            --ipa-directory "build/ios/ipa" || {
+              echo "Building xcarchive artifact..."
+              xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -destination 'generic/platform=iOS' clean archive -archivePath build/DrVanTruongScanner.xcarchive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
+            }
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - build/DrVanTruongScanner.xcarchive
+      - /tmp/xcodebuild_logs/*.log
