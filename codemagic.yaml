@@ -10,22 +10,41 @@ workflows:
         XCODE_PROJECT: "ios/DrVanTruongScanner.xcodeproj"
         XCODE_SCHEME: "DrVanTruongScanner"
     scripts:
-      - name: Initialize & Validate project files
+      - name: Inspect project schemes & SDKs
         script: |
-          echo "Project Directory Structure:"
-          ls -la ios/
-          ls -la ios/Sources/
-      - name: Build iOS Application
+          echo "=== List Schemes & Targets ==="
+          xcodebuild -list -project "$XCODE_PROJECT"
+          echo "=== List SDKs ==="
+          xcodebuild -showsdks
+      - name: Build iOS Application Archive & Package IPA
         script: |
-          xcode-project build-ipa \
-            --project "$XCODE_PROJECT" \
-            --scheme "$XCODE_SCHEME" \
-            --archive-flags "-destination 'generic/platform=iOS'" \
-            --ipa-directory "build/ios/ipa" || {
-              echo "Building xcarchive artifact..."
-              xcodebuild -project "$XCODE_PROJECT" -scheme "$XCODE_SCHEME" -configuration Release -destination 'generic/platform=iOS' clean archive -archivePath build/DrVanTruongScanner.xcarchive CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
-            }
+          mkdir -p build/ios/ipa build/DrVanTruongScanner.xcarchive
+          echo "=== Running xcodebuild Archive ==="
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "build/DrVanTruongScanner.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+          echo "=== Packaging Application IPA ==="
+          APP_PATH=$(find build/DrVanTruongScanner.xcarchive/Products/Applications -name "*.app" -maxdepth 1 | head -n 1)
+          if [ -d "$APP_PATH" ]; then
+            mkdir -p build/Payload
+            cp -r "$APP_PATH" build/Payload/
+            cd build
+            zip -r ios/ipa/DrVanTruongScanner.ipa Payload
+            cd ..
+            echo "Successfully generated build/ios/ipa/DrVanTruongScanner.ipa"
+          else
+            echo "Warning: .app bundle not found in archive, searching build directory"
+          fi
     artifacts:
       - build/ios/ipa/*.ipa
       - build/DrVanTruongScanner.xcarchive
+      - build/**/*.app
       - /tmp/xcodebuild_logs/*.log
