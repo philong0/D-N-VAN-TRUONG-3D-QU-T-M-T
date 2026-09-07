@@ -130,6 +130,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         guard let since = alignedSince else {
             alignedSince = now
             return
+        }
 
         alignedSince = nil
         isAutoCapturing = true
