@@ -71,10 +71,10 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    // Do not ship an expiring quick-tunnel as the app's destination. Once it
-    // expires WKWebView has no useful UI and the scanner looks as if it never
-    // opened. A clinic must explicitly configure its stable HTTPS endpoint.
-    @AppStorage("clinicServerURL") private var serverURLString: String = ""
+    // Stable deployed Web Studio endpoint. The settings sheet still lets a
+    // clinic override this with its own HTTPS domain, but a fresh install
+    // must never open into a blank, unconfigured WKWebView.
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://long-hqp7.vercel.app"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
