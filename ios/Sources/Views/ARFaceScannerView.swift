@@ -195,7 +195,7 @@ public struct ARFaceScannerView: View {
                             HStack(spacing: 8) {
                                 Image(systemName: "camera.fill")
                                     .font(.title3)
-                                Text(captureSession.capturedFrames.count >= 5 ? "ĐANG XỬ LÝ..." : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
+                                Text(captureSession.isUploading ? "ĐANG TẢI LÊN..." : (captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)"))
                                     .font(.system(size: 15, weight: .black))
                             }
                             .foregroundColor(.white)
@@ -205,7 +205,7 @@ public struct ARFaceScannerView: View {
                             .cornerRadius(30)
                             .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(!captureSession.isTracking || captureSession.isUploading || captureSession.isAutoCapturing)
+                        .disabled(!captureSession.isTracking || captureSession.isUploading || captureSession.isAutoCapturing || captureSession.capturedFrames.count >= 5)
                     }
                     .padding(.bottom, 25)
                 }

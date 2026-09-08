@@ -82,19 +82,29 @@ public struct CameraRelativeFacePose {
     public init(faceToCamera transform: simd_float4x4) {
         self.transform = transform
         
-        // Head forward vector in camera space (column 2)
+        // Raw head vectors in ARKit camera sensor coordinates
         let fwdX = transform.columns.2.x
         let fwdY = transform.columns.2.y
         let fwdZ = transform.columns.2.z
         
-        // Head up vector in camera space (column 1)
         let upX = transform.columns.1.x
         let upY = transform.columns.1.y
         
-        // When facing camera directly: fwdX ~ 0, fwdY ~ 0, fwdZ ~ -1
-        let yaw = atan2(fwdX, -fwdZ) * 180.0 / .pi
-        let pitch = atan2(fwdY, sqrt(fwdX * fwdX + fwdZ * fwdZ)) * 180.0 / .pi
-        let roll = atan2(upX, upY) * 180.0 / .pi
+        // In iPhone Portrait orientation (device held upright):
+        // Screen Right (+X) = Sensor +Y
+        // Screen Up (+Y) = Sensor -X
+        // Screen Towards User (+Z) = Sensor +Z
+        let screenFwdX = fwdY
+        let screenFwdY = -fwdX
+        let screenFwdZ = fwdZ
+        
+        let screenUpX = upY
+        let screenUpY = -upX
+        
+        // When facing camera directly: screenFwd ~ [0, 0, 1], screenUp ~ [0, 1] -> Yaw=0°, Pitch=0°, Roll=0°
+        let yaw = atan2(screenFwdX, screenFwdZ) * 180.0 / .pi
+        let pitch = atan2(screenFwdY, sqrt(screenFwdX * screenFwdX + screenFwdZ * screenFwdZ)) * 180.0 / .pi
+        let roll = atan2(screenUpX, screenUpY) * 180.0 / .pi
         
         self.yawDeg = yaw
         self.pitchDeg = pitch
