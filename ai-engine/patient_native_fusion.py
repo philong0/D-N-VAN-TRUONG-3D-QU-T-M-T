@@ -479,16 +479,14 @@ class PatientNativeReconstructor:
                 triangles = frame.get("arface_triangles")
                 if (vertices is None or vertices.shape != (1220, 3)
                         or triangles is None or triangles.shape != (2304, 3)
-                        or frame.get("intrinsics") is None
-                        or frame.get("depth_intrinsics") is None
-                        or frame.get("depth_f32") is None):
+                        or frame.get("intrinsics") is None):
                     invalid.append(view)
             if missing or invalid:
                 detail = []
                 if missing:
                     detail.append("missing RGB views: " + ", ".join(missing))
                 if invalid:
-                    detail.append("missing/incomplete metric ARKit data: " + ", ".join(invalid))
+                    detail.append("missing/incomplete ARKit geometry: " + ", ".join(invalid))
                 raise ValueError("Native TrueDepth package is incomplete (" + "; ".join(detail) + ").")
 
         # Check if native ARFaceGeometry is available across frames
