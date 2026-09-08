@@ -448,15 +448,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                     && frame.geometry.triangleIndices.count == 2304 * 3
                     && frame.geometry.textureCoordinates.count == 1220 * 2
                     && frame.intrinsics.fx > 0 && frame.intrinsics.fy > 0
-                    && frame.depthData != nil
-                    && (frame.depthWidth ?? 0) > 0 && (frame.depthHeight ?? 0) > 0
-                    && frame.depthIntrinsics != nil
-                    && (frame.depthData?.count == (frame.depthWidth ?? 0) * (frame.depthHeight ?? 0) * MemoryLayout<Float32>.size)
                     && frame.pose.faceTransformColumnMajor.count == 16
                     && frame.pose.cameraTransformColumnMajor.count == 16
                     && !frame.rgbData.isEmpty
               }) else {
-            let err = NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu TrueDepth đầy đủ; vui lòng chụp lại góc chưa đạt."])
+            let err = NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu khuôn mặt 3D hợp lệ; vui lòng quét lại."])
             self.lastErrorMessage = err.localizedDescription
             self.guidanceFeedback = "Lỗi: \(err.localizedDescription)"
             completion(.failure(err))

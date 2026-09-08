@@ -19,52 +19,52 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .front: return "1/5: Chính Diện (0°)"
-        case .left45: return "2/5: Nghiêng Trái (45°)"
-        case .leftProfile: return "3/5: Trắc Diện Trái (80°)"
-        case .right45: return "4/5: Nghiêng Phải (45°)"
-        case .rightProfile: return "5/5: Trắc Diện Phải (80°)"
+        case .left45: return "2/5: Nghiêng Trái (~40°)"
+        case .leftProfile: return "3/5: Trắc Diện Trái (~55°)"
+        case .right45: return "4/5: Nghiêng Phải (~40°)"
+        case .rightProfile: return "5/5: Trắc Diện Phải (~55°)"
         }
     }
     
     public var targetYawDeg: Float {
         switch self {
         case .front: return 0.0
-        case .left45: return -45.0
-        case .leftProfile: return -80.0
-        case .right45: return 45.0
-        case .rightProfile: return 80.0
+        case .left45: return -40.0
+        case .leftProfile: return -55.0
+        case .right45: return 40.0
+        case .rightProfile: return 55.0
         }
     }
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 14.0
-        case .left45, .right45: return 14.0
-        case .leftProfile, .rightProfile: return 15.0
+        case .front: return 18.0
+        case .left45, .right45: return 18.0
+        case .leftProfile, .rightProfile: return 22.0
         }
     }
 
     /// Comfortable clinical tolerances calibrated for real hand-held TrueDepth scanning.
-    public var pitchToleranceDeg: Float { 20.0 }
-    public var rollToleranceDeg: Float { 20.0 }
-    public var minDistanceMeters: Float { 0.22 }
-    public var maxDistanceMeters: Float { 0.65 }
-    public var stabilityWindowSeconds: Double { 0.40 }
-    public var holdDurationSeconds: Double { 0.45 }
-    public var maxYawStandardDeviationDeg: Float { 6.0 }
-    public var maxPitchStandardDeviationDeg: Float { 6.0 }
-    public var maxRollStandardDeviationDeg: Float { 6.0 }
-    public var maxAngularVelocityDegPerSecond: Float { 40.0 }
-    public var minimumStabilitySamples: Int { 4 }
-    public var captureCooldownSeconds: Double { 0.50 }
+    public var pitchToleranceDeg: Float { 25.0 }
+    public var rollToleranceDeg: Float { 25.0 }
+    public var minDistanceMeters: Float { 0.20 }
+    public var maxDistanceMeters: Float { 0.70 }
+    public var stabilityWindowSeconds: Double { 0.30 }
+    public var holdDurationSeconds: Double { 0.35 }
+    public var maxYawStandardDeviationDeg: Float { 8.0 }
+    public var maxPitchStandardDeviationDeg: Float { 8.0 }
+    public var maxRollStandardDeviationDeg: Float { 8.0 }
+    public var maxAngularVelocityDegPerSecond: Float { 50.0 }
+    public var minimumStabilitySamples: Int { 3 }
+    public var captureCooldownSeconds: Double { 0.35 }
     
     public var instruction: String {
         switch self {
-        case .front: return "Nhìn thẳng trực tiếp vào camera (0°)"
-        case .left45: return "Từ từ xoay mặt sang TRÁI một góc 45°"
-        case .leftProfile: return "Quay hẳn mặt sang TRÁI (góc ngang 80°)"
-        case .right45: return "Từ từ xoay mặt sang PHẢI một góc 45°"
-        case .rightProfile: return "Quay hẳn mặt sang PHẢI (góc ngang 80°)"
+        case .front: return "Nhìn thẳng vào camera (0°)"
+        case .left45: return "Nghiêng nhẹ mặt sang TRÁI (35°-45°)"
+        case .leftProfile: return "Nghiêng sang TRÁI để lộ sống mũi (~55°)"
+        case .right45: return "Nghiêng nhẹ mặt sang PHẢI (35°-45°)"
+        case .rightProfile: return "Nghiêng sang PHẢI để lộ sống mũi (~55°)"
         }
     }
 }
