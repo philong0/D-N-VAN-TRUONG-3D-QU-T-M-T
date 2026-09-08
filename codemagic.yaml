@@ -40,7 +40,9 @@ workflows:
       - "*.ipa"
       - build/DrVanTruongScanner.xcarchive
       - build/**/*.app
-  ios-scanner-build:
+  # Keep this stable identifier: the existing Codemagic application and
+  # manual-build links invoke `ios-scanner` by ID.
+  ios-scanner:
     name: DrVanTruong Scanner — signed iPhone IPA
     instance_type: mac_mini_m2
     max_build_duration: 60
