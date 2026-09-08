@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+/* Viện Thẩm Mỹ Văn Trường — Clean Medical Light Mode (White + Brand Red).
+   Tailwind v4 is CSS-first — this @theme block is the "tailwind.config" for
+   this project; no tailwind.config.ts is read by @tailwindcss/postcss. Every
+   --color-x token below becomes a matching bg, text and border utility
+   automatically. No blue/cyan/teal anywhere in this palette by design. */
+:root {
+  --background: #f6f5f3;
+  --foreground: #1d2428;
+  --card: #ffffff;
+  --card-foreground: #172126;
+  --border-color: #e7e5e1;
+  --muted: #667078;
+  --muted-bg: #f2f1ef;
+  --sidebar-bg: #fbfaf8;
+
+  /* Brand Crimson Red */
+  --accent: #a74048;
+  --accent-foreground: #ffffff;
+  --accent-hover: #8e353c;
+  --accent-active: #732b31;
+  --accent-glow: 0 8px 22px rgba(167, 64, 72, 0.22);
+
+  /* Semantic status colors, darkened for AA-readable text on white/pale fills */
+  --warning: #b45309;
+  --danger: #b91c1c;
+  --success: #15803d;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-border: var(--border-color);
+  --color-muted: var(--muted);
+  --color-muted-bg: var(--muted-bg);
+  --color-sidebar-bg: var(--sidebar-bg);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-success: var(--success);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+html {
+  color-scheme: light;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+svg {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+  max-width: 100%;
+}
+
+* { -webkit-tap-highlight-color: transparent; box-sizing: border-box; }
+button, a, input, select, textarea { touch-action: manipulation; }
+
+/* Red neon glow slider thumbs — shared look for every <input type="range"> in the app. */
+input[type="range"] {
+  accent-color: var(--accent);
+}
+input[type="range"]::-webkit-slider-thumb {
+  box-shadow: var(--accent-glow);
+}
+input[type="range"]::-moz-range-thumb {
+  box-shadow: var(--accent-glow);
+}
+
+@media print {
+  body {
+    background: #ffffff;
+    color: #000000;
+  }
+}
