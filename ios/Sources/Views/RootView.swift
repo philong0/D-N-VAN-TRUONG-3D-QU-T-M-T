@@ -76,16 +76,11 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @StateObject private var nativeAPI = BackendAPIClient()
     // Stable deployed Web Studio endpoint. The settings sheet still lets a
     // clinic override this with its own HTTPS domain, but a fresh install
     // must never open into a blank, unconfigured WKWebView.
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://long-hqp7.vercel.app"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://polls-sympathy-audio-bunch.trycloudflare.com"
     @State private var showingSettings = false
-    @State private var showingNativeSetup = false
-    @State private var isNativeScanning = false
-    @State private var nativePatientId = ""
-    @State private var nativeSessionId = ""
     @State private var reloadTrigger = UUID()
 
     public init() {}
@@ -116,33 +111,16 @@ public struct RootView: View {
                 }
             }
 
-            // Native entry point is intentionally outside the WebView. It
-            // keeps real TrueDepth capture available even if the clinic web
-            // dashboard is temporarily unavailable or has a layout issue.
-            VStack(alignment: .trailing, spacing: 12) {
-                Button {
-                    nativeAPI.serverBaseURL = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
-                    showingNativeSetup = true
-                } label: {
-                    Label("Quét TrueDepth", systemImage: "faceid")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(Color.accentColor, in: Capsule())
-                        .shadow(radius: 4)
-                }
-
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Color.black.opacity(0.65), in: Circle())
-                        .shadow(radius: 4)
-                }
+            // Nút cài đặt nhỏ gọn, tinh tế ở góc dưới phải tránh che header
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(Color.black.opacity(0.65), in: Circle())
+                    .shadow(radius: 4)
             }
             .padding(.trailing, 16)
             .padding(.bottom, 70)
@@ -164,7 +142,6 @@ public struct RootView: View {
                         Button(action: {
                             let clean = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
                             UserDefaults.standard.set(clean, forKey: "clinicServerURL")
-                            nativeAPI.serverBaseURL = clean
                             reloadTrigger = UUID()
                             scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "http://localhost:3000")!))
                             showingSettings = false
@@ -183,36 +160,6 @@ public struct RootView: View {
                 .toolbar {
                     Button("Xong") { showingSettings = false }
                 }
-            }
-        }
-        .sheet(isPresented: $showingNativeSetup) {
-            ScanSessionSetupView(
-                apiClient: nativeAPI,
-                patientId: $nativePatientId,
-                sessionId: $nativeSessionId,
-                isScanningActive: $isNativeScanning
-            )
-        }
-        .fullScreenCover(isPresented: $isNativeScanning) {
-            ARFaceScannerView(
-                captureSession: scanBridge.captureSession,
-                isCompleted: $isNativeScanning
-            )
-        }
-        .onChange(of: isNativeScanning) { active in
-            guard active else { return }
-            scanBridge.captureSession.patientId = nativePatientId
-            scanBridge.captureSession.sessionId = nativeSessionId
-            scanBridge.captureSession.resetScan()
-            scanBridge.captureSession.onScanCompleted = { _ in
-                DispatchQueue.main.async {
-                    isNativeScanning = false
-                    showingNativeSetup = false
-                    reloadTrigger = UUID()
-                }
-            }
-            scanBridge.captureSession.onScanCancelled = {
-                DispatchQueue.main.async { isNativeScanning = false }
             }
         }
     }

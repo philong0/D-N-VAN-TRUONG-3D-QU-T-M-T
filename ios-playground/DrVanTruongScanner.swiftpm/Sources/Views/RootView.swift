@@ -46,6 +46,11 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
+        // The clinic web UI has mobile breakpoints. Without an explicit
+        // mobile preference WKWebView can use a desktop layout viewport,
+        // which activates `lg:` layout rules and shifts the page offscreen
+        // on an iPhone.
+        config.defaultWebpagePreferences.preferredContentMode = .mobile
 
         let webView = WKWebView(frame: .zero, configuration: config)
         bridge.webView = webView
@@ -71,7 +76,10 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://trip-conflicts-focus-curve.trycloudflare.com"
+    // Stable deployed Web Studio endpoint. The settings sheet still lets a
+    // clinic override this with its own HTTPS domain, but a fresh install
+    // must never open into a blank, unconfigured WKWebView.
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://polls-sympathy-audio-bunch.trycloudflare.com"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
@@ -95,7 +103,7 @@ public struct RootView: View {
             } else {
                 VStack(spacing: 16) {
                     Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
-                    Text("Bấm nút cài đặt để nhập địa chỉ web hiện tại của bạn.")
+                    Text("Bấm nút cài đặt để nhập địa chỉ HTTPS ổn định của Web Studio. Không dùng quick-tunnel tạm thời cho thiết bị lâm sàng.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
