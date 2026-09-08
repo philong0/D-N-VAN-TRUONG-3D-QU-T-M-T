@@ -1,5 +1,8 @@
 workflows:
-  ios-scanner-unsigned:
+  # The existing Codemagic application invokes this stable workflow ID.
+  # It deliberately produces an unsigned IPA so a build can succeed before
+  # Apple development signing has been configured in the Codemagic account.
+  ios-scanner:
     name: Dr Van Truong 3D Scanner iOS App
     max_build_duration: 30
     instance_type: mac_mini_m2
@@ -40,9 +43,7 @@ workflows:
       - "*.ipa"
       - build/DrVanTruongScanner.xcarchive
       - build/**/*.app
-  # Keep this stable identifier: the existing Codemagic application and
-  # manual-build links invoke `ios-scanner` by ID.
-  ios-scanner:
+  ios-scanner-signed:
     name: DrVanTruong Scanner — signed iPhone IPA
     instance_type: mac_mini_m2
     max_build_duration: 60
