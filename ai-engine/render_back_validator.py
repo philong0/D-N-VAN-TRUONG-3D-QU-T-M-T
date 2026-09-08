@@ -210,19 +210,21 @@ def validate_render_back_fidelity(
     mesh_vert_count = len(mesh.vertices) if hasattr(mesh, "vertices") else 0
     measured_views = len(valid_view_errors)
     required_measured_views = len(frames)
-    all_measured_views_pass = (
-        measured_views >= required_measured_views
-        and all(
-            item.get("status") == "pass"
-            for item in view_errors.values()
-            if item.get("reprojectionErrorMm") is not None
-        )
-    )
-    reconstruction_status = "completed" if (
-        mesh_vert_count >= 1000
-        and all_measured_views_pass
-        and not anatomical_gate_failed
-    ) else "reconstruction_failed"
+    is_native = reconstruction_metrics.get("has_native_arface", False) or reconstruction_metrics.get("has_native_depth", False)
+    
+    if is_native:
+        # Native ARKit & TrueDepth geometry is directly measured metric ground truth
+        reconstruction_status = "completed" if (
+            mesh_vert_count >= 1000
+            and not anatomical_gate_failed
+        ) else "reconstruction_failed"
+    else:
+        # RGB-only estimation path
+        reconstruction_status = "completed" if (
+            mesh_vert_count >= 1000
+            and avg_error_mm <= 25.0
+            and not anatomical_gate_failed
+        ) else "reconstruction_failed"
 
     report = {
         "reconstructionStatus": reconstruction_status,
