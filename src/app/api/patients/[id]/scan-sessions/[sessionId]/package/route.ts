@@ -139,7 +139,7 @@ export async function POST(
 
       let depthSaved = false;
       if (depthFile instanceof File) {
-        if (manifest.captureSource === "native_ios") {
+        if (manifest.captureSource === "native_ios" && typeof frameDTO.depthWidth === "number" && typeof frameDTO.depthHeight === "number") {
           const expectedBytes = (frameDTO.depthWidth as number) * (frameDTO.depthHeight as number) * Float32Array.BYTES_PER_ELEMENT;
           if (depthFile.size !== expectedBytes) {
             return NextResponse.json({ error: `Depth frame ${view} không đúng kích thước Float32 calibrated đã khai báo.` }, { status: 422 });
@@ -148,8 +148,6 @@ export async function POST(
         depthSaved = true;
         const depthBuffer = Buffer.from(await depthFile.arrayBuffer());
         await writeFile(path.join(dir, `${view}_depth.raw`), depthBuffer);
-      } else if (manifest.captureSource === "native_ios") {
-        return NextResponse.json({ error: `Thiếu depth frame calibrated cho góc ${view}.` }, { status: 422 });
       }
 
       const geometryDir = path.join(dir, "geometry");
