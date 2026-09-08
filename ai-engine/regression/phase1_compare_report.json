@@ -1,0 +1,65 @@
+{
+  "patients": [
+    {
+      "patient_id": "dca63e1a-7dad-4294-bc4b-69afe09f848f",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 0.0,
+      "shell_mean_pos_move_mm": 1.8071056110784411,
+      "shell_max_pos_move_mm": 8.759140968322754,
+      "shell_color_std_pre": 52.59561538696289,
+      "shell_color_std_post": 48.76921844482422,
+      "ears_color_std_pre": 52.978240966796875,
+      "ears_color_std_post": 40.15645980834961,
+      "gate": "PASS"
+    },
+    {
+      "patient_id": "0913e4c9-999c-46cf-9d95-c294dff4bfd3",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 0.0,
+      "shell_mean_pos_move_mm": 1.6595880733802915,
+      "shell_max_pos_move_mm": 8.099153637886047,
+      "shell_color_std_pre": 71.49903869628906,
+      "shell_color_std_post": 64.06319427490234,
+      "ears_color_std_pre": 83.01287841796875,
+      "ears_color_std_post": 65.62183380126953,
+      "gate": "PASS"
+    },
+    {
+      "patient_id": "b24a972d-bf7d-4bed-bbb3-c3732f34a9b6",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 0.0,
+      "shell_mean_pos_move_mm": 1.904839649796486,
+      "shell_max_pos_move_mm": 13.864822685718536,
+      "shell_color_std_pre": 57.313934326171875,
+      "shell_color_std_post": 53.284183502197266,
+      "ears_color_std_pre": 55.639747619628906,
+      "ears_color_std_post": 47.14739227294922,
+      "gate": "PASS"
+    },
+    {
+      "patient_id": "35e1ffef-d7e5-405d-a7ec-dae152bf883b",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 0.0,
+      "shell_mean_pos_move_mm": 1.73635920509696,
+      "shell_max_pos_move_mm": 8.634746074676514,
+      "shell_color_std_pre": 71.34185028076172,
+      "shell_color_std_post": 63.90239715576172,
+      "ears_color_std_pre": 82.99610900878906,
+      "ears_color_std_post": 64.99244689941406,
+      "gate": "PASS"
+    },
+    {
+      "patient_id": "23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 0.0,
+      "shell_mean_pos_move_mm": 1.73635920509696,
+      "shell_max_pos_move_mm": 8.634746074676514,
+      "shell_color_std_pre": 71.34185028076172,
+      "shell_color_std_post": 63.90239715576172,
+      "ears_color_std_pre": 82.99610900878906,
+      "ears_color_std_post": 64.99244689941406,
+      "gate": "PASS"
+    }
+  ],
+  "overall": "PASS"
+}

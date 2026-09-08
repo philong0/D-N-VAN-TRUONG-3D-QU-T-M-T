@@ -1,0 +1,23 @@
+{
+  "patient_id": "dca63e1a-7dad-4294-bc4b-69afe09f848f",
+  "views_detected": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "views_used": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "coverage_fraction": 0.47584310644744965,
+  "n_warnings": 0,
+  "renders_written": [
+    "render_0.png",
+    "render_45.png",
+    "render_90.png"
+  ],
+  "processing_time_ms": 98923
+}

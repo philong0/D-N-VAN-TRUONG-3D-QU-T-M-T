@@ -1,0 +1,3 @@
+[
+  "3ddfa-enrichment-failed: TimeoutExpired: Command '['python3', '/home/ubuntu/dr-vantruong-3d-studio/server/3ddfa_v2/reconstruct_patient.py', '--view', 'angle1=/tmp/tmpjt0dvirb/angle1.jpg', '--view', 'angle2=/tmp/tmpjt0dvirb/angle2.jpg', '--view', 'angle3=/tmp/tmpjt0dvirb/angle3.jpg', '--view', 'angle4=/tmp/tmpjt0dvirb/angle4.jpg', '--out-dir', '/tmp/tmpjt0dvirb/out']' timed out after 30 seconds"
+]

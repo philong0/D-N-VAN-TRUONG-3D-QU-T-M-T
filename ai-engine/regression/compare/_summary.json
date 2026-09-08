@@ -1,0 +1,92 @@
+[
+  {
+    "patient_id": "dca63e1a-7dad-4294-bc4b-69afe09f848f",
+    "ok": true,
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.4862241176140508,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 42868
+  },
+  {
+    "patient_id": "0913e4c9-999c-46cf-9d95-c294dff4bfd3",
+    "ok": true,
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5471634588406936,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 75092
+  },
+  {
+    "patient_id": "b24a972d-bf7d-4bed-bbb3-c3732f34a9b6",
+    "ok": true,
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5048538241400595,
+    "n_warnings": 1,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 78947
+  },
+  {
+    "patient_id": "35e1ffef-d7e5-405d-a7ec-dae152bf883b",
+    "ok": true,
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5509230682902194,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 66732
+  },
+  {
+    "patient_id": "23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6",
+    "ok": true,
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5509230682902194,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 73243
+  }
+]

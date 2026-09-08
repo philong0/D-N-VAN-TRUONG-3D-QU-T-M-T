@@ -1,0 +1,17 @@
+{
+  "patient_id": "23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6",
+  "views_used": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "coverage_fraction": 0.5509230682902194,
+  "n_warnings": 0,
+  "renders_written": [
+    "render_0.png",
+    "render_45.png",
+    "render_90.png"
+  ],
+  "processing_time_ms": 73243
+}

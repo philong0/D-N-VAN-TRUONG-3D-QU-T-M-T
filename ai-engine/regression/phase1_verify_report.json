@@ -1,0 +1,75 @@
+{
+  "patients": [
+    {
+      "patient_id": "dca63e1a-7dad-4294-bc4b-69afe09f848f",
+      "face_mask_max_pos_diff": 0.007015615701675415,
+      "face_mask_max_color_diff": 192.0,
+      "shell_max_pos_diff_m": 0.014083415269851685,
+      "shell_mean_pos_diff_m": 0.0023813312873244286,
+      "shell_color_std_baseline": 52.91626739501953,
+      "shell_color_std_phase1": 48.9818000793457,
+      "shell_color_std_delta": -3.934467315673828,
+      "ears_color_std_baseline": 53.624149322509766,
+      "ears_color_std_phase1": 45.72306442260742,
+      "ears_color_std_delta": -7.901084899902344,
+      "face_mask_gate": "FAIL"
+    },
+    {
+      "patient_id": "0913e4c9-999c-46cf-9d95-c294dff4bfd3",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 127.0,
+      "shell_max_pos_diff_m": 0.008099153637886047,
+      "shell_mean_pos_diff_m": 0.0016595880733802915,
+      "shell_color_std_baseline": 71.49903869628906,
+      "shell_color_std_phase1": 62.000648498535156,
+      "shell_color_std_delta": -9.498390197753906,
+      "ears_color_std_baseline": 83.01287841796875,
+      "ears_color_std_phase1": 62.19749069213867,
+      "ears_color_std_delta": -20.815387725830078,
+      "face_mask_gate": "FAIL"
+    },
+    {
+      "patient_id": "b24a972d-bf7d-4bed-bbb3-c3732f34a9b6",
+      "face_mask_max_pos_diff": 0.0,
+      "face_mask_max_color_diff": 147.5,
+      "shell_max_pos_diff_m": 0.013864822685718536,
+      "shell_mean_pos_diff_m": 0.001904839649796486,
+      "shell_color_std_baseline": 57.313934326171875,
+      "shell_color_std_phase1": 54.02272415161133,
+      "shell_color_std_delta": -3.291210174560547,
+      "ears_color_std_baseline": 55.639747619628906,
+      "ears_color_std_phase1": 56.39533996582031,
+      "ears_color_std_delta": 0.7555923461914062,
+      "face_mask_gate": "FAIL"
+    },
+    {
+      "patient_id": "35e1ffef-d7e5-405d-a7ec-dae152bf883b",
+      "face_mask_max_pos_diff": 0.00815919041633606,
+      "face_mask_max_color_diff": 204.0,
+      "shell_max_pos_diff_m": 0.008634746074676514,
+      "shell_mean_pos_diff_m": 0.001785003812983632,
+      "shell_color_std_baseline": 71.34185028076172,
+      "shell_color_std_phase1": 62.29802322387695,
+      "shell_color_std_delta": -9.043827056884766,
+      "ears_color_std_baseline": 82.99610900878906,
+      "ears_color_std_phase1": 62.748897552490234,
+      "ears_color_std_delta": -20.247211456298828,
+      "face_mask_gate": "FAIL"
+    },
+    {
+      "patient_id": "23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6",
+      "face_mask_max_pos_diff": 0.00815919041633606,
+      "face_mask_max_color_diff": 204.0,
+      "shell_max_pos_diff_m": 0.01549386978149414,
+      "shell_mean_pos_diff_m": 0.0022094096057116985,
+      "shell_color_std_baseline": 71.35320281982422,
+      "shell_color_std_phase1": 62.47603225708008,
+      "shell_color_std_delta": -8.87717056274414,
+      "ears_color_std_baseline": 82.39822387695312,
+      "ears_color_std_phase1": 61.996612548828125,
+      "ears_color_std_delta": -20.401611328125,
+      "face_mask_gate": "FAIL"
+    }
+  ],
+  "overall": "FAIL"
+}

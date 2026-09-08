@@ -1,0 +1,257 @@
+[
+  {
+    "patient_id": "dca63e1a-7dad-4294-bc4b-69afe09f848f",
+    "ok": true,
+    "input_files": {
+      "angle1": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/dca63e1a-7dad-4294-bc4b-69afe09f848f/photos/angle1.png",
+        "md5": "dc81aed5d073cee56eb1710b41f37751",
+        "width": 472,
+        "height": 393
+      },
+      "angle2": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/dca63e1a-7dad-4294-bc4b-69afe09f848f/photos/angle2.png",
+        "md5": "5d421480ab3f830e89b51635ef8000c0",
+        "width": 466,
+        "height": 446
+      },
+      "angle3": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/dca63e1a-7dad-4294-bc4b-69afe09f848f/photos/angle3.jpg",
+        "md5": "fef9a95facf4c31394054a04d093ea4b",
+        "width": 1024,
+        "height": 980
+      },
+      "angle4": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/dca63e1a-7dad-4294-bc4b-69afe09f848f/photos/angle4.png",
+        "md5": "cbc4f960244cf0590103c42fb535094d",
+        "width": 782,
+        "height": 890
+      }
+    },
+    "views_detected": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.4862241176140508,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 69959,
+    "captured_at": "2026-08-22T04:58:18Z"
+  },
+  {
+    "patient_id": "0913e4c9-999c-46cf-9d95-c294dff4bfd3",
+    "ok": true,
+    "input_files": {
+      "angle1": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/0913e4c9-999c-46cf-9d95-c294dff4bfd3/photos/angle1.jpg",
+        "md5": "7c1f3e470d7a2cbc5f6366594fb6f328",
+        "width": 1024,
+        "height": 559
+      },
+      "angle2": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/0913e4c9-999c-46cf-9d95-c294dff4bfd3/photos/angle2.jpg",
+        "md5": "aaca51fddd118e56caec7e5d7a54f893",
+        "width": 1024,
+        "height": 559
+      },
+      "angle3": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/0913e4c9-999c-46cf-9d95-c294dff4bfd3/photos/angle3.jpg",
+        "md5": "2bdae1bf4dd2a0a69384f99234ba8428",
+        "width": 1024,
+        "height": 559
+      },
+      "angle4": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/0913e4c9-999c-46cf-9d95-c294dff4bfd3/photos/angle4.jpg",
+        "md5": "7bc37acfd152e884272b4be9d152d5de",
+        "width": 1024,
+        "height": 559
+      }
+    },
+    "views_detected": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5471634588406936,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 73479,
+    "captured_at": "2026-08-22T04:59:31Z"
+  },
+  {
+    "patient_id": "b24a972d-bf7d-4bed-bbb3-c3732f34a9b6",
+    "ok": true,
+    "input_files": {
+      "angle1": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/b24a972d-bf7d-4bed-bbb3-c3732f34a9b6/photos/angle1.png",
+        "md5": "409d1470d7bc5f582d88b58b23a400aa",
+        "width": 378,
+        "height": 345
+      },
+      "angle2": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/b24a972d-bf7d-4bed-bbb3-c3732f34a9b6/photos/angle2.png",
+        "md5": "ad367620a8d90e2e0de6b45406503b7e",
+        "width": 404,
+        "height": 441
+      },
+      "angle3": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/b24a972d-bf7d-4bed-bbb3-c3732f34a9b6/photos/angle3.jpg",
+        "md5": "c4f7df47d0240bf2eaa2ca529eefcbdc",
+        "width": 2048,
+        "height": 1365
+      },
+      "angle4": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/b24a972d-bf7d-4bed-bbb3-c3732f34a9b6/photos/angle4.jpg",
+        "md5": "dfab33b6fb7a851a821963570c9508bc",
+        "width": 552,
+        "height": 368
+      }
+    },
+    "views_detected": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5048538241400595,
+    "n_warnings": 1,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 85880,
+    "captured_at": "2026-08-22T05:00:57Z"
+  },
+  {
+    "patient_id": "35e1ffef-d7e5-405d-a7ec-dae152bf883b",
+    "ok": true,
+    "input_files": {
+      "angle1": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/35e1ffef-d7e5-405d-a7ec-dae152bf883b/photos/angle1.jpg",
+        "md5": "7c1f3e470d7a2cbc5f6366594fb6f328",
+        "width": 1024,
+        "height": 559
+      },
+      "angle2": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/35e1ffef-d7e5-405d-a7ec-dae152bf883b/photos/angle2.jpg",
+        "md5": "2bdae1bf4dd2a0a69384f99234ba8428",
+        "width": 1024,
+        "height": 559
+      },
+      "angle3": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/35e1ffef-d7e5-405d-a7ec-dae152bf883b/photos/angle3.jpg",
+        "md5": "aaca51fddd118e56caec7e5d7a54f893",
+        "width": 1024,
+        "height": 559
+      },
+      "angle4": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/35e1ffef-d7e5-405d-a7ec-dae152bf883b/photos/angle4.jpg",
+        "md5": "7bc37acfd152e884272b4be9d152d5de",
+        "width": 1024,
+        "height": 559
+      }
+    },
+    "views_detected": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5509230682902194,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 63757,
+    "captured_at": "2026-08-22T05:02:01Z"
+  },
+  {
+    "patient_id": "23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6",
+    "ok": true,
+    "input_files": {
+      "angle1": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6/photos/angle1.jpg",
+        "md5": "7c1f3e470d7a2cbc5f6366594fb6f328",
+        "width": 1024,
+        "height": 559
+      },
+      "angle2": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6/photos/angle2.jpg",
+        "md5": "2bdae1bf4dd2a0a69384f99234ba8428",
+        "width": 1024,
+        "height": 559
+      },
+      "angle3": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6/photos/angle3.jpg",
+        "md5": "aaca51fddd118e56caec7e5d7a54f893",
+        "width": 1024,
+        "height": 559
+      },
+      "angle4": {
+        "path": "/home/ubuntu/dr-vantruong-3d-studio/.data/patients/23bf4ca6-9ed6-4542-ac0b-c6c20a1685d6/photos/angle4.jpg",
+        "md5": "7bc37acfd152e884272b4be9d152d5de",
+        "width": 1024,
+        "height": 559
+      }
+    },
+    "views_detected": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "views_used": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "coverage_fraction": 0.5509230682902194,
+    "n_warnings": 0,
+    "renders_written": [
+      "render_0.png",
+      "render_45.png",
+      "render_90.png"
+    ],
+    "processing_time_ms": 48559,
+    "captured_at": "2026-08-22T05:02:49Z"
+  }
+]

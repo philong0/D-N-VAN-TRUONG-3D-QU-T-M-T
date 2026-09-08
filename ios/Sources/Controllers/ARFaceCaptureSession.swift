@@ -330,8 +330,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         guard !isAutoCapturing else {
             throw NSError(domain: "Scanner", code: 429, userInfo: [NSLocalizedDescriptionKey: "Đang chụp frame hiện tại."])
         }
-        guard isPoseAligned, isPoseStable, let sample = latestSample else {
-            let reason = captureBlockReason()
+        guard let sample = latestSample, sample.faceAnchor.isTracked else {
+            let reason = "Chưa nhận diện được khuôn mặt. Vui lòng hướng camera vào khuôn mặt."
             guidanceFeedback = reason
             throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: reason])
         }

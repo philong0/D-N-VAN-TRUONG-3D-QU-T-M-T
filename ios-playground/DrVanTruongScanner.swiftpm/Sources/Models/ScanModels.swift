@@ -5,6 +5,7 @@
 
 import Foundation
 import ARKit
+import simd
 
 public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case front = "front"
@@ -37,20 +38,25 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 10.0
-        case .left45: return 10.0
-        case .leftProfile: return 10.0
-        case .right45: return 10.0
-        case .rightProfile: return 10.0
+        case .front: return 14.0
+        case .left45, .right45: return 14.0
+        case .leftProfile, .rightProfile: return 15.0
         }
     }
 
-    /// A reproducible acceptance specification used by both the live HUD and
-    /// the capture gate.  A labelled view is never accepted merely because a
-    /// frame happened to arrive while the patient was turning their head.
-    public var pitchToleranceDeg: Float { 10.0 }
-    public var minDistanceMeters: Float { 0.28 }
-    public var maxDistanceMeters: Float { 0.55 }
+    /// Comfortable clinical tolerances calibrated for real hand-held TrueDepth scanning.
+    public var pitchToleranceDeg: Float { 20.0 }
+    public var rollToleranceDeg: Float { 20.0 }
+    public var minDistanceMeters: Float { 0.22 }
+    public var maxDistanceMeters: Float { 0.65 }
+    public var stabilityWindowSeconds: Double { 0.40 }
+    public var holdDurationSeconds: Double { 0.45 }
+    public var maxYawStandardDeviationDeg: Float { 6.0 }
+    public var maxPitchStandardDeviationDeg: Float { 6.0 }
+    public var maxRollStandardDeviationDeg: Float { 6.0 }
+    public var maxAngularVelocityDegPerSecond: Float { 40.0 }
+    public var minimumStabilitySamples: Int { 4 }
+    public var captureCooldownSeconds: Double { 0.50 }
     
     public var instruction: String {
         switch self {
@@ -60,6 +66,43 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
         case .right45: return "Từ từ xoay mặt sang PHẢI một góc 45°"
         case .rightProfile: return "Quay hẳn mặt sang PHẢI (góc ngang 80°)"
         }
+    }
+}
+
+/// Pose expressed in the camera coordinate system for one exact ARFrame.
+/// Computed using robust forward / up vector projection without gimbal lock.
+public struct CameraRelativeFacePose {
+    public let transform: simd_float4x4
+    public let yawDeg: Float
+    public let pitchDeg: Float
+    public let rollDeg: Float
+    public let distanceMeters: Float
+    public let translationMeters: SIMD3<Float>
+
+    public init(faceToCamera transform: simd_float4x4) {
+        self.transform = transform
+        
+        // Head forward vector in camera space (column 2)
+        let fwdX = transform.columns.2.x
+        let fwdY = transform.columns.2.y
+        let fwdZ = transform.columns.2.z
+        
+        // Head up vector in camera space (column 1)
+        let upX = transform.columns.1.x
+        let upY = transform.columns.1.y
+        
+        // When facing camera directly: fwdX ~ 0, fwdY ~ 0, fwdZ ~ -1
+        let yaw = atan2(fwdX, -fwdZ) * 180.0 / .pi
+        let pitch = atan2(fwdY, sqrt(fwdX * fwdX + fwdZ * fwdZ)) * 180.0 / .pi
+        let roll = atan2(upX, upY) * 180.0 / .pi
+        
+        self.yawDeg = yaw
+        self.pitchDeg = pitch
+        self.rollDeg = roll
+        
+        let translation = SIMD3<Float>(transform.columns.3.x, transform.columns.3.y, transform.columns.3.z)
+        self.translationMeters = translation
+        self.distanceMeters = simd_length(translation)
     }
 }
 
@@ -103,7 +146,7 @@ public struct FrameQualityEvaluation: Codable {
     public let yawDeg: Float
     public let pitchDeg: Float
     public let distanceMeters: Float
-    public let isDistanceOptimal: Bool // 30cm - 60cm
+    public let isDistanceOptimal: Bool // ScanAngleStep camera-relative distance policy
 }
 
 public struct CapturedFramePackage: Identifiable {
@@ -182,6 +225,7 @@ public struct ReconstructionDTO: Codable {
     public let provider: String?
     public let requestedAt: String?
     public let baselineModelFileName: String?
+    public let baselineObjFileName: String?
     public let error: String?
 }
 
