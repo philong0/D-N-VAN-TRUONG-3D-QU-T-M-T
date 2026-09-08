@@ -71,7 +71,10 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://trip-conflicts-focus-curve.trycloudflare.com"
+    // Do not ship an expiring quick-tunnel as the app's destination. Once it
+    // expires WKWebView has no useful UI and the scanner looks as if it never
+    // opened. A clinic must explicitly configure its stable HTTPS endpoint.
+    @AppStorage("clinicServerURL") private var serverURLString: String = ""
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
@@ -95,7 +98,7 @@ public struct RootView: View {
             } else {
                 VStack(spacing: 16) {
                     Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
-                    Text("Bấm nút cài đặt để nhập địa chỉ web hiện tại của bạn.")
+                    Text("Bấm nút cài đặt để nhập địa chỉ HTTPS ổn định của Web Studio. Không dùng quick-tunnel tạm thời cho thiết bị lâm sàng.")
                         .font(.footnote)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)

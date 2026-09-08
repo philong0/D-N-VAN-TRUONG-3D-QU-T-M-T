@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { readdir, writeFile, readFile, copyFile } from "fs/promises";
 import path from "path";
 import { promisify } from "util";
-import { ensureDir, scanFramesDir, scanSessionDir, DATA_DIR } from "@/lib/storage";
+import { ensureDir, scanFramesDir, DATA_DIR } from "@/lib/storage";
 import type { ScanFrame, ScanQualityReport, ScanSession, ScannerKind } from "@/lib/types";
 import { selectReconstructionFrames, type BurstFrameCandidate } from "./reconstruction-frame-selection";
 
@@ -18,6 +18,7 @@ export interface ScanData {
 
 export interface ReconstructionArtifacts {
   baselineModelFileName?: string;
+  baselineObjFileName?: string;
   textureFileName?: string;
   landmarksCount?: number;
   providerVersion?: string;
@@ -65,12 +66,9 @@ export class PythonGNMReconstructionService implements IReconstructionService {
 
     try {
       const framesFolder = scanFramesDir(patientId, sessionId);
-      const sessionFolder = scanSessionDir(patientId, sessionId);
       const outputDir = path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction");
 
       await ensureDir(outputDir);
-
-      const nativeFrameCount = data.frames.filter((frame) => frame.depthAvailable && frame.geometryFileName && frame.intrinsicsFileName).length;
 
       // Check available frame files
       const frameArgs: string[] = [];
@@ -221,12 +219,25 @@ export class PythonGNMReconstructionService implements IReconstructionService {
           const jsonEnd = nativeOut.lastIndexOf("}");
           if (jsonStart !== -1 && jsonEnd !== -1) {
             const parsed = JSON.parse(nativeOut.slice(jsonStart, jsonEnd + 1));
-            if (parsed.ok) {
+            // A GLB must never be published merely because the Python
+            // process completed. The native worker uses `ok` for execution
+            // success and independently reports render-back validation.
+            if (parsed.ok && parsed.baselineMeta?.reconstructionStatus === "completed") {
               const dataModelsDir = path.join(DATA_DIR, "patients", patientId, "models");
               await ensureDir(dataModelsDir);
               try {
                 await copyFile(path.join(outputDir, "baseline.glb"), path.join(dataModelsDir, "baseline.glb"));
+                await copyFile(path.join(outputDir, "baseline.obj"), path.join(dataModelsDir, "baseline.obj"));
                 await copyFile(path.join(outputDir, "face_HD.png"), path.join(dataModelsDir, "face_HD.png"));
+                const patientDataDir = path.join(DATA_DIR, "patients", patientId);
+                await ensureDir(path.join(patientDataDir, "reconstruction"));
+                await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId));
+                await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "model.glb"));
+                await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "model.obj"));
+                await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "reconstruction", "baseline.glb"));
+                await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "reconstruction", "baseline.obj"));
+                await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
+                await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.obj"));
               } catch (copyErr) {
                 console.warn("[reconstruction-service] copy to dataModelsDir note:", copyErr);
               }
@@ -235,6 +246,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
                 provider: "Patient-Specific Native TrueDepth Fusion",
                 artifacts: {
                   baselineModelFileName: "baseline.glb",
+                  baselineObjFileName: "baseline.obj",
                   textureFileName: "face_HD.png",
                   landmarksCount: Object.keys(parsed.landmarks || {}).length,
                   providerVersion: "ARKit-TrueDepth-v2",
@@ -243,10 +255,34 @@ export class PythonGNMReconstructionService implements IReconstructionService {
                 evaluatedAt: now,
               };
             }
+            if (parsed.ok) {
+              return {
+                status: "failed",
+                provider: "Patient-Specific Native TrueDepth Fusion",
+                reason: "Render-back quality gate không xác nhận geometry/texture của scan TrueDepth. Baseline không được công bố; cần quét lại.",
+                evaluatedAt: now,
+              };
+            }
           }
         } catch (nativeErr) {
-          console.warn("[reconstruction-service] native fusion notice:", nativeErr);
+          // An ios_native package is evidence-bearing data, not an RGB
+          // fallback request. Publishing a different pipeline's result here
+          // would attach a model that was not reconstructed from the
+          // patient's TrueDepth measurements.
+          console.warn("[reconstruction-service] native fusion failed:", nativeErr);
+          return {
+            status: "failed",
+            provider: "Patient-Specific Native TrueDepth Fusion",
+            reason: nativeErr instanceof Error ? nativeErr.message : "Native TrueDepth reconstruction không hoàn tất.",
+            evaluatedAt: now,
+          };
         }
+        return {
+          status: "failed",
+          provider: "Patient-Specific Native TrueDepth Fusion",
+          reason: "Native TrueDepth worker không trả về kết quả baseline hợp lệ.",
+          evaluatedAt: now,
+        };
       }
 
       // 2. High-fidelity 3D Mesh Interpolation from multi-frame buffer
@@ -372,6 +408,9 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         await copyFile(generatedGlb, path.join(patientDataDir, "model.glb"));
         await copyFile(generatedGlb, path.join(patientDataDir, "reconstruction", "baseline.glb"));
         await copyFile(generatedGlb, path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
+        await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "model.obj"));
+        await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "reconstruction", "baseline.obj"));
+        await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.obj"));
       } catch (copyErr) {
         console.warn("[reconstruction-service] Sync copy error:", copyErr);
       }
@@ -381,6 +420,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         provider: this.providerName,
         artifacts: {
           baselineModelFileName: "baseline.glb",
+          baselineObjFileName: "baseline.obj",
           textureFileName: "face_HD.png",
           landmarksCount: Object.keys(parsedOut.landmarks || {}).length,
           providerVersion: parsedOut.baselineMeta?.modelVersion || (useNativeFusion ? "ARKit-native" : "photo-multiview"),

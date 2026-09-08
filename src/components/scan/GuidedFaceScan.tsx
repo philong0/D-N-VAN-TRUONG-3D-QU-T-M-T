@@ -21,9 +21,16 @@ export interface TargetAngleConfig {
 export const TARGET_ANGLES: Record<string, TargetAngleConfig> = {
   FRONT: { id: "FRONT", name: "CHÍNH DIỆN 0°", filename: "front_origin.jpg", targetYaw: 0, tolerance: 18, prompt: "Nhìn thẳng vào camera", retryPrompt: "Giữ đầu thẳng tự nhiên" },
   LEFT45: { id: "LEFT45", name: "NGHIÊNG TRÁI 45°", filename: "left45_origin.jpg", targetYaw: -45, tolerance: 22, prompt: "Nghiêng mặt sang Trái 45 độ", retryPrompt: "Xoay nhẹ mặt sang trái" },
-  LEFT80: { id: "LEFT80", name: "TRẮC DIỆN TRÁI 80°", filename: "left80_origin.jpg", targetYaw: -80, tolerance: 25, prompt: "Quay ngang hẳn sang Trái", retryPrompt: "Quay sang trái lấy góc ngang" },
+  // D-realistictarget — the capture-accept check further down this file
+  // only ever required |yaw| >= 50° for these two checkpoints (the actual
+  // gating logic, unchanged) — but the label/prompt here said "80°" and
+  // "quay ngang hẳn" (turn all the way sideways), which is both physically
+  // awkward to judge one-handed and simply not what the code was checking
+  // for. Users were fighting to reach an angle 30°+ past what was ever
+  // required. Target/copy now matches the real ~50-55° the gate accepts.
+  LEFT80: { id: "LEFT80", name: "TRẮC DIỆN TRÁI ~55°", filename: "left80_origin.jpg", targetYaw: -55, tolerance: 25, prompt: "Nghiêng sâu sang Trái, để lộ rõ gò má và sống mũi", retryPrompt: "Nghiêng thêm chút nữa sang trái" },
   RIGHT45: { id: "RIGHT45", name: "NGHIÊNG PHẢI 45°", filename: "right45_origin.jpg", targetYaw: 45, tolerance: 22, prompt: "Nghiêng mặt sang Phải 45 độ", retryPrompt: "Xoay nhẹ mặt sang phải" },
-  RIGHT80: { id: "RIGHT80", name: "TRẮC DIỆN PHẢI 80°", filename: "right80_origin.jpg", targetYaw: 80, tolerance: 25, prompt: "Quay ngang hẳn sang Phải", retryPrompt: "Quay sang phải lấy góc ngang" },
+  RIGHT80: { id: "RIGHT80", name: "TRẮC DIỆN PHẢI ~55°", filename: "right80_origin.jpg", targetYaw: 55, tolerance: 25, prompt: "Nghiêng sâu sang Phải, để lộ rõ gò má và sống mũi", retryPrompt: "Nghiêng thêm chút nữa sang phải" },
 };
 
 const ORDERED_TARGET_KEYS = ["FRONT", "LEFT45", "LEFT80", "RIGHT45", "RIGHT80"] as const;
@@ -102,21 +109,28 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
   const [canManuallySkip, setCanManuallySkip] = useState(false);
 
   // Native ARKit TrueDepth Bridge State
-  // 2026-09-07 fix (react-hooks/set-state-in-effect) — `window.webkit
-  // .messageHandlers.arkitScanBridge` is injected by the native app BEFORE
-  // this page's own script ever runs (WKUserContentController.add is called
-  // in makeUIView, before webView.load), so it is already a stable, correct
-  // read at first render — no effect/subscription needed. A lazy `useState`
-  // initializer reads it once, purely, during render itself (never calls
-  // setState from inside an effect body), the same root-cause-fix pattern
-  // already used for this component's own mount effect elsewhere.
-  const [isArkitAvailable] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return Boolean(
-      (window as unknown as { webkit?: { messageHandlers?: { arkitScanBridge?: unknown } } })
-        ?.webkit?.messageHandlers?.arkitScanBridge
-    );
-  });
+  // D-hydrationfix — the previous version read `window.webkit.messageHandlers
+  // .arkitScanBridge` via a lazy `useState` initializer, reasoning that
+  // since the bridge is injected before this page's script runs, the read
+  // is "stable." That's true for a plain client-only render, but Next.js
+  // SSR-renders this component on the SERVER first (`window` undefined ->
+  // `false`), then hydrates on the CLIENT — and inside the native app's
+  // WKWebView the bridge genuinely IS present at that first client render,
+  // so the initializer returns `true` there. Server said `false`, client's
+  // first render said `true`: a real hydration mismatch (exactly the error
+  // seen in production — "Hydration failed because the server rendered
+  // HTML didn't match the client"). React recovers by discarding and
+  // regenerating the whole tree, which can orphan in-flight scan state
+  // (camera stream, capture step, bridge callbacks) — a plausible cause of
+  // scans that finish capturing but never reach reconstruction.
+  // Fix: always render the SSR-safe default (`false`) on the first client
+  // render too, matching the server exactly, then flip it in a `useEffect`
+  // (which only runs post-hydration — this is the standard, hydration-safe
+  // pattern for browser/environment feature detection, not the same class
+  // of "unnecessary setState in effect" the prior comment was avoiding).
+  // Detection itself is folded into the mount effect below (D-arkitfirst)
+  // so it can gate whether the web camera ever starts at all.
+  const [isArkitAvailable, setIsArkitAvailable] = useState(false);
   const [isArkitScanning, setIsArkitScanning] = useState(false);
 
   const lastSpokenTextRef = useRef<string>("");
@@ -395,12 +409,33 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
     }
   }, [cameraFacing, patientId, stopCamera]);
 
+  // D-arkitfirst — a prior version of this effect ALWAYS started the plain
+  // web camera + created a `web_camera` session here unconditionally, with
+  // native TrueDepth capture only reachable via a separate button the user
+  // had to notice and tap in time. Since the web-camera capture loop
+  // auto-progresses and can auto-finish on its own (see the target-angle
+  // effect below), it would frequently win the race and get uploaded/
+  // reconstructed even when the user genuinely scanned with TrueDepth —
+  // producing a `web_camera` session and a template-limited (or QC-
+  // rejected) result instead of the real ARKit one, with no visible sign
+  // anything went wrong. Fix: detect the native bridge FIRST; if present,
+  // launch the real TrueDepth scanner immediately and never start the web
+  // camera at all — the two paths must never run concurrently.
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => {
       if (cancelled) return;
-      startCamera(cameraFacing);
-      initSession();
+      const hasArkitBridge = Boolean(
+        (window as unknown as { webkit?: { messageHandlers?: { arkitScanBridge?: unknown } } })
+          ?.webkit?.messageHandlers?.arkitScanBridge
+      );
+      setIsArkitAvailable(hasArkitBridge);
+      if (hasArkitBridge) {
+        startNativeArkitScan();
+      } else {
+        startCamera(cameraFacing);
+        initSession();
+      }
     }, 0);
     return () => {
       cancelled = true;

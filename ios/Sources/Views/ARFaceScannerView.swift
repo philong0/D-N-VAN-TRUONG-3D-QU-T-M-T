@@ -55,23 +55,6 @@ public struct ARFaceScannerView: View {
                         
                         Spacer()
                         
-                        // Switch Front / Back Camera Button
-                        Button {
-                            captureSession.switchCamera()
-                        } label: {
-                            HStack(spacing: 4) {
-                                Image(systemName: "camera.rotate.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(captureSession.cameraPosition == .front ? "Cam Trước" : "Cam Sau")
-                                    .font(.system(size: 12, weight: .bold))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color.blue.opacity(0.8))
-                            .cornerRadius(12)
-                        }
-                        
                         Text("\(captureSession.capturedFrames.count)/5")
                             .font(.subheadline)
                             .bold()

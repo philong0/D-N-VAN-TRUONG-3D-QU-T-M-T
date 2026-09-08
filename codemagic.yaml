@@ -1,5 +1,5 @@
 workflows:
-  ios-scanner:
+  ios-scanner-unsigned:
     name: Dr Van Truong 3D Scanner iOS App
     max_build_duration: 30
     instance_type: mac_mini_m2
@@ -40,3 +40,30 @@ workflows:
       - "*.ipa"
       - build/DrVanTruongScanner.xcarchive
       - build/**/*.app
+  ios-scanner-build:
+    name: DrVanTruong Scanner — signed iPhone IPA
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+      ios_signing:
+        # This fetches the existing signing identity from Codemagic's
+        # Code signing identities. A development profile produces an IPA
+        # installable on the devices registered in that profile.
+        distribution_type: development
+        bundle_identifier: com.drvantruong.scanner
+    scripts:
+      - name: Apply existing iOS signing profile
+        script: |
+          cd "$CM_BUILD_DIR/ios"
+          xcode-project use-profiles
+      - name: Build signed IPA for registered iPhones
+        script: |
+          cd "$CM_BUILD_DIR/ios"
+          xcode-project build-ipa \
+            --project "DrVanTruongScanner.xcodeproj" \
+            --scheme "DrVanTruongScanner" \
+            --config "Release"
+    artifacts:
+      - ios/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log

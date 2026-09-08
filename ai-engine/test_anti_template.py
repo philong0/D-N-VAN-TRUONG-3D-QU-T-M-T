@@ -93,10 +93,21 @@ def main() -> int:
             failures.append(f"MISSING expected patient-runtime file: {filename}")
             continue
 
-        imports = collect_imports(py_file)
+        # D-strictgate — these 5 files ARE the whole gate: unlike the
+        # transitive walk below (which stays module_level_only=True to
+        # avoid flagging an incidental helper's unrelated lazy import, e.g.
+        # detect_pose.py's own unrelated use of gnm_correspondence), a
+        # forbidden import ANYWHERE in one of these exact files — lazy,
+        # function-local, wrapped in a try/except, however hidden — must
+        # fail loudly. This is deliberately stricter than the transitive
+        # check because reconstruct_cli.py has now twice had a lazy,
+        # function-local `from reconstruct_gnm_fullhead import ...` land in
+        # its hot path specifically BECAUSE the module-level-only check
+        # couldn't see it.
+        imports = collect_imports(py_file, module_level_only=False)
         bad_imports = imports & FORBIDDEN_MODULES
         if bad_imports:
-            failures.append(f"{filename}: imports forbidden generic-template module(s): {sorted(bad_imports)}")
+            failures.append(f"{filename}: imports forbidden generic-template module(s) (incl. lazy/function-local imports): {sorted(bad_imports)}")
 
         source = py_file.read_text(encoding="utf-8")
         for symbol in FORBIDDEN_SYMBOLS:

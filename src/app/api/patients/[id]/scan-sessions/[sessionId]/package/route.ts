@@ -37,12 +37,15 @@ export async function POST(
       view: ScanCaptureView;
       rgbFileName?: string;
       depthFileName?: string;
+      depthWidth?: unknown;
+      depthHeight?: unknown;
+      depthIntrinsics?: { fx?: unknown; fy?: unknown; cx?: unknown; cy?: unknown; imageWidth?: unknown; imageHeight?: unknown };
       timestamp?: number;
       yawDeg?: number;
       pitchDeg?: number;
-      geometry?: { vertexCount: number; triangleCount: number };
-      intrinsics?: Record<string, unknown>;
-      pose?: Record<string, unknown>;
+      geometry?: { vertexCount: number; triangleCount: number; verticesMeters?: unknown; triangleIndices?: unknown; textureCoordinates?: unknown };
+      intrinsics?: { fx?: unknown; fy?: unknown; cx?: unknown; cy?: unknown; imageWidth?: unknown; imageHeight?: unknown };
+      pose?: { faceTransformColumnMajor?: unknown; cameraTransformColumnMajor?: unknown };
       quality?: {
         isTracked?: boolean;
         isDistanceOptimal?: boolean;
@@ -61,21 +64,54 @@ export async function POST(
       front: 0, left_45: -45, left_profile: -80, right_45: 45, right_profile: 80,
     };
     if (manifest.captureSource === "native_ios") {
+      if (manifest.hasTrueDepth !== true) {
+        return NextResponse.json({ error: "Gói native iOS phải xác nhận cảm biến TrueDepth thực tế." }, { status: 422 });
+      }
       if (framesDTO.length !== Object.keys(nativeTargets).length) {
         return NextResponse.json({ error: "Gói TrueDepth phải có đủ 5 góc quét chuẩn." }, { status: 422 });
       }
+      const seenViews = new Set<string>();
       for (const frame of framesDTO) {
         const target = nativeTargets[frame.view];
         const quality = frame.quality;
+        const geometry = frame.geometry;
+        const intrinsics = frame.intrinsics;
+        const pose = frame.pose;
+        const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+        const validGeometry = geometry?.vertexCount === 1220
+          && geometry.triangleCount === 2304
+          && Array.isArray(geometry.verticesMeters) && geometry.verticesMeters.length === 1220 * 3
+          && geometry.verticesMeters.every(isFiniteNumber)
+          && Array.isArray(geometry.triangleIndices) && geometry.triangleIndices.length === 2304 * 3
+          && geometry.triangleIndices.every((index) => Number.isInteger(index) && index >= 0 && index < 1220)
+          && Array.isArray(geometry.textureCoordinates) && geometry.textureCoordinates.length === 1220 * 2
+          && geometry.textureCoordinates.every(isFiniteNumber);
+        const validIntrinsics = Boolean(intrinsics && isFiniteNumber(intrinsics.fx) && intrinsics.fx > 0 && isFiniteNumber(intrinsics.fy) && intrinsics.fy > 0
+          && isFiniteNumber(intrinsics.cx) && isFiniteNumber(intrinsics.cy) && Number.isInteger(intrinsics.imageWidth) && (intrinsics.imageWidth as number) > 0
+          && Number.isInteger(intrinsics.imageHeight) && (intrinsics.imageHeight as number) > 0);
+        const depthIntrinsics = frame.depthIntrinsics;
+        const validDepthDeclaration = typeof frame.depthFileName === "string" && frame.depthFileName.length > 0
+          && Number.isInteger(frame.depthWidth) && (frame.depthWidth as number) > 0
+          && Number.isInteger(frame.depthHeight) && (frame.depthHeight as number) > 0
+          && Boolean(depthIntrinsics && isFiniteNumber(depthIntrinsics.fx) && depthIntrinsics.fx > 0
+            && isFiniteNumber(depthIntrinsics.fy) && depthIntrinsics.fy > 0
+            && isFiniteNumber(depthIntrinsics.cx) && isFiniteNumber(depthIntrinsics.cy)
+            && Number.isInteger(depthIntrinsics.imageWidth) && (depthIntrinsics.imageWidth as number) === frame.depthWidth
+            && Number.isInteger(depthIntrinsics.imageHeight) && (depthIntrinsics.imageHeight as number) === frame.depthHeight);
+        const validPose = Boolean(pose && Array.isArray(pose.faceTransformColumnMajor) && pose.faceTransformColumnMajor.length === 16
+          && pose.faceTransformColumnMajor.every(isFiniteNumber) && Array.isArray(pose.cameraTransformColumnMajor)
+          && pose.cameraTransformColumnMajor.length === 16 && pose.cameraTransformColumnMajor.every(isFiniteNumber));
         if (
           target === undefined ||
+          seenViews.has(frame.view) ||
           typeof frame.yawDeg !== "number" || Math.abs(frame.yawDeg - target) > 10 ||
           typeof frame.pitchDeg !== "number" || Math.abs(frame.pitchDeg) > 10 ||
           !quality?.isTracked || !quality.isDistanceOptimal || !quality.isLightingAdequate || quality.isBlurry ||
-          !frame.geometry || frame.geometry.vertexCount < 1200 || frame.geometry.triangleCount < 2300
+          !validGeometry || !validIntrinsics || !validDepthDeclaration || !validPose
         ) {
           return NextResponse.json({ error: `Frame ${frame.view} không đạt pose/quality TrueDepth; cần quét lại.` }, { status: 422 });
         }
+        seenViews.add(frame.view);
       }
     }
     const savedFrames: ScanFrame[] = [];
@@ -94,13 +130,23 @@ export async function POST(
         mimeType = rgbFile.type || "image/jpeg";
         const buffer = Buffer.from(await rgbFile.arrayBuffer());
         await writeFile(path.join(dir, savedRgbName), buffer);
+      } else if (manifest.captureSource === "native_ios") {
+        return NextResponse.json({ error: `Thiếu RGB frame đồng bộ cho góc ${view}.` }, { status: 422 });
       }
 
       let depthSaved = false;
       if (depthFile instanceof File) {
+        if (manifest.captureSource === "native_ios") {
+          const expectedBytes = (frameDTO.depthWidth as number) * (frameDTO.depthHeight as number) * Float32Array.BYTES_PER_ELEMENT;
+          if (depthFile.size !== expectedBytes) {
+            return NextResponse.json({ error: `Depth frame ${view} không đúng kích thước Float32 calibrated đã khai báo.` }, { status: 422 });
+          }
+        }
         depthSaved = true;
         const depthBuffer = Buffer.from(await depthFile.arrayBuffer());
         await writeFile(path.join(dir, `${view}_depth.raw`), depthBuffer);
+      } else if (manifest.captureSource === "native_ios") {
+        return NextResponse.json({ error: `Thiếu depth frame calibrated cho góc ${view}.` }, { status: 422 });
       }
 
       const geometryDir = path.join(dir, "geometry");
@@ -112,8 +158,9 @@ export async function POST(
         await writeFile(path.join(geometryDir, `${view}_geometry.json`), JSON.stringify(frameDTO.geometry, null, 2));
       }
       if (frameDTO.intrinsics) {
-        await writeFile(path.join(cameraDir, "intrinsics.json"), JSON.stringify(frameDTO.intrinsics, null, 2));
+        await writeFile(path.join(cameraDir, `${view}_intrinsics.json`), JSON.stringify(frameDTO.intrinsics, null, 2));
       }
+      if (frameDTO.pose) await writeFile(path.join(cameraDir, `${view}_pose.json`), JSON.stringify(frameDTO.pose, null, 2));
 
       const scanFrame: ScanFrame = {
         id: randomUUID(),
@@ -122,7 +169,9 @@ export async function POST(
         capturedAt: new Date(frameDTO.timestamp ? frameDTO.timestamp * 1000 : Date.now()).toISOString(),
         byteSize,
         mimeType,
-        depthAvailable: depthSaved || Boolean(manifest.hasTrueDepth),
+        depthAvailable: depthSaved,
+        geometryFileName: frameDTO.geometry ? `${view}_geometry.json` : undefined,
+        intrinsicsFileName: frameDTO.intrinsics ? `${view}_intrinsics.json` : undefined,
         cameraMetadata: frameDTO.intrinsics || undefined,
         poseMetadata: {
           pose: frameDTO.pose,
@@ -141,7 +190,7 @@ export async function POST(
 
     const qualityReport = evaluateScanQuality(savedFrames, "ios_native");
 
-    let updatedSession: ScanSession = {
+    const updatedSession: ScanSession = {
       ...currentSession,
       status: qualityReport.overall === "fail" ? "needs_rescan" : "quality_check",
       frames: savedFrames,
@@ -161,6 +210,7 @@ export async function POST(
           provider: reconResult.provider,
           requestedAt: new Date().toISOString(),
           baselineModelFileName: reconResult.artifacts.baselineModelFileName,
+          baselineObjFileName: reconResult.artifacts.baselineObjFileName,
         };
 
         // Synchronize scan frames to patient.photos gallery

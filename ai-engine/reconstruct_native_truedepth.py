@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 import cv2
 import numpy as np
+import trimesh
 
 CURRENT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(CURRENT_DIR))
@@ -91,6 +92,11 @@ def reconstruct_native_package(
     # 5. Export binary glTF (baseline.glb)
     glb_path = out_dir / "baseline.glb"
     export_patient_glb(unwrapped_verts, unwrapped_faces, uvs_2d, texture_png_bytes, str(glb_path))
+    # Keep a geometry-only OBJ beside the GLB for clinical systems that
+    # consume OBJ.  It is exported from the exact same measured vertices and
+    # triangles as the GLB, never regenerated from photos or a template.
+    obj_path = out_dir / "baseline.obj"
+    trimesh.Trimesh(vertices=unwrapped_verts, faces=unwrapped_faces, process=False).export(obj_path)
 
     # 6. Execute Render-Back Verification Gate
     report_path = out_dir / "reconstruction_report.json"
@@ -108,6 +114,7 @@ def reconstruct_native_package(
         "vertexCount": len(unwrapped_verts),
         "triangleCount": len(unwrapped_faces),
         "glbFile": "baseline.glb",
+        "objFile": "baseline.obj",
         "textureFile": "face_HD.png",
         "viewsUsed": surface_result["frames_used"],
         "hasNativeARFace": surface_result["has_native_arface"],
@@ -132,6 +139,7 @@ def reconstruct_native_package(
         "patientId": patient_id,
         "sessionId": session_id,
         "baselineGlbPath": str(glb_path),
+        "baselineObjPath": str(obj_path),
         "baselineMeta": baseline_meta,
         "qualityMeta": report,
         "landmarks": landmarks,

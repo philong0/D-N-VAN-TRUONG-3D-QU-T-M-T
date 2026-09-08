@@ -46,7 +46,6 @@ def reconstruct_patient_scan(
     # depends on that real temporal order to know which frames actually
     # overlap.
     from detect_pose import detect_pose
-    from reconstruct_gnm_fullhead import reconstruct_gnm_from_images
 
     images = {}
     if burst_dir is not None:
@@ -141,8 +140,32 @@ def reconstruct_patient_scan(
     if "angle1" not in images and images:
         images["angle1"] = next(iter(images.values()))
 
-    res = reconstruct_gnm_from_images(patient_id, images, out_dir)
-    return res
+    # D-notemplate — bridge the selected real per-angle frames (`images`,
+    # angle1..4 -> real captured BGR image, chosen above from real measured
+    # yaw/pitch, never a template) into a PatientNativeReconstructor so
+    # `_run_reconstruction` below runs the actual zero-template pipeline
+    # (multi-view SfM / ARFace / TrueDepth fusion). This runtime must NEVER
+    # call `reconstruct_gnm_fullhead` — that generic-template pipeline was
+    # wired in here twice already (both times reverted, see D-notemplate in
+    # earlier backups and test_anti_template.py's stricter direct-import
+    # check) and both times it silently replaced this patient's own
+    # captured geometry with a template deformed toward their photos,
+    # bypassing the render-back QC gate entirely.
+    reconstructor = PatientNativeReconstructor(Path(out_dir))
+    reconstructor.frames = []
+    for slot, bgr in images.items():
+        reconstructor.frames.append({
+            "stem": slot,
+            "rgb_file": Path(out_dir) / f"{slot}.jpg",
+            "image_bgr": bgr,
+            "shape": bgr.shape[:2],
+            "intrinsics": None,
+            "camera_pose": np.eye(4, dtype=np.float64),
+            "face_pose": np.eye(4, dtype=np.float64),
+            "arface_vertices": None,
+            "arface_triangles": None,
+            "depth_f32": None,
+        })
 
     return _run_reconstruction(reconstructor, patient_id, session_id, out_dir, t0)
 

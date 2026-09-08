@@ -10,16 +10,10 @@ import UIKit
 import Combine
 import simd
 
-public enum CameraPosition: String {
-    case front = "front"
-    case back = "back"
-}
-
 public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDelegate {
     @Published public var isTrueDepthSupported = false
     @Published public var isCameraAuthorized = false
     @Published public var isTracking = false
-    @Published public var cameraPosition: CameraPosition = .front
     @Published public var currentYawDeg: Float = 0
     @Published public var currentPitchDeg: Float = 0
     @Published public var currentRollDeg: Float = 0
@@ -104,28 +98,17 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     public func startSession() {
         arSession.pause()
         clearLivePoseState()
-        if cameraPosition == .front {
-            guard isTrueDepthSupported else {
-                guidanceFeedback = "Thiết bị không hỗ trợ camera TrueDepth trước."
-                return
-            }
-            let config = ARFaceTrackingConfiguration()
-            config.isLightEstimationEnabled = true
-            config.maximumNumberOfTrackedFaces = 1
-            arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
-            guidanceFeedback = "Camera trước TrueDepth: Nhìn thẳng vào màn hình"
-        } else {
-            let config = ARWorldTrackingConfiguration()
-            if ARWorldTrackingConfiguration.supportsUserFaceTracking { config.userFaceTrackingEnabled = true }
-            if ARWorldTrackingConfiguration.supportsFrameSemantics(.sceneDepth) { config.frameSemantics.insert(.sceneDepth) }
-            arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
-            guidanceFeedback = "Camera sau: Hướng camera vào khuôn mặt bệnh nhân"
+        guard isTrueDepthSupported else {
+            guidanceFeedback = "Thiết bị không hỗ trợ camera TrueDepth trước."
+            return
         }
-    }
-
-    public func switchCamera() {
-        cameraPosition = cameraPosition == .front ? .back : .front
-        startSession()
+        // This scanner is intentionally face-tracking only. ARWorldTracking
+        // and the rear camera cannot be substituted for a TrueDepth scan.
+        let config = ARFaceTrackingConfiguration()
+        config.isLightEstimationEnabled = true
+        config.maximumNumberOfTrackedFaces = 1
+        arSession.run(config, options: [.resetTracking, .removeExistingAnchors])
+        guidanceFeedback = "Camera trước TrueDepth: Nhìn thẳng vào màn hình"
     }
 
     public func pauseSession() { arSession.pause() }
@@ -406,6 +389,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu khuôn mặt ARKit bất thường hoặc chưa ổn định. Vui lòng giữ mặt trong khung rồi thử lại."])
         }
         let geometry = faceAnchor.geometry
+        guard geometry.vertices.count == 1220,
+              geometry.triangleIndices.count == 2304 * 3,
+              geometry.textureCoordinates.count == 1220 else {
+            throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "ARFaceGeometry không đầy đủ (cần 1.220 vertices, 2.304 tam giác và UV tương ứng)."])
+        }
         let geometryDTO = ARKitFaceGeometryDTO(
             vertexCount: geometry.vertices.count,
             triangleCount: geometry.triangleIndices.count / 3,
@@ -448,6 +436,29 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
         guard !isUploading else { return }
+        let requiredSteps = Set(ScanAngleStep.allCases)
+        guard Set(capturedFrames.keys) == requiredSteps,
+              capturedFrames.values.allSatisfy({ frame in
+                  frame.geometry.vertexCount == 1220
+                    && frame.geometry.triangleCount == 2304
+                    && frame.geometry.verticesMeters.count == 1220 * 3
+                    && frame.geometry.triangleIndices.count == 2304 * 3
+                    && frame.geometry.textureCoordinates.count == 1220 * 2
+                    && frame.intrinsics.fx > 0 && frame.intrinsics.fy > 0
+                    // A native TrueDepth baseline is a metric depth
+                    // reconstruction.  Do not accept an ARFace-only package
+                    // and silently turn it into a lower-fidelity path.
+                    && frame.depthData != nil
+                    && (frame.depthWidth ?? 0) > 0 && (frame.depthHeight ?? 0) > 0
+                    && frame.depthIntrinsics != nil
+                    && (frame.depthData?.count == (frame.depthWidth ?? 0) * (frame.depthHeight ?? 0) * MemoryLayout<Float32>.size)
+                    && frame.pose.faceTransformColumnMajor.count == 16
+                    && frame.pose.cameraTransformColumnMajor.count == 16
+                    && !frame.rgbData.isEmpty
+              }) else {
+            completion(.failure(NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu ARKit metric đầy đủ; không tải lên hoặc hạ cấp sang ảnh 2D."])) )
+            return
+        }
         isUploading = true
         lastErrorMessage = nil
         guidanceFeedback = "✓ Đang tải gói TrueDepth / ARKit lên máy chủ & Dựng 3D..."

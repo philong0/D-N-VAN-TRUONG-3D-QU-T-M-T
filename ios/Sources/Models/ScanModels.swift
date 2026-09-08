@@ -217,6 +217,7 @@ public struct ReconstructionDTO: Codable {
     public let provider: String?
     public let requestedAt: String?
     public let baselineModelFileName: String?
+    public let baselineObjFileName: String?
     public let error: String?
 }
 

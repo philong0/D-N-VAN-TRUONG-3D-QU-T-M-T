@@ -463,6 +463,34 @@ class PatientNativeReconstructor:
         if not self.frames:
             raise ValueError(f"No valid frames found in {self.package_dir}")
 
+        # Native iOS sessions are an all-or-nothing metric acquisition
+        # contract.  Missing depth must fail this session rather than making
+        # an ARFace/RGB-only model that could be mistaken for a TrueDepth
+        # reconstruction of this patient.
+        is_native_ios = self.manifest.get("captureSource") == "native_ios"
+        if is_native_ios:
+            expected_views = {"front", "left_45", "left_profile", "right_45", "right_profile"}
+            by_view = {f["stem"]: f for f in self.frames}
+            missing = sorted(expected_views - set(by_view))
+            invalid = []
+            for view in sorted(expected_views & set(by_view)):
+                frame = by_view[view]
+                vertices = frame.get("arface_vertices")
+                triangles = frame.get("arface_triangles")
+                if (vertices is None or vertices.shape != (1220, 3)
+                        or triangles is None or triangles.shape != (2304, 3)
+                        or frame.get("intrinsics") is None
+                        or frame.get("depth_intrinsics") is None
+                        or frame.get("depth_f32") is None):
+                    invalid.append(view)
+            if missing or invalid:
+                detail = []
+                if missing:
+                    detail.append("missing RGB views: " + ", ".join(missing))
+                if invalid:
+                    detail.append("missing/incomplete metric ARKit data: " + ", ".join(invalid))
+                raise ValueError("Native TrueDepth package is incomplete (" + "; ".join(detail) + ").")
+
         # Check if native ARFaceGeometry is available across frames
         arface_frames = [f for f in self.frames if f["arface_vertices"] is not None]
         has_native_arface = len(arface_frames) > 0
@@ -1239,7 +1267,13 @@ class PatientNativeReconstructor:
             frame_face_arrays.append(grid_faces)
             n_used += 1
 
+        if self.manifest.get("captureSource") == "native_ios" and n_used != 5:
+            raise ValueError(
+                f"Native TrueDepth package yielded usable calibrated depth for only {n_used}/5 required views."
+            )
         if n_used == 0:
+            if self.manifest.get("captureSource") == "native_ios":
+                raise ValueError("Native TrueDepth depth maps contained no usable calibrated metric samples.")
             if fused_mesh is not None:
                 print(
                     "_refine_surface_with_truedepth: depth frames present but none produced a usable "
