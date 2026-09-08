@@ -1,0 +1,55 @@
+{
+  "inputFrameCount": 87,
+  "selectedFrameCount": 4,
+  "selectedFrames": [
+    {
+      "filename": "burst_0001.jpg",
+      "yaw": 0,
+      "pitch": 0,
+      "roll": 0,
+      "qualityScore": 100,
+      "targetId": "FRONT",
+      "timestamp": 1788753755335
+    },
+    {
+      "filename": "burst_0006.jpg",
+      "yaw": -48,
+      "pitch": 0,
+      "roll": 0,
+      "qualityScore": 100,
+      "targetId": "LEFT20",
+      "timestamp": 1788753755903
+    },
+    {
+      "filename": "burst_0036.jpg",
+      "yaw": -90,
+      "pitch": 0,
+      "roll": 0,
+      "qualityScore": 100,
+      "targetId": "LEFT45",
+      "timestamp": 1788753759532
+    },
+    {
+      "filename": "burst_0046.jpg",
+      "yaw": 42,
+      "pitch": -17,
+      "roll": -6.577890143119148,
+      "qualityScore": 100,
+      "targetId": "LEFT45",
+      "timestamp": 1788753761158
+    }
+  ],
+  "yawMin": -90,
+  "yawMax": 90,
+  "leftCount": 48,
+  "frontCount": 8,
+  "rightCount": 31,
+  "duplicateCount": 22,
+  "coverage": {
+    "left": true,
+    "front": true,
+    "right": true,
+    "profile": true
+  },
+  "selectionMethod": "yaw_quality_overlap"
+}

@@ -1,0 +1,21 @@
+{
+  "patientId": "b4a4e489-be5a-4880-8d5e-f02085134bbb",
+  "sessionId": "f0201c70-3d96-48d0-b98f-0d57e31dee90",
+  "modelVersion": "Patient-Specific Native Multi-Frame Fusion (Zero-Template)",
+  "generatedAt": "2026-09-07T09:25:11Z",
+  "processingTimeMs": 19061,
+  "vertexCount": 6541,
+  "triangleCount": 9216,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "front",
+    "left_45",
+    "left_profile",
+    "right_45",
+    "right_profile"
+  ],
+  "hasNativeARFace": true,
+  "hasNativeDepth": false,
+  "reconstructionStatus": "completed"
+}

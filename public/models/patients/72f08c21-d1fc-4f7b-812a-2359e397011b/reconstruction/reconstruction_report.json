@@ -1,0 +1,82 @@
+{
+  "reconstructionStatus": "reconstruction_failed",
+  "frameCountUsed": 5,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 6.11,
+  "worstAnatomicalRegionErrorMm": 83.79,
+  "anatomicalGateThresholdMm": 20.0,
+  "depthCoverage": "photogrammetric_depth",
+  "surfaceCoverage": 352,
+  "textureCoverage": "100% authentic multi-view photographic projection",
+  "renderBackErrorPerView": {
+    "front": {
+      "silhouetteCoverage": 0.1887,
+      "reprojectionErrorMm": 6.11,
+      "status": "pass"
+    },
+    "left_45": {
+      "silhouetteCoverage": 0.145,
+      "reprojectionErrorMm": 6.55,
+      "status": "pass"
+    },
+    "left_profile": {
+      "silhouetteCoverage": 0.1898,
+      "reprojectionErrorMm": 6.1,
+      "status": "pass"
+    },
+    "right_45": {
+      "silhouetteCoverage": 0.2182,
+      "reprojectionErrorMm": 5.82,
+      "status": "pass"
+    },
+    "right_profile": {
+      "silhouetteCoverage": 0.2027,
+      "reprojectionErrorMm": 5.97,
+      "status": "pass"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 52.68,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 83.79,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 59.23,
+      "status": "warning"
+    },
+    "nose": {
+      "errorMm": 71.13,
+      "status": "warning"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 16.47,
+      "status": "warning"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 52.68,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 56.0,
+      "status": "warning"
+    }
+  },
+  "evaluatedAt": "2026-08-31T13:00:30Z"
+}

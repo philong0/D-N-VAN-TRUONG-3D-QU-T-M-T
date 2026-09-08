@@ -1,0 +1,164 @@
+{
+  "input_dataset": {
+    "type": "2D Photographic Multi-Angle Dataset (Not Hardware TrueDepth)",
+    "views": [
+      "angle1_front",
+      "angle2_left45",
+      "angle3_profile90",
+      "angle4_submental"
+    ],
+    "files": {
+      "angle1_front": "/home/ubuntu/dr-vantruong-3d-studio/fixtures/scans/sample_truedepth_scan/angle1.png",
+      "angle2_left45": "/home/ubuntu/dr-vantruong-3d-studio/fixtures/scans/sample_truedepth_scan/angle2.png",
+      "angle3_profile90": "/home/ubuntu/dr-vantruong-3d-studio/fixtures/scans/sample_truedepth_scan/angle3.jpg",
+      "angle4_submental": "/home/ubuntu/dr-vantruong-3d-studio/fixtures/scans/sample_truedepth_scan/angle4.png"
+    }
+  },
+  "repeatability": {
+    "mesh1_vertex_count": 10995,
+    "mesh2_vertex_count": 10995,
+    "mean_diff_mm": 0.0,
+    "rms_diff_mm": 0.0,
+    "median_diff_mm": 0.0,
+    "p95_diff_mm": 0.0,
+    "max_diff_mm": 0.0,
+    "is_deterministic": true
+  },
+  "overall_reprojection": {
+    "total_landmarks_evaluated": 192,
+    "mean_reprojection_error_px": 10.122574738076297,
+    "median_reprojection_error_px": 7.565166554287755,
+    "p95_reprojection_error_px": 27.469481448835293,
+    "max_reprojection_error_px": 45.26345374184277,
+    "mean_reprojection_error_pct_width": 1.4105495013211253
+  },
+  "per_view_reprojection": {
+    "angle1_front": {
+      "image_size": [
+        472,
+        393
+      ],
+      "detected_yaw_deg": 0.21401529410189973,
+      "mean_error_px": 4.765036233685206,
+      "median_error_px": 4.125867074304939,
+      "p95_error_px": 10.469692651306923,
+      "max_error_px": 11.471038064208123,
+      "mean_error_pct_width": 1.0095415749333065
+    },
+    "angle2_left45": {
+      "image_size": [
+        466,
+        446
+      ],
+      "detected_yaw_deg": -32.92675284298167,
+      "mean_error_px": 5.794009724821507,
+      "median_error_px": 4.753269079933066,
+      "p95_error_px": 11.297630137381777,
+      "max_error_px": 18.44181417758496,
+      "mean_error_pct_width": 1.2433497263565465
+    },
+    "angle3_profile90": {
+      "image_size": [
+        1024,
+        980
+      ],
+      "detected_yaw_deg": -56.83851319332968,
+      "mean_error_px": 14.500494042172619,
+      "median_error_px": 12.656587761222589,
+      "p95_error_px": 30.68561143051675,
+      "max_error_px": 45.26345374184277,
+      "mean_error_pct_width": 1.41606387130592
+    },
+    "angle4_submental": {
+      "image_size": [
+        782,
+        890
+      ],
+      "detected_yaw_deg": -0.6983189215002895,
+      "mean_error_px": 15.430758951625855,
+      "median_error_px": 14.363817141227715,
+      "p95_error_px": 27.934857353575776,
+      "max_error_px": 33.578623856127564,
+      "mean_error_pct_width": 1.9732428326887284
+    }
+  },
+  "regional_breakdown": {
+    "jaw": {
+      "count": 28,
+      "mean_px": 12.141881865067274,
+      "median_px": 9.589743327879209,
+      "p95_px": 36.99952785819903,
+      "max_px": 45.26345374184277
+    },
+    "eyebrows": {
+      "count": 40,
+      "mean_px": 13.615173084719899,
+      "median_px": 10.198790449953329,
+      "p95_px": 28.562407432461388,
+      "max_px": 31.368086651913462
+    },
+    "nose": {
+      "count": 4,
+      "mean_px": 17.697176565830244,
+      "median_px": 17.585499919474568,
+      "p95_px": 32.68785001717539,
+      "max_px": 33.578623856127564
+    },
+    "eyes": {
+      "count": 40,
+      "mean_px": 11.353544305935355,
+      "median_px": 10.021047301041076,
+      "p95_px": 25.703503082552608,
+      "max_px": 29.418157447922866
+    },
+    "mouth": {
+      "count": 80,
+      "mean_px": 6.675303194990429,
+      "median_px": 5.871580714249957,
+      "p95_px": 14.58685082671675,
+      "max_px": 18.300337679852852
+    }
+  },
+  "key_landmarks": {
+    "Pronasale (Nose Tip)": {
+      "mean_px": 17.697176565830244,
+      "median_px": 17.585499919474568,
+      "p95_px": 32.68785001717539,
+      "max_px": 33.578623856127564
+    },
+    "Pogonion (Chin Pog)": {
+      "mean_px": 8.663696392059734,
+      "median_px": 6.65486052149035,
+      "p95_px": 17.86438604152602,
+      "max_px": 19.23722005850048
+    },
+    "Menton (Lower Chin)": {
+      "mean_px": 8.663696392059734,
+      "median_px": 6.65486052149035,
+      "p95_px": 17.86438604152602,
+      "max_px": 19.23722005850048
+    },
+    "Endocanthion Left (Inner Eye L)": {
+      "mean_px": 4.111180643249082,
+      "median_px": 3.8853450087646424,
+      "p95_px": 7.8444221366654805,
+      "max_px": 8.413439464792816
+    },
+    "Endocanthion Right (Inner Eye R)": {
+      "mean_px": 8.843542446866007,
+      "median_px": 8.972460113952113,
+      "p95_px": 15.137397580472625,
+      "max_px": 15.675897453594294
+    },
+    "Stomion (Lip Center)": {
+      "mean_px": 7.443385807419808,
+      "median_px": 7.586689491769626,
+      "p95_px": 10.399184710123315,
+      "max_px": 10.40647765796405
+    }
+  },
+  "execution_times_sec": {
+    "run1": 43.1304817199707,
+    "run2": 42.39705562591553
+  }
+}

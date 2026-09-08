@@ -1,0 +1,609 @@
+<title>Half-Face Geometry Audit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f7f8;
+    --surface: #ffffff;
+    --surface-2: #eceff2;
+    --ink: #161b1f;
+    --ink-soft: #4c5760;
+    --ink-faint: #7c8790;
+    --border: #dde2e6;
+    --accent: #0e7c86;
+    --accent-ink: #075158;
+    --accent-soft: #e3f2f2;
+    --pass: #1e8e5a;
+    --pass-soft: #e6f5ec;
+    --pass-ink: #0f5c39;
+    --fail: #b3261e;
+    --fail-soft: #fbeae9;
+    --fail-ink: #7d1a15;
+    --warn: #93650a;
+    --warn-soft: #fbf0dc;
+    --warn-ink: #6b4a06;
+    --shadow: 0 1px 2px rgba(20,30,35,0.04), 0 8px 24px -12px rgba(20,30,35,0.12);
+    --font-display: "IBM Plex Sans", -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0e1315;
+      --surface: #151b1e;
+      --surface-2: #1b2225;
+      --ink: #e8ebec;
+      --ink-soft: #a3adb2;
+      --ink-faint: #6d7679;
+      --border: #2a3236;
+      --accent: #3fc7d1;
+      --accent-ink: #8fe0e6;
+      --accent-soft: #122d30;
+      --pass: #49c98a;
+      --pass-soft: #123321;
+      --pass-ink: #7fe0ac;
+      --fail: #f2867d;
+      --fail-soft: #351815;
+      --fail-ink: #f7b0a9;
+      --warn: #e3b04b;
+      --warn-soft: #362a10;
+      --warn-ink: #f0cc84;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0e1315;
+    --surface: #151b1e;
+    --surface-2: #1b2225;
+    --ink: #e8ebec;
+    --ink-soft: #a3adb2;
+    --ink-faint: #6d7679;
+    --border: #2a3236;
+    --accent: #3fc7d1;
+    --accent-ink: #8fe0e6;
+    --accent-soft: #122d30;
+    --pass: #49c98a;
+    --pass-soft: #123321;
+    --pass-ink: #7fe0ac;
+    --fail: #f2867d;
+    --fail-soft: #351815;
+    --fail-ink: #f7b0a9;
+    --warn: #e3b04b;
+    --warn-soft: #362a10;
+    --warn-ink: #f0cc84;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -12px rgba(0,0,0,0.5);
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-display);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--accent); color: var(--surface); }
+
+  a { color: var(--accent-ink); }
+
+  .skip-link {
+    position: absolute; left: -9999px; top: 0;
+    background: var(--accent); color: #fff; padding: 8px 14px; z-index: 100;
+  }
+  .skip-link:focus { left: 12px; top: 12px; }
+
+  code, .mono { font-family: var(--font-mono); }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    font-weight: 500;
+  }
+
+  /* ---------- Masthead ---------- */
+  .masthead {
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .masthead-inner {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 44px 32px 32px;
+  }
+  .masthead-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 24px;
+    flex-wrap: wrap;
+  }
+  .masthead h1 {
+    font-size: clamp(1.7rem, 3vw, 2.35rem);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 6px 0 10px;
+    text-wrap: balance;
+  }
+  .masthead-sub {
+    color: var(--ink-soft);
+    max-width: 62ch;
+    font-size: 1.02rem;
+  }
+  .meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 18px 28px;
+    margin-top: 28px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .meta-item .k {
+    font-family: var(--font-mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    margin-bottom: 4px;
+  }
+  .meta-item .v {
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    padding: 5px 11px;
+    border-radius: 100px;
+    white-space: nowrap;
+  }
+  .chip-pass { background: var(--pass-soft); color: var(--pass-ink); }
+  .chip-fail { background: var(--fail-soft); color: var(--fail-ink); }
+  .chip-warn { background: var(--warn-soft); color: var(--warn-ink); }
+  .chip-blocked { background: var(--surface-2); color: var(--ink-soft); border: 1px solid var(--border); }
+  .chip::before { content: "●"; font-size: 0.6em; }
+
+  /* ---------- Page frame ---------- */
+  .frame {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: 200px minmax(0,1fr);
+    gap: 56px;
+    align-items: start;
+  }
+  nav.toc {
+    position: sticky;
+    top: 28px;
+    padding: 36px 0 60px;
+    font-size: 0.86rem;
+  }
+  nav.toc .eyebrow { margin-bottom: 12px; display: block; }
+  nav.toc ol {
+    list-style: none;
+    margin: 0; padding: 0;
+    counter-reset: toc;
+    border-left: 1px solid var(--border);
+  }
+  nav.toc li { counter-increment: toc; }
+  nav.toc a {
+    display: block;
+    padding: 7px 0 7px 16px;
+    margin-left: -1px;
+    border-left: 1px solid transparent;
+    color: var(--ink-soft);
+    text-decoration: none;
+    line-height: 1.35;
+  }
+  nav.toc a:hover { color: var(--ink); border-left-color: var(--ink-faint); }
+  nav.toc a::before {
+    content: counter(toc, decimal-leading-zero);
+    font-family: var(--font-mono);
+    color: var(--ink-faint);
+    margin-right: 8px;
+    font-size: 0.82em;
+  }
+
+  main { min-width: 0; padding: 36px 0 100px; }
+
+  section { padding-top: 52px; scroll-margin-top: 20px; }
+  section:first-child { padding-top: 0; }
+
+  section > .eyebrow { display: block; margin-bottom: 10px; }
+  section h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  section h3 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 30px 0 12px;
+  }
+  .prose { max-width: 72ch; }
+  .prose p { margin: 0 0 14px; color: var(--ink); }
+  .prose p.lead { font-size: 1.06rem; color: var(--ink-soft); }
+  .prose ul, .prose ol { max-width: 72ch; padding-left: 1.3em; margin: 0 0 14px; }
+  .prose li { margin-bottom: 6px; }
+
+  .divider { height: 1px; background: var(--border); margin: 52px 0; border: none; }
+
+  /* ---------- Verdict card ---------- */
+  .verdict {
+    display: flex; gap: 18px; align-items: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 28px;
+  }
+  .verdict .icon {
+    flex: 0 0 auto;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: var(--accent-soft);
+    color: var(--accent-ink);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-weight: 700; font-size: 1.1rem;
+  }
+  .verdict .body h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .verdict .body p { margin: 0; color: var(--ink-soft); }
+
+  /* ---------- Comparison table ---------- */
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  table.compare {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--surface);
+    font-size: 0.92rem;
+    min-width: 640px;
+  }
+  table.compare th, table.compare td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  table.compare thead th {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    background: var(--surface-2);
+    font-weight: 500;
+    position: sticky; top: 0;
+  }
+  table.compare tbody th {
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--ink);
+  }
+  table.compare tbody tr:last-child td, table.compare tbody tr:last-child th { border-bottom: none; }
+  table.compare td.best { color: var(--pass-ink); font-weight: 500; }
+  .rating { display: inline-block; font-family: var(--font-mono); font-size: 0.78rem; padding: 2px 8px; border-radius: 6px; }
+  .r-good { background: var(--pass-soft); color: var(--pass-ink); }
+  .r-mid { background: var(--warn-soft); color: var(--warn-ink); }
+  .r-bad { background: var(--fail-soft); color: var(--fail-ink); }
+  .r-na { background: var(--surface-2); color: var(--ink-faint); }
+
+  /* ---------- Finding cards ---------- */
+  .finding {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    padding: 24px 26px;
+    margin-bottom: 22px;
+  }
+  .finding-head {
+    display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;
+    margin-bottom: 12px;
+  }
+  .finding-head h4 { margin: 0; font-size: 1.05rem; font-weight: 700; }
+  .finding .loc {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+    padding: 3px 9px;
+    border-radius: 6px;
+    margin: 2px 6px 2px 0;
+  }
+  .finding p { color: var(--ink-soft); margin: 10px 0; max-width: 70ch; }
+  .finding pre {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  .finding pre .cm { color: var(--ink-faint); }
+
+  /* ---------- Image gallery ---------- */
+  .gallery-frame {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+    padding: 18px;
+  }
+  .gallery-frame img { width: 100%; display: block; border-radius: 8px; }
+  .gallery-cap {
+    display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    margin-top: 12px;
+    font-family: var(--font-mono);
+    font-size: 0.78rem;
+    color: var(--ink-faint);
+  }
+  .gallery-cap b { color: var(--ink-soft); font-weight: 600; }
+
+  /* ---------- Checklist ---------- */
+  .checklist { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
+  .check-item {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    font-size: 0.9rem;
+  }
+  .check-item .mark {
+    flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.72rem; font-weight: 700; font-family: var(--font-mono);
+    margin-top: 1px;
+  }
+  .check-pass .mark { background: var(--pass-soft); color: var(--pass-ink); }
+  .check-pending .mark { background: var(--surface-2); color: var(--ink-faint); }
+
+  /* ---------- Timeline (source audit) ---------- */
+  .audit-list { border-left: 2px solid var(--border); padding-left: 22px; }
+  .audit-item { position: relative; padding-bottom: 26px; }
+  .audit-item:last-child { padding-bottom: 0; }
+  .audit-item::before {
+    content: "";
+    position: absolute; left: -27px; top: 4px;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent); border: 2px solid var(--surface); box-shadow: 0 0 0 1px var(--border);
+  }
+  .audit-item .f { font-family: var(--font-mono); font-size: 0.88rem; color: var(--ink); font-weight: 600; }
+  .audit-item p { margin: 5px 0 0; color: var(--ink-soft); font-size: 0.92rem; max-width: 68ch; }
+
+  footer {
+    max-width: 1180px; margin: 0 auto; padding: 30px 32px 60px;
+    color: var(--ink-faint); font-size: 0.82rem;
+    border-top: 1px solid var(--border);
+  }
+
+  @media (max-width: 860px) {
+    .frame { grid-template-columns: 1fr; }
+    nav.toc { position: static; padding: 20px 0; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+    nav.toc ol { columns: 2; }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    a, .check-item { transition: color 0.15s ease, border-color 0.15s ease; }
+  }
+</style>
+
+<a class="skip-link" href="#main">Bỏ qua đến nội dung</a>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="masthead-top">
+      <div>
+        <span class="eyebrow">GNM Multi-View Pipeline · Audit &amp; Fix Report</span>
+        <h1>Half-Face Geometry Audit</h1>
+        <p class="masthead-sub">So sánh 3 phiên bản render (11/08 → 21/08/2026) trên cùng một route sản xuất, xác định 2 lỗi kiến trúc gốc, và ghi lại các fix đã áp dụng cho <code>src/components/Canvas3D.tsx</code> + <code>src/lib/gnm/</code>.</p>
+      </div>
+      <span class="chip chip-warn">ĐANG TIẾN HÀNH</span>
+    </div>
+    <div class="meta-grid">
+      <div class="meta-item"><div class="k">Patient</div><div class="v">0913e4c9-999c…c294dff4bfd3</div></div>
+      <div class="meta-item"><div class="k">Route</div><div class="v">/patients/[id]/studio</div></div>
+      <div class="meta-item"><div class="k">Pipeline active</div><div class="v">GNM multi-view (4/4 views)</div></div>
+      <div class="meta-item"><div class="k">Files sửa</div><div class="v">3</div></div>
+      <div class="meta-item"><div class="k">TypeScript</div><div class="v">0 lỗi</div></div>
+      <div class="meta-item"><div class="k">Live browser check</div><div class="v">Blocked — port 3000 down</div></div>
+    </div>
+  </div>
+</header>
+
+<div class="frame">
+  <nav class="toc" aria-label="Mục lục">
+    <span class="eyebrow">Mục lục</span>
+    <ol>
+      <li><a href="#tomtat">Tóm tắt</a></li>
+      <li><a href="#soanh">So sánh 3 ảnh</a></li>
+      <li><a href="#kientruc">Kiến trúc xác nhận</a></li>
+      <li><a href="#rootcause">Root cause</a></li>
+      <li><a href="#fix">Fix đã áp dụng</a></li>
+      <li><a href="#checklist">Pass / Fail</a></li>
+      <li><a href="#conlai">Còn lại</a></li>
+    </ol>
+  </nav>
+
+  <main id="main">
+
+    <section id="tomtat">
+      <span class="eyebrow">01 — Tóm tắt</span>
+      <h2>Ba ảnh, một route, mười ngày tiến hoá</h2>
+      <div class="verdict">
+        <div class="icon">✓</div>
+        <div class="body">
+          <h3>Không có "pipeline FaceVerse" nào trong main project</h3>
+          <p>Ảnh 1, 2 và 3 đều là cùng một component (<code>StudioClient → SplitCompare → Canvas3D</code>), cùng một route sản xuất — chỉ khác thời điểm code (11/08 so với 21/08) và bệnh nhân. Toàn bộ công việc FaceVerse trong phiên làm việc này diễn ra riêng ở <code>~/faceverse-test/</code> và chưa từng được merge vào đây.</p>
+        </div>
+      </div>
+      <div class="prose">
+        <p class="lead">Ảnh 1–2 (11/08) cho chất lượng da/identity rất tốt nhưng chưa multi-view. Ảnh 3 (21/08, chụp trực tiếp trên <code>localhost:3000</code>) có multi-view + có vẻ half-face, nhưng khi audit source thì phát hiện: phần "half-face" đó thực chất là <b>full-head bị CSS che đi</b>, không phải geometry thật — đúng loại lỗi mà yêu cầu ban đầu ("không đục lỗ trên lớp đen") đã lường trước.</p>
+        <p>Đã sửa tại <code>Canvas3D.tsx</code> + <code>src/lib/gnm/</code>: geometry giờ thực sự bị cắt (triangle-drop), không còn dùng vignette để giả lập. Trong lúc audit tiếp, phát hiện thêm và sửa luôn một lỗi thứ hai do chính fix đầu tiên gây ra: dùng nhầm <code>hockey_mask</code> một mình sẽ xoá luôn tam giác của mắt (GNM tách mắt ra khỏi hockey_mask hoàn toàn) — ai-engine đã tự sửa lỗi này ở server (D31) nhưng client thì chưa, nay đã đồng bộ.</p>
+      </div>
+    </section>
+
+    <section id="soanh">
+      <span class="eyebrow">02 — Đối chiếu trực quan</span>
+      <h2>So sánh Ảnh 1 · 2 · 3</h2>
+      <div class="prose">
+        <p>Ảnh 1 &amp; 2 là 2 khung hình của cùng một video (patient <code class="mono">0913e4c9</code>, tên hồ sơ "tét", dịch vụ sửa mũi cấu trúc) quay 11/08/2026. Ảnh 3 chụp trực tiếp trên <code>localhost:3000</code> ở chế độ toàn màn hình, bệnh nhân khác (không phải 0913e4c9).</p>
+      </div>
+      <div class="table-wrap">
+        <table class="compare">
+          <thead>
+            <tr><th scope="col">Tiêu chí</th><th scope="col">Ảnh 1 (0°, 11/08)</th><th scope="col">Ảnh 2 (45°, 11/08)</th><th scope="col">Ảnh 3 (hiện tại, 21/08)</th></tr>
+          </thead>
+          <tbody>
+            <tr><th scope="row">Identity / giống bệnh nhân</th><td class="best"><span class="rating r-good">Rất giống</span></td><td><span class="rating r-good">Giống</span></td><td><span class="rating r-mid">Trung bình</span></td></tr>
+            <tr><th scope="row">Chi tiết da</th><td class="best"><span class="rating r-good">Có pore, tông tự nhiên</span></td><td class="best"><span class="rating r-good">Giữ được ở 45°</span></td><td><span class="rating r-mid">Phẳng hơn</span></td></tr>
+            <tr><th scope="row">Tóc / appearance</th><td class="best"><span class="rating r-good">Tóc thật, tự nhiên</span></td><td class="best"><span class="rating r-good">Tóc thật</span></td><td><span class="rating r-bad">Đầu trọc, viền tóc răng cưa</span></td></tr>
+            <tr><th scope="row">Vùng mắt</th><td><span class="rating r-good">Bình thường</span></td><td><span class="rating r-good">Bình thường</span></td><td><span class="rating r-bad">Hốc mắt tối/trũng</span></td></tr>
+            <tr><th scope="row">Multi-view consistency</th><td><span class="rating r-na">Chỉ 2 góc trong video</span></td><td><span class="rating r-na">—</span></td><td class="best"><span class="rating r-good">4 góc, 1 identity chung</span></td></tr>
+            <tr><th scope="row">Half-face</th><td><span class="rating r-na">Full head + tóc</span></td><td><span class="rating r-na">Full head + tóc</span></td><td><span class="rating r-mid">Có vẻ có — thực ra là CSS che full-head</span></td></tr>
+            <tr><th scope="row">Artifact</th><td><span class="rating r-good">Không thấy</span></td><td><span class="rating r-good">Không thấy</span></td><td><span class="rating r-bad">Viền răng cưa lộ ra do vignette lệch tỉ lệ</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="kientruc">
+      <span class="eyebrow">03 — Xác nhận nguồn</span>
+      <h2>Kiến trúc: một route, một pipeline</h2>
+      <div class="prose">
+        <p>Toàn bộ audit dựa trên đọc trực tiếp source + các bản backup có timestamp trong <code>.backups/</code> (project không dùng git — lịch sử được giữ bằng quy ước đặt tên file thủ công của chính project).</p>
+      </div>
+      <div class="audit-list">
+        <div class="audit-item">
+          <div class="f">10/08 16:02 → 17:59 — <code>Canvas3D.gnm-v3-stable.tsx</code>, <code>…before-buoc4.1-camera-framing…</code></div>
+          <p>Trạng thái ngay trước khi video Ảnh 1/2 được quay. Chưa có <code>hockey_mask</code>, chưa có vignette CSS — render full head, tóc là pixel ảnh thật chiếu lên mesh.</p>
+        </div>
+        <div class="audit-item">
+          <div class="f">12/08 → 20/08 — D5 … D38 (13 vùng atlas, best-view selector, luminance gain)</div>
+          <p><code>Canvas3D.tsx</code> phình từ ~42KB lên ~95KB. Thêm <code>hockey_mask</code>/<code>face-oval-mask.ts</code>, vignette CSS, texture atlas 19 vùng.</p>
+        </div>
+        <div class="audit-item">
+          <div class="f">Xác nhận runtime — <code>POST /fit-multiview-atlas</code></div>
+          <p><code class="mono">viewsUsed: [angle1, angle2, angle3, angle4]</code>, <code class="mono">warnings: []</code> — GNM multi-view chạy thành công cho patient 0913e4c9, không fallback sang <code>head.glb</code> (3DDFA_V2 cũ).</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="rootcause">
+      <span class="eyebrow">04 — Nguyên nhân gốc</span>
+      <h2>Hai lỗi kiến trúc thật, tìm bằng cách đọc code</h2>
+
+      <div class="finding">
+        <div class="finding-head">
+          <h4>#1 — "Half-face" là full-head bị CSS che, không phải geometry thật</h4>
+          <span class="chip chip-fail">ĐÃ SỬA</span>
+        </div>
+        <span class="loc">Canvas3D.tsx:802-815 (trước fix)</span>
+        <span class="loc">face-oval-mask.ts</span>
+        <p>Comment gốc của chính project tự thừa nhận: <code>maskTrianglesByFaceRegion</code> chỉ được dùng để tính camera-framing, còn <code>built.geometry</code> — buffer thật GPU rasterize — vẫn giữ nguyên full head+neck+shoulders. Một CSS <code>maskImage</code> hình elip (đo cứng cho khung 376×700) là thứ DUY NHẤT tạo cảm giác "half-face".</p>
+        <pre>// D27 (nguyên văn, trước khi sửa)
+// ...not just re-used for framing math). geometry/atlas contract
+// below is <span class="cm">untouched</span>, only this metrics calculation uses
+// the masked triangle set — <span class="cm">the full head+neck+shoulder mesh
+// still being RENDERED underneath (unchanged)</span>.</pre>
+        <p><b>Fix:</b> thêm <code>maskAtlasGeometryByFaceRegion()</code> (group-aware, giữ đúng vật liệu atlas theo vùng) + áp trực tiếp lên <code>built.geometry.index</code>/<code>.groups</code>, tính lại normal sau khi cắt. Vignette CSS chỉ còn vai trò làm mềm viền thật, không còn là cơ chế duy nhất tạo half-face.</p>
+      </div>
+
+      <div class="finding">
+        <div class="finding-head">
+          <h4>#2 — Fix #1 tự gây hốc mắt đen do dùng sai vertex-group</h4>
+          <span class="chip chip-fail">ĐÃ SỬA</span>
+        </div>
+        <span class="loc">gnm_texture_atlas.py:674-689 ("D31")</span>
+        <span class="loc">loader.ts</span>
+        <p>Bản fix #1 đầu tiên dùng riêng <code>hockey_mask</code> (row 4/46) để cắt. Nhưng <code>hockey_mask</code> có <b>0% overlap</b> với các vertex-group <code>eyes</code>/<code>eye_sockets</code> — GNM tách mắt hoàn toàn ra khỏi mask da mặt. ai-engine đã từng gặp đúng lỗi này và tự sửa ở server (comment D31 ghi rõ: "confirmed via a real isolated render" — đã thấy hốc đen thật trước khi sửa) bằng cách hợp nhất 3 group: <code>hockey_mask ∪ eyes ∪ eye_sockets</code>. Phía client chưa từng đồng bộ theo fix này.</p>
+        <pre>hockey_mask row 4   → 0 vertex chung với eyes/eye_sockets
+eyes        row 13  → sclera + iris + pupil + interior + exterior
+eye_sockets row 16  → da mí mắt quanh hốc mắt
+
+Triangle giữ lại nếu CHỈ dùng hockey_mask :  9,192 / 35,324
+Triangle giữ lại khi hợp nhất 3 group     : 13,108 / 35,324  (+3,916 — vùng mắt)</pre>
+        <p><b>Fix:</b> thêm <code>loadGnmRenderMask()</code> trong <code>loader.ts</code>, mirror đúng công thức <code>_region_mask()</code> phía Python. Cả 2 nhánh cắt geometry trong <code>Canvas3D.tsx</code> chuyển từ <code>faceMask.membership</code> (hockey_mask riêng) sang <code>renderMask.membership</code> (3 group hợp nhất).</p>
+      </div>
+    </section>
+
+    <section id="fix">
+      <span class="eyebrow">05 — Bằng chứng trực quan</span>
+      <h2>Render thật, dữ liệu thật của patient 0913e4c9</h2>
+      <div class="prose">
+        <p>Không kết luận chỉ bằng metric. Hai ảnh dưới đây dựng từ chính <code>fitted_positions</code>/<code>vertex_colors</code> thật trả về bởi <code>POST /fit-multiview-atlas</code> cho patient 0913e4c9 (gọi trực tiếp ai-engine :8001, không qua cache) — cùng công thức masking byte-identical với code đã sửa trong <code>face-oval-mask.ts</code>/<code>loader.ts</code>.</p>
+      </div>
+
+      <div class="gallery-frame">
+        <img src="data:image/png;base64,__BEFORE_AFTER_B64__" alt="So sánh full-head 35,324 tam giác trước khi sửa và half-face thật 13,108 tam giác sau khi sửa, cùng dữ liệu vertex-color thật của bệnh nhân" loading="lazy" />
+        <div class="gallery-cap"><span><b>Trái</b> — full head, 35,324 tam giác (trạng thái CSS-mask cũ)</span><span><b>Phải</b> — half-face thật, 13,108 tam giác (hockey_mask ∪ eyes ∪ eye_sockets)</span></div>
+      </div>
+
+      <h3>Bốn góc — cùng một geometry, xoay camera</h3>
+      <div class="prose"><p>GNM chỉ tạo <b>một</b> mesh chia sẻ identity — 0°/45°/90°/dưới là 4 góc camera nhìn cùng một hình học, không phải 4 mesh riêng. Ảnh dưới là preview dựng độc lập (matplotlib, không phải Three.js) để kiểm tra hình học/màu, chưa phản ánh chất lượng render/lighting cuối trong trình duyệt.</p></div>
+      <div class="gallery-frame">
+        <img src="data:image/png;base64,__FOURVIEWS_B64__" alt="Bốn góc nhìn 0 độ, 45 độ, 90 độ, và từ dưới lên của half-face geometry đã sửa, cho thấy mắt được giữ lại không còn là lỗ đen" loading="lazy" />
+        <div class="gallery-cap"><span>Preview dựng độc lập ngoài trình duyệt — <b>không thay thế</b> xác nhận Three.js trực tiếp</span></div>
+      </div>
+    </section>
+
+    <section id="checklist">
+      <span class="eyebrow">06 — Pass / Fail</span>
+      <h2>Đối chiếu 17 tiêu chí PASS cuối</h2>
+      <div class="checklist">
+        <div class="check-item check-pass"><span class="mark">✓</span> Half-face thật (geometry, không phải CSS)</div>
+        <div class="check-item check-pass"><span class="mark">✓</span> Không full skull</div>
+        <div class="check-item check-pass"><span class="mark">✓</span> Không black-hole mask</div>
+        <div class="check-item check-pass"><span class="mark">✓</span> Không hốc mắt đen (đã sửa lần 2)</div>
+        <div class="check-item check-pass"><span class="mark">✓</span> Mesh hợp lệ (13,108 tam giác, không NaN)</div>
+        <div class="check-item check-pass"><span class="mark">✓</span> TypeScript / ESLint sạch</div>
+        <div class="check-item check-pending"><span class="mark">–</span> 0° giống patient (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> 45° giống patient (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> 90° giống patient (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Dưới giống patient (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> 4 góc cùng một identity (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Viền half-face sạch, không răng cưa (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Xoay 3D ổn định (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Không lỗ miệng (chưa audit — khác cơ chế FaceVerse)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Không da loang 45° (chưa audit — khác cơ chế FaceVerse)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Real-photo skin detail giữ nguyên (chờ xác nhận trình duyệt)</div>
+        <div class="check-item check-pending"><span class="mark">–</span> Facial detail tốt như Ảnh 1/2 (chờ xác nhận trình duyệt)</div>
+      </div>
+    </section>
+
+    <section id="conlai">
+      <span class="eyebrow">07 — Còn lại</span>
+      <h2>Chưa xác nhận được — và tại sao</h2>
+      <div class="prose">
+        <p><b>Live in-browser check bị chặn:</b> port 3000 (Next.js dev server) hiện không chạy — không phải do thay đổi code, có khả năng do phiên SSH bị ngắt giữa chừng. Port 8001 (ai-engine) vẫn sống nên toàn bộ xác nhận ở trên dùng dữ liệu thật gọi trực tiếp ai-engine, nhưng chưa render qua đúng pipeline Three.js/vật liệu/vignette thật trong trình duyệt. Chưa tự khởi động lại server theo đúng chỉ thị hiện tại.</p>
+        <p><b>3 fix "90° eye-socket / 0° lip-closure / 45° texture consensus"</b> được nêu trong yêu cầu thuộc về <code>~/faceverse-test/</code> (FaceVerse — PCA texture + SH lighting + eye-rotation coefficient), một kiến trúc khác hẳn GNM. GNM không có các cơ chế này; thay vào đó tự có: <code>point_mask</code>/<code>POINT_WEIGHTS</code> (loại landmark không đáng tin theo từng view) và <code>backproject_pseudo3d</code> (gán độ sâu landmark 2D theo pose đã giải, tránh chính lớp lỗi "2D không ràng buộc chiều sâu" mà lip-closure fix của FaceVerse từng giải quyết). Cả hai đã có sẵn trong <code>gnm_identity_fit.py</code>, chưa cần thêm gì mới — nhưng chưa audit trực tiếp trên ảnh 45° của patient 0913e4c9 để xác nhận không loang da.</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  Báo cáo tổng hợp phiên audit 21/08/2026 · dr-vantruong-3d-studio · dựng từ source thật + dữ liệu fit thật của patient 0913e4c9, không dùng số liệu giả định.
+</footer>

@@ -1,0 +1,48 @@
+{
+  "overall": "fail",
+  "registrationErrorMm": 7.2,
+  "depthCoverage": "photogrammetric_depth",
+  "textureCoverage": "100% authentic multi-view photographic projection",
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 71.74,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 57.32,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 41.36,
+      "status": "warning"
+    },
+    "nose": {
+      "errorMm": 32.97,
+      "status": "warning"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 57.63,
+      "status": "warning"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 71.74,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 55.46,
+      "status": "warning"
+    }
+  }
+}

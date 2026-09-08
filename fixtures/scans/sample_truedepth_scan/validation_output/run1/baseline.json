@@ -1,0 +1,19 @@
+{
+  "patientId": "val-patient-001",
+  "sessionId": "val-session-run1",
+  "modelVersion": "GNM multi-view identity fit + trust-blended shell + eye sub-pipeline (Phase 1+2)",
+  "faceShellVersion": "GNM Face Shell v1 \u2014 ears + submental/neck transition, unified 2K HD texture (Phase 1)",
+  "generatedAt": "2026-08-30T05:34:23Z",
+  "processingTimeMs": 43116,
+  "vertexCount": 10995,
+  "triangleCount": 21686,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "angle1_front",
+    "angle2_left45",
+    "angle3_profile90",
+    "angle4_submental"
+  ],
+  "warnings": []
+}

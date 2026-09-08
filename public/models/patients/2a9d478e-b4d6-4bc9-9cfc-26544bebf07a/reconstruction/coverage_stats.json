@@ -1,0 +1,11 @@
+{
+  "shellTexelCount": 3047100,
+  "coveredTexelCount": 1151356,
+  "viewsUsed": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "method": "Direct Single-Layer Projective Blending + Multi-Scale Skin Diffusion"
+}

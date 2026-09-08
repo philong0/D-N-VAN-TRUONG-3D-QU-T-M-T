@@ -1,0 +1,33 @@
+{
+  "patientId": "adf6178f-a96f-4855-9dbd-231371bde171",
+  "modelVersion": "GNM Full-Head Identity-Fit + Face Shell (E2 topology, BUG A-D + G1-G4 fixes)",
+  "generatedAt": "2026-08-31T09:55:32Z",
+  "processingTimeMs": 25303,
+  "vertexCount": 11211,
+  "triangleCount": 22136,
+  "viewsUsed": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "warnings": [],
+  "coverageStats": {
+    "shellTexelCount": 2650369,
+    "zeroPhotoCoverageTexels": 2085057,
+    "byViewCount": {
+      "0": 2085057,
+      "1": 399930,
+      "2": 107292,
+      "3": 50429,
+      "4": 7661
+    },
+    "perViewDominantTexelCount": {
+      "angle1": 241290,
+      "angle2": 83923,
+      "angle3": 115672,
+      "angle4": 124427
+    }
+  },
+  "reconstructionStatus": "completed"
+}

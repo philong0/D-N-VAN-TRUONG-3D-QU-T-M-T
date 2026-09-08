@@ -1,0 +1,21 @@
+{
+  "patientId": "test-patient-native-ios",
+  "sessionId": "test-session-native-001",
+  "modelVersion": "Patient-Specific Native Multi-Frame Fusion (Zero-Template)",
+  "generatedAt": "2026-09-08T04:15:51Z",
+  "processingTimeMs": 20650,
+  "vertexCount": 15056,
+  "triangleCount": 9172,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "front",
+    "left_45",
+    "left_profile",
+    "right_45",
+    "right_profile"
+  ],
+  "hasNativeARFace": true,
+  "hasNativeDepth": false,
+  "reconstructionStatus": "reconstruction_failed"
+}

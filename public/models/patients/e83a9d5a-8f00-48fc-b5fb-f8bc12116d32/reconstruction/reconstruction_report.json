@@ -1,0 +1,197 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 25,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": Infinity,
+  "worstAnatomicalRegionErrorMm": 4.71,
+  "anatomicalGateThresholdMm": 35.0,
+  "depthCoverage": "not_available",
+  "surfaceCoverage": 5145,
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "renderBackErrorPerView": {
+    "burst_0000": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0001": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0002": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0003": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0005": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0006": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0007": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0008": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0009": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0010": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0011": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0014": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0015": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0016": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0017": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0018": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0019": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0020": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0021": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0022": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": Infinity,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 3.87,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 4.71,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 4.62,
+      "status": "warning"
+    },
+    "nose": {
+      "errorMm": 0.69,
+      "status": "pass"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 0.64,
+      "status": "pass"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 3.87,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 3.07,
+      "status": "warning"
+    }
+  },
+  "evaluatedAt": "2026-09-01T09:34:59Z"
+}

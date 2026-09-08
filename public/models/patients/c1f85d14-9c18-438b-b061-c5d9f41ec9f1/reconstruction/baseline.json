@@ -1,0 +1,19 @@
+{
+  "patientId": "c1f85d14-9c18-438b-b061-c5d9f41ec9f1",
+  "sessionId": "23c1430a-0275-42fb-bd7a-28761b8776a7",
+  "modelVersion": "Patient-Specific Multi-Frame Reconstruction (Zero-Template)",
+  "generatedAt": "2026-09-01T10:09:26Z",
+  "processingTimeMs": 7541,
+  "vertexCount": 5619,
+  "triangleCount": 10112,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "burst_0000",
+    "burst_0007",
+    "burst_0014",
+    "burst_0020",
+    "burst_0027"
+  ],
+  "reconstructionStatus": "completed"
+}

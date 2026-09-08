@@ -1,0 +1,31 @@
+{
+  "ok": true,
+  "method": "3DDFA_V2 multi-view weighted-blend projection (BFM noneck v3, occlusion+facing-weight fusion)",
+  "viewsUsed": [
+    "front",
+    "left_45",
+    "left_profile",
+    "right_45",
+    "right_profile"
+  ],
+  "viewsSkipped": {},
+  "alphaShpStdMax": 140645.09375,
+  "uncoveredUvFraction": 0.2977437973022461,
+  "vertexCount": 38365,
+  "faceCount": 76073,
+  "textureResolution": 1024,
+  "boundingBox": {
+    "min": [
+      -74458.453125,
+      -88455.203125,
+      13730.8310546875
+    ],
+    "max": [
+      73289.265625,
+      90470.7890625,
+      131322.5625
+    ]
+  },
+  "processingTimeMs": 1409,
+  "glbPath": "/home/ubuntu/dr-vantruong-3d-studio/public/models/crisalix_sample/head.glb"
+}

@@ -1,0 +1,92 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 5,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 52.46,
+  "worstAnatomicalRegionErrorMm": 71.33,
+  "anatomicalGateThresholdMm": 35.0,
+  "depthCoverage": "not_available",
+  "surfaceCoverage": 5145,
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "renderBackErrorPerView": {
+    "burst_0000": {
+      "silhouetteCoverage": 0.1586,
+      "silhouetteIoU": 0.8944,
+      "contourErrorPx": 10.7,
+      "reprojectionErrorMm": 2.54,
+      "status": "pass"
+    },
+    "burst_0006": {
+      "silhouetteCoverage": 0.0555,
+      "silhouetteIoU": 0.3242,
+      "contourErrorPx": 86.36,
+      "reprojectionErrorMm": 64.87,
+      "status": "warning"
+    },
+    "burst_0012": {
+      "silhouetteCoverage": 0.1338,
+      "silhouetteIoU": 0.3517,
+      "contourErrorPx": 93.63,
+      "reprojectionErrorMm": 52.46,
+      "status": "warning"
+    },
+    "burst_0018": {
+      "silhouetteCoverage": 0.0629,
+      "silhouetteIoU": 0.3262,
+      "contourErrorPx": 93.09,
+      "reprojectionErrorMm": 67.85,
+      "status": "warning"
+    },
+    "burst_0024": {
+      "silhouetteCoverage": 0.1615,
+      "silhouetteIoU": 0.6241,
+      "contourErrorPx": 47.05,
+      "reprojectionErrorMm": 11.06,
+      "status": "pass"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 58.7,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 16.74,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 71.33,
+      "status": "warning"
+    },
+    "nose": {
+      "errorMm": 43.01,
+      "status": "warning"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 39.37,
+      "status": "warning"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 58.7,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 47.98,
+      "status": "warning"
+    }
+  },
+  "evaluatedAt": "2026-09-03T02:44:46Z"
+}

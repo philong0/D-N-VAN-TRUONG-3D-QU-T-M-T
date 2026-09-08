@@ -1,0 +1,21 @@
+{
+  "patientId": "test-patient-native-ios",
+  "sessionId": "test-session-native-001",
+  "modelVersion": "Native-iOS-ARKit-TrueDepth-GNM-v2",
+  "faceShellVersion": "GNM Face Shell v1 \u2014 ears + submental/neck transition, unified 2K HD texture (Phase 1)",
+  "generatedAt": "2026-08-30T05:39:40Z",
+  "processingTimeMs": 38596,
+  "vertexCount": 10995,
+  "triangleCount": 21686,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "left_45",
+    "right_profile",
+    "front",
+    "left_profile",
+    "right_45"
+  ],
+  "hasTrueDepth": true,
+  "warnings": []
+}

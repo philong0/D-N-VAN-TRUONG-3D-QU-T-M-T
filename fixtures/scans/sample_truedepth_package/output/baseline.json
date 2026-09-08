@@ -1,0 +1,21 @@
+{
+  "patientId": "test-patient-truedepth",
+  "sessionId": "test-session-truedepth-001",
+  "modelVersion": "Apple-ARKit-TrueDepth-GNM-FaceShell-v3",
+  "faceShellVersion": "GNM Face Shell v1 \u2014 ears + submental/neck transition, unified 2K HD texture (Phase 1)",
+  "generatedAt": "2026-08-30T05:37:22Z",
+  "processingTimeMs": 38432,
+  "vertexCount": 10995,
+  "triangleCount": 21686,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "front",
+    "left_45",
+    "left_profile",
+    "right_45",
+    "right_profile"
+  ],
+  "hasTrueDepth": true,
+  "warnings": []
+}

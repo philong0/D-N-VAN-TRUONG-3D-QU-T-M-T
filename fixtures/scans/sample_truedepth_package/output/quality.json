@@ -1,0 +1,17 @@
+{
+  "overall": "pass",
+  "scannerKind": "ios_native",
+  "hasTrueDepth": true,
+  "viewsUsed": [
+    "front",
+    "left_45",
+    "left_profile",
+    "right_45",
+    "right_profile"
+  ],
+  "coverageFraction": 0.3339318781213175,
+  "eyeToEyeDistanceMm": 35.28867147289131,
+  "geometryConsistency": "pass",
+  "landmarkCount": 6,
+  "processingTimeMs": 38432
+}

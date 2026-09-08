@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>8 Hộp Quà Vàng May Mắn - Viện Thẩm Mỹ Bác Sĩ Văn Trường</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&display=swap');
+    
+    body {
+      font-family: 'Montserrat', sans-serif;
+      background: radial-gradient(ellipse at 50% 20%, #9e0c1f 0%, #680512 40%, #380108 80%, #1a0003 100%);
+      color: #fbf5b7;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      overflow-x: hidden;
+    }
+
+    .gold-chrome-text {
+      background: linear-gradient(135deg, #a67c1e 0%, #fbf5b7 25%, #ca9e3a 50%, #fffdd0 75%, #916814 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    @keyframes floating {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-8px); }
+    }
+    .floating-box { animation: floating 3.2s ease-in-out infinite; }
+
+    @keyframes gentleShake {
+      0% { transform: translate(0, 0) rotate(0deg); }
+      25% { transform: translate(-1.5px, 0.5px) rotate(-1.5deg); }
+      50% { transform: translate(1.5px, -0.5px) rotate(1.5deg); }
+      75% { transform: translate(-1.5px, -0.5px) rotate(-1deg); }
+      100% { transform: translate(0, 0) rotate(0deg); }
+    }
+    .shaking-gentle { animation: gentleShake 0.35s ease-in-out infinite !important; }
+
+    @keyframes luxuryShake {
+      0% { transform: translate(0, 0) rotate(0deg) scale(1.03); }
+      20% { transform: translate(-3px, -2px) rotate(-3deg) scale(1.05); }
+      40% { transform: translate(3px, 1px) rotate(3deg) scale(1.05); }
+      60% { transform: translate(-3px, 2px) rotate(-2deg) scale(1.05); }
+      80% { transform: translate(3px, -1px) rotate(2deg) scale(1.05); }
+      100% { transform: translate(0, 0) rotate(0deg) scale(1.05); }
+    }
+    .shaking-box { animation: luxuryShake 0.12s infinite alternate !important; }
+
+    @keyframes spinSlow {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    .animate-spin-slow { animation: spinSlow 12s linear infinite; }
+
+    @keyframes shimmer {
+      0% { transform: translateX(-100%) skewX(-12deg); }
+      100% { transform: translateX(200%) skewX(-12deg); }
+    }
+    .animate-shimmer { animation: shimmer 2.5s infinite; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes scaleUp {
+      from { opacity: 0; transform: scale(0.85); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .animate-fadeIn { animation: fadeIn 0.25s ease-out forwards; }
+    .animate-scaleUp { animation: scaleUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    const ALL_PROGRAM_ITEMS = [
+      {
+        id: "gold_1",
+        type: "win",
+        title: "CHÚC MỪNG QUÝ KHÁCH ĐÃ RINH LỘC!",
+        highlightText: "VÀNG 9999 PHÁT TÀI",
+        subText: "Vàng Ròng 9999 Chuẩn Y Khoa • Rinh Lộc May Mắn Đại Lễ 2/9",
+        badge: "GIẢI NHẤT PHÁT TÀI",
+        visualType: "gold_bar",
+        voucherCode: "VT-GOLD-9999",
+        defaultRate: 2
+      },
+      {
+        id: "surgery_50",
+        type: "win",
+        title: "ĐẶC BIỆT CHÚC MỪNG!",
+        highlightText: "GIẢM 50% TIỂU PHẪU",
+        subText: "Đặc quyền tiểu phẫu thẩm mỹ cùng Bác sĩ Văn Trường",
+        badge: "ĐẶC QUYỀN VIP 2/9",
+        visualType: "surgery_50",
+        voucherCode: "VT-50-TIEUPHAU",
+        defaultRate: 8
+      },
+      {
+        id: "meso_20",
+        type: "win",
+        title: "CHÚC MỪNG QUÝ KHÁCH!",
+        highlightText: "TẶNG 20% MESO CĂNG BÓNG",
+        subText: "Liệu trình trẻ hóa căng bóng da đa tầng chuyên sâu",
+        badge: "QUÀ TẶNG SPA CAO CẤP",
+        visualType: "meso_20",
+        voucherCode: "VT-MESO-20",
+        defaultRate: 25
+      },
+      {
+        id: "triet_long",
+        type: "win",
+        title: "CHÚC MỪNG QUÝ KHÁCH!",
+        highlightText: "TẶNG 01 LẦN TRIỆT LÔNG NÁCH",
+        subText: "Công nghệ Diode Laser chuẩn y khoa • Miễn phí 100%",
+        badge: "TRI ÂN THÂN THIẾT",
+        visualType: "triet_long",
+        voucherCode: "VT-TRIETLONG-FREE",
+        defaultRate: 30
+      },
+      {
+        id: "miss",
+        type: "miss",
+        title: "LỜI CHÚC TỪ BÁC SĨ",
+        highlightText: "CHÚC QUÝ KHÁCH MÃI XINH ĐẸP & RẠNG NGỜI!",
+        subText: "Cơ hội trúng Vàng 9999 và Ưu đãi Đặc Quyền vẫn đang chờ Quý khách ở lượt tiếp theo!",
+        badge: "LỜI CHÚC YÊU THƯƠNG",
+        visualType: "wish",
+        defaultRate: 35
+      }
+    ];
+
+    const MISS_MESSAGES = [
+      "CHÚC QUÝ KHÁCH MAY MẮN Ở LƯỢT TIẾP THEO!",
+      "HẸN QUÝ KHÁCH MỘT CƠ HỘI MAY MẮN KHÁC NHÉ!",
+      "MAY MẮN ĐANG CHỜ QUÝ KHÁCH Ở LẦN SAU!",
+      "CHÚC QUÝ KHÁCH THẬT NHIỀU MAY MẮN TRONG NHỮNG LẦN TIẾP THEO!",
+      "MỘT CHÚT TIẾC NUỐI, NHƯNG CƠ HỘI TRÚNG VÀNG VẪN CÒN PHÍA TRƯỚC!",
+      "MỘT CHÚT TIẾC NUỐI – MỘT CHÚT CHỜ MONG – HẸN QUÝ KHÁCH Ở LẦN SAU!",
+      "MAY MẮN CHƯA GỌI TÊN LẦN NÀY, THỬ LẠI NGAY NHÉ QUÝ KHÁCH!",
+      "HÔM NAY CHƯA TRÚNG, BIẾT ĐÂU LẦN SAU TRÚNG VÀNG LỚN NHA QUÝ KHÁCH ƠI!"
+    ];
+
+    class SoundFX {
+      constructor() { this.ctx = null; }
+      init() {
+        if (!this.ctx && typeof window !== "undefined") {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioCtx();
+        }
+      }
+      playShake() {
+        this.init(); if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(80, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(160, this.ctx.currentTime + 0.15);
+          gain.gain.setValueAtTime(0.12, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.15);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(); osc.stop(this.ctx.currentTime + 0.15);
+        } catch(e) {}
+      }
+      playBurst() {
+        this.init(); if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(320, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(70, this.ctx.currentTime + 0.4);
+          gain.gain.setValueAtTime(0.4, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.4);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(); osc.stop(this.ctx.currentTime + 0.4);
+        } catch(e) {}
+      }
+      playTick() {
+        this.init(); if (!this.ctx) return;
+        try {
+          const osc = this.ctx.createOscillator();
+          const gain = this.ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(750, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(1300, this.ctx.currentTime + 0.04);
+          gain.gain.setValueAtTime(0.09, this.ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + 0.04);
+          osc.connect(gain); gain.connect(this.ctx.destination);
+          osc.start(); osc.stop(this.ctx.currentTime + 0.04);
+        } catch(e) {}
+      }
+      playFanfare() {
+        this.init(); if (!this.ctx) return;
+        try {
+          const freqs = [523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98];
+          freqs.forEach((f, i) => {
+            if (!this.ctx) return;
+            const osc = this.ctx.createOscillator();
+            const gain = this.ctx.createGain();
+            osc.type = "triangle";
+            const st = this.ctx.currentTime + i * 0.08;
+            osc.frequency.setValueAtTime(f, st);
+            gain.gain.setValueAtTime(0.32, st);
+            gain.gain.exponentialRampToValueAtTime(0.001, st + 0.7);
+            osc.connect(gain); gain.connect(this.ctx.destination);
+            osc.start(st); osc.stop(st + 0.7);
+          });
+        } catch(e) {}
+      }
+    }
+    const sounds = new SoundFX();
+
+    let activeParticles = [];
+    let animFrameId = null;
+
+    function triggerMassiveFireworks(originX, originY) {
+      const canvas = document.getElementById("prize-burst-canvas");
+      if (!canvas) return;
+      const ctx = canvas.getContext("2d", { alpha: true });
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      const goldColors = ["#FFFDD0", "#FBF5B7", "#FFD700", "#FFA500", "#FF4500", "#FF1493", "#00FFFF", "#FFD700", "#00FF66", "#FFFFFF"];
+
+      for (let i = 0; i < 40; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 18 + 7;
+        activeParticles.push({
+          x: originX, y: originY, type: "ribbon",
+          color: goldColors[i % goldColors.length], size: Math.random() * 12 + 6,
+          speedX: Math.cos(angle) * speed, speedY: Math.sin(angle) * speed - 5,
+          rotation: Math.random() * 360, rotationSpeed: (Math.random() - 0.5) * 16,
+          opacity: 1
+        });
+      }
+      for (let i = 0; i < 110; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = Math.random() * 20 + 5;
+        activeParticles.push({
+          x: originX, y: originY, type: i % 3 === 0 ? "gold_coin" : "star",
+          color: goldColors[Math.floor(Math.random() * goldColors.length)], size: Math.random() * 10 + 4,
+          speedX: Math.cos(angle) * speed, speedY: Math.sin(angle) * speed - 6,
+          rotation: Math.random() * 360, rotationSpeed: (Math.random() - 0.5) * 14,
+          opacity: 1
+        });
+      }
+
+      if (!animFrameId) {
+        function render() {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          let alive = false;
+          for (let i = 0; i < activeParticles.length; i++) {
+            const p = activeParticles[i];
+            p.x += p.speedX; p.y += p.speedY; p.speedY += 0.28;
+            p.speedX *= 0.98; p.rotation += p.rotationSpeed; p.opacity -= 0.008;
+            if (p.opacity > 0) {
+              alive = true;
+              ctx.save();
+              ctx.translate(p.x, p.y);
+              ctx.rotate((p.rotation * Math.PI) / 180);
+              ctx.globalAlpha = p.opacity;
+              if (p.type === "gold_coin") {
+                ctx.fillStyle = "#FFD700"; ctx.beginPath(); ctx.arc(0, 0, p.size, 0, Math.PI * 2); ctx.fill();
+                ctx.strokeStyle = "#FFFDD0"; ctx.lineWidth = 1.5; ctx.stroke();
+              } else if (p.type === "ribbon") {
+                ctx.fillStyle = p.color; ctx.beginPath(); ctx.ellipse(0, 0, p.size, p.size * 2.5, Math.PI / 4, 0, Math.PI * 2); ctx.fill();
+              } else {
+                ctx.fillStyle = p.color; ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size);
+              }
+              ctx.restore();
+            }
+          }
+          activeParticles = activeParticles.filter((p) => p.opacity > 0);
+          if (alive) animFrameId = requestAnimationFrame(render);
+          else animFrameId = null;
+        }
+        render();
+      }
+    }
+
+    function StandaloneLuxuryPrize3D({ item }) {
+      if (item.visualType === "gold_bar") {
+        return (
+          <div className="relative flex flex-col items-center justify-center my-3 sm:my-5 scale-110 sm:scale-125">
+            <div className="absolute inset-0 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(255,215,0,0.55)_0%,transparent_70%)] blur-2xl animate-spin-slow pointer-events-none" />
+            <div className="relative z-10 w-72 sm:w-80 h-36 sm:h-40 rounded-3xl border-3 border-yellow-100 shadow-[0_0_60px_rgba(255,215,0,0.95),_inset_0_2px_12px_rgba(255,255,255,0.9)] flex flex-col items-center justify-center transform hover:scale-105 transition-transform" style={{ background: "linear-gradient(135deg, #a67c1e 0%, #fffdd0 25%, #ca9e3a 50%, #fbf5b7 75%, #916814 100%)" }}>
+              <div className="text-xs sm:text-sm font-sans font-black text-rose-950 tracking-widest uppercase mb-1">✦ VIỆN THẨM MỸ VĂN TRƯỜNG ✦</div>
+              <div className="text-3xl sm:text-4xl font-black font-sans text-[#2a0408] tracking-wider drop-shadow-[0_2px_6px_rgba(255,255,255,0.8)]">VÀNG 9999</div>
+              <div className="text-[11px] sm:text-xs font-mono font-black text-amber-950 tracking-widest mt-1">9999 FINE GOLD • PHÁT TÀI ĐẠI LỄ 2/9</div>
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent transform -skew-x-12 animate-shimmer pointer-events-none rounded-3xl" />
+            </div>
+            <div className="absolute -left-6 top-8 w-13 h-13 rounded-full bg-gradient-to-br from-yellow-200 to-amber-600 border-2 border-white shadow-2xl flex items-center justify-center font-black text-xs text-rose-950 animate-bounce">9999</div>
+            <div className="absolute -right-6 top-8 w-13 h-13 rounded-full bg-gradient-to-br from-yellow-200 to-amber-600 border-2 border-white shadow-2xl flex items-center justify-center font-black text-xs text-rose-950 animate-bounce delay-150">VT</div>
+          </div>
+        );
+      }
+      if (item.visualType === "surgery_50") {
+        return (
+          <div className="relative flex flex-col items-center justify-center my-3 sm:my-5 scale-110 sm:scale-125">
+            <div className="absolute inset-0 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(244,63,94,0.55)_0%,transparent_70%)] blur-2xl animate-spin-slow pointer-events-none" />
+            <div className="relative z-10 w-76 sm:w-84 h-40 sm:h-44 rounded-3xl border-3 border-[#FCF6BA] shadow-[0_0_60px_rgba(244,63,94,0.9),_inset_0_2px_12px_rgba(255,255,255,0.5)] flex flex-col items-center justify-between p-4 transform hover:scale-105 transition-transform" style={{ background: "linear-gradient(135deg, #590412 0%, #a80d24 50%, #2e0208 100%)" }}>
+              <div className="w-full flex items-center justify-between">
+                <span className="text-[11px] font-sans font-bold text-[#FCF6BA] tracking-[0.15em] uppercase">VIP PRIVILEGE PASS</span>
+                <span className="text-xs font-mono font-bold text-rose-200">DR. VĂN TRƯỜNG</span>
+              </div>
+              <div className="text-center my-auto">
+                <div className="text-4xl sm:text-5xl font-black font-sans text-yellow-300 tracking-tight drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)]">GIẢM 50%</div>
+                <div className="text-xs sm:text-sm font-sans font-black text-white tracking-wider uppercase mt-1">TIỂU PHẪU THẨM MỸ</div>
+              </div>
+              <div className="w-full flex items-center justify-between text-[10px] text-amber-200 border-t border-[#FCF6BA]/40 pt-1 font-sans">
+                <span>HẠN DÙNG: ĐẠI LỄ 2/9</span>
+                <span className="font-mono font-bold">MÃ: VT-50-VIP</span>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      if (item.visualType === "meso_20") {
+        return (
+          <div className="relative flex flex-col items-center justify-center my-3 sm:my-5 scale-110 sm:scale-125">
+            <div className="absolute inset-0 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(45,212,191,0.55)_0%,transparent_70%)] blur-2xl animate-spin-slow pointer-events-none" />
+            <div className="relative z-10 w-76 sm:w-84 h-40 sm:h-44 rounded-3xl border-3 border-white shadow-[0_0_60px_rgba(45,212,191,0.9)] flex flex-col items-center justify-center p-4 text-white" style={{ background: "linear-gradient(135deg, #042f2e 0%, #0d9488 50%, #115e59 100%)" }}>
+              <div className="text-3xl mb-1">💧 ✨</div>
+              <div className="text-3xl sm:text-4xl font-black font-sans tracking-tight text-cyan-200 drop-shadow">TẶNG 20%</div>
+              <div className="text-xs sm:text-sm font-sans font-black tracking-wider uppercase text-white mt-1">MESO CĂNG BÓNG DA</div>
+            </div>
+          </div>
+        );
+      }
+      if (item.visualType === "triet_long") {
+        return (
+          <div className="relative flex flex-col items-center justify-center my-3 sm:my-5 scale-110 sm:scale-125">
+            <div className="absolute inset-0 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(217,70,239,0.55)_0%,transparent_70%)] blur-2xl animate-spin-slow pointer-events-none" />
+            <div className="relative z-10 w-76 sm:w-84 h-40 sm:h-44 rounded-3xl border-3 border-white shadow-[0_0_60px_rgba(217,70,239,0.9)] flex flex-col items-center justify-center p-4 text-white" style={{ background: "linear-gradient(135deg, #4a044e 0%, #a21caf 50%, #701a75 100%)" }}>
+              <div className="text-[11px] font-bold font-sans uppercase tracking-[0.15em] text-pink-200 bg-black/50 px-4 py-1 rounded-full mb-1">MIỄN PHÍ 100%</div>
+              <div className="text-2xl sm:text-3xl font-black font-sans tracking-tight text-white drop-shadow">🌸 01 LẦN TRIỆT LÔNG</div>
+              <div className="text-xs font-sans font-bold tracking-wider uppercase text-pink-200 mt-1">DIODE LASER CHUẨN Y KHOA</div>
+            </div>
+          </div>
+        );
+      }
+      return (
+        <div className="relative flex flex-col items-center justify-center my-3 sm:my-5 scale-105 sm:scale-115">
+          <div className="absolute inset-0 w-80 h-80 rounded-full bg-[radial-gradient(circle,rgba(244,63,94,0.45)_0%,transparent_70%)] blur-2xl pointer-events-none" />
+          <div className="relative z-10 w-76 sm:w-84 h-36 sm:h-40 rounded-3xl border-3 border-[#FCF6BA] shadow-[0_0_50px_rgba(244,63,94,0.8)] flex flex-col items-center justify-center p-4 text-white text-center" style={{ background: "linear-gradient(135deg, #850718 0%, #c9182b 50%, #4a0208 100%)" }}>
+            <div className="text-3xl mb-1 animate-pulse">💌 💖</div>
+            <div className="text-xl sm:text-2xl font-black font-sans tracking-wide text-[#FCF6BA]">CHÚC QUÝ KHÁCH MÃI XINH ĐẸP</div>
+            <div className="text-xs sm:text-sm font-sans text-rose-100 mt-1 font-medium">Cơ hội trúng Vàng 9999 vẫn đang chờ Quý khách ở lượt tiếp theo!</div>
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [boxes, setBoxes] = useState([
+        { id: 1, opened: false, shaking: false }, { id: 2, opened: false, shaking: false },
+        { id: 3, opened: false, shaking: false }, { id: 4, opened: false, shaking: false },
+        { id: 5, opened: false, shaking: false }, { id: 6, opened: false, shaking: false },
+        { id: 7, opened: false, shaking: false }, { id: 8, opened: false, shaking: false },
+      ]);
+      const [isOpening, setIsOpening] = useState(false);
+      const [showPrizeModal, setShowPrizeModal] = useState(false);
+      const [isShuffling, setIsShuffling] = useState(false);
+      const [displayedItem, setDisplayedItem] = useState(ALL_PROGRAM_ITEMS[0]);
+      const [finalPrize, setFinalPrize] = useState(null);
+      const [attemptsLeft, setAttemptsLeft] = useState(3);
+      const [forcedPrizeId, setForcedPrizeId] = useState("prob_engine");
+
+      const [logoClickCount, setLogoClickCount] = useState(0);
+      const [isAdminUnlocked, setIsAdminUnlocked] = useState(false);
+      const [showAdminRatesModal, setShowAdminRatesModal] = useState(false);
+
+      const [customRates, setCustomRates] = useState({
+        gold_1: 2, surgery_50: 8, meso_20: 25, triet_long: 30, miss: 35
+      });
+
+      const urlParams = new URLSearchParams(window.location.search);
+      const isCurrentAdmin = urlParams.get("admin") === "1" || isAdminUnlocked;
+      const totalRatePercent = Object.values(customRates).reduce((a, b) => a + b, 0);
+
+      const drawPrize = () => {
+        const rand = Math.random() * totalRatePercent;
+        let cumulative = 0;
+        for (const item of ALL_PROGRAM_ITEMS) {
+          cumulative += (customRates[item.id] || 0);
+          if (rand <= cumulative) {
+            if (item.type === "miss") {
+              const msg = MISS_MESSAGES[Math.floor(Math.random() * MISS_MESSAGES.length)];
+              return { ...item, highlightText: msg };
+            }
+            return item;
+          }
+        }
+        return ALL_PROGRAM_ITEMS[0];
+      };
+
+      const handleLogoClick = () => {
+        const next = logoClickCount + 1;
+        setLogoClickCount(next);
+        if (next >= 5) {
+          setIsAdminUnlocked(true);
+          setShowAdminRatesModal(true);
+          setLogoClickCount(0);
+        }
+      };
+
+      const handleBoxClick = (boxId, e) => {
+        if (isOpening || showPrizeModal) return;
+        const box = boxes.find(b => b.id === boxId);
+        if (box && box.opened) return;
+        if (attemptsLeft <= 0) {
+          alert("Quý khách đã hoàn thành lượt mở quà! Bấm 'Bắt đầu cho Khách tiếp theo' để quay lượt mới nhé!");
+          return;
+        }
+
+        setIsOpening(true);
+        const rect = e.currentTarget.getBoundingClientRect();
+        const boxCenterX = rect.left + rect.width / 2;
+        const boxCenterY = rect.top + rect.height / 2;
+
+        sounds.playShake();
+        setBoxes(prev => prev.map(b => b.id === boxId ? { ...b, shaking: true } : b));
+
+        setTimeout(() => {
+          sounds.playBurst();
+          triggerMassiveFireworks(boxCenterX, boxCenterY);
+          setBoxes(prev => prev.map(b => b.id === boxId ? { ...b, shaking: false, opened: true } : b));
+          setAttemptsLeft(prev => Math.max(0, prev - 1));
+
+          let targetPrize;
+          if (forcedPrizeId === "prob_engine") {
+            targetPrize = drawPrize();
+          } else if (forcedPrizeId === "miss") {
+            const missItem = ALL_PROGRAM_ITEMS.find(p => p.id === "miss");
+            const msg = MISS_MESSAGES[Math.floor(Math.random() * MISS_MESSAGES.length)];
+            targetPrize = { ...missItem, highlightText: msg };
+          } else {
+            targetPrize = ALL_PROGRAM_ITEMS.find(p => p.id === forcedPrizeId) || ALL_PROGRAM_ITEMS[0];
+          }
+
+          setFinalPrize(targetPrize);
+          setShowPrizeModal(true);
+          setIsShuffling(true);
+
+          let count = 0;
+          let delay = 65;
+          const runShuffle = () => {
+            setDisplayedItem(ALL_PROGRAM_ITEMS[Math.floor(Math.random() * ALL_PROGRAM_ITEMS.length)]);
+            sounds.playTick();
+            count++;
+            if (count < 18) {
+              if (count > 10) delay += 35;
+              if (count > 14) delay += 70;
+              setTimeout(runShuffle, delay);
+            } else {
+              setDisplayedItem(targetPrize);
+              setIsShuffling(false);
+              setIsOpening(false);
+              setTimeout(() => {
+                sounds.playFanfare();
+                triggerMassiveFireworks(window.innerWidth / 2, window.innerHeight * 0.4);
+              }, 150);
+            }
+          };
+          runShuffle();
+        }, 550);
+      };
+
+      const handleReset = () => {
+        setBoxes(boxes.map(b => ({ ...b, opened: false, shaking: false })));
+        setShowPrizeModal(false);
+        setAttemptsLeft(3);
+      };
+
+      return (
+        <div className="min-h-screen w-screen overflow-x-hidden text-[#fbf5b7] flex flex-col items-center justify-between select-none p-3 sm:p-6 pb-6 relative" style={{ background: "radial-gradient(ellipse at 50% 20%, #9e0c1f 0%, #680512 40%, #380108 80%, #1a0003 100%)" }}>
+          <canvas id="prize-burst-canvas" className="fixed inset-0 pointer-events-none z-[70] w-full h-full will-change-transform" />
+          
+          <div className="absolute inset-0 bg-cover bg-center opacity-25 mix-blend-overlay pointer-events-none" style={{ backgroundImage: "url('/images/banner_2_9.jpg')" }} />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_15%,rgba(239,68,68,0.45)_0%,transparent_65%)] pointer-events-none" />
+          <div className="absolute top-0 inset-x-0 h-96 bg-[radial-gradient(ellipse_at_top,rgba(251,191,36,0.3)_0%,transparent_75%)] pointer-events-none" />
+
+          <header className="w-full max-w-5xl pt-2 sm:pt-4 pb-2 text-center relative z-10 flex flex-col items-center">
+            <div className="bg-red-950/70 border border-amber-400/40 rounded-full px-4 sm:px-6 py-1 text-[11px] sm:text-xs text-[#fff3cf] mb-2 shadow-[0_4px_20px_rgba(185,28,28,0.5)] flex items-center gap-2 max-w-[92vw] truncate">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-[#ffd700] shadow-[0_0_8px_#ffd700] animate-ping shrink-0" />
+              <span className="font-medium tracking-wide truncate">🎉 Khách hàng Mai Phương (098***345) vừa mở trúng VÀNG 9999!</span>
+            </div>
+
+            <div onClick={handleLogoClick} className="cursor-pointer gold-chrome-text font-sans text-xs sm:text-sm font-black tracking-widest uppercase mb-1 active:scale-95 transition-transform drop-shadow-[0_2px_8px_rgba(0,0,0,0.8)]">
+              ✦ VIỆN THẨM MỸ BÁC SĨ VĂN TRƯỜNG • TIẾP HÀO KHÍ - NỐI VINH QUANG ✦
+            </div>
+            <h1 className="text-2xl sm:text-4xl md:text-5xl lg:text-6xl font-black uppercase gold-chrome-text drop-shadow-[0_4px_24px_rgba(255,215,0,0.7)] tracking-wide my-1">
+              8 HỘP QUÀ VÀNG MAY MẮN
+            </h1>
+            <p className="text-[#fff1cc] text-xs sm:text-sm font-bold tracking-wide max-w-xl mx-auto drop-shadow-[0_1px_4px_rgba(0,0,0,0.9)] px-2">
+              Chạm vào hộp quà để bung nắp &amp; nhận ngay Vàng 9999 hoặc Đặc Quyền Giảm 50%
+            </p>
+            <div className="mt-2.5 flex items-center gap-3 bg-red-950/80 border-2 border-amber-400/50 rounded-full px-5 sm:px-6 py-1 shadow-[0_4px_24px_rgba(225,29,72,0.6)]">
+              <span className="text-xs sm:text-sm text-[#ffe4b5] tracking-wider font-bold">LƯỢT MỞ CỦA QUÝ KHÁCH:</span>
+              <span className="text-sm sm:text-base font-mono font-black gold-chrome-text px-3 py-0.5 border border-amber-300/60 rounded-full bg-amber-500/25">
+                0{attemptsLeft} LƯỢT
+              </span>
+            </div>
+          </header>
+
+          <main className="w-full max-w-5xl my-auto relative z-10 py-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6 md:gap-8 justify-items-center">
+              {boxes.map((box, index) => (
+                <div
+                  key={box.id}
+                  onClick={(e) => handleBoxClick(box.id, e)}
+                  className={`group relative w-36 h-44 sm:w-40 sm:h-48 md:w-48 md:h-52 cursor-pointer select-none transition-all duration-300 flex flex-col items-center justify-center ${box.opened ? "cursor-default opacity-85" : "hover:scale-105 active:scale-95"}`}
+                >
+                  <div className={`relative w-full h-full flex flex-col items-center justify-center p-1 transition-all duration-300 ${box.shaking ? "shaking-box" : "floating-box group-hover:shaking-gentle"}`} style={{ filter: box.opened ? "drop-shadow(0 0 25px rgba(255,215,0,0.8))" : "drop-shadow(0 15px 25px rgba(0,0,0,0.8))" }}>
+                    {!box.opened ? (
+                      <div className="relative w-full h-full flex flex-col items-center justify-center group-hover:drop-shadow-[0_0_24px_rgba(255,230,100,0.95)] transition-all">
+                        <img src="/images/gift_box_3d_transparent.png" alt="Hộp quà 3D" className="w-full h-full object-contain pointer-events-none drop-shadow-2xl" />
+                        <div className="absolute bottom-1 z-20 w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center font-mono font-black text-xs sm:text-sm text-[#380208] shadow-[0_4px_16px_rgba(0,0,0,0.9)] border-2 border-[#fffdd0]" style={{ background: "linear-gradient(135deg, #fffdd0 0%, #ca9e3a 50%, #916814 100%)" }}>
+                          0{box.id}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="relative w-full h-full flex flex-col items-center justify-center">
+                        <img src="/images/gift_box_3d_opened.png" alt="Hộp quà mở" className="w-full h-full object-contain pointer-events-none drop-shadow-[0_0_30px_rgba(255,215,0,0.85)]" />
+                        <div className="absolute bottom-1 z-20 px-3 py-0.5 rounded-full bg-red-950/90 border border-amber-300 shadow-lg">
+                          <span className="gold-chrome-text text-[10px] sm:text-xs font-bold uppercase whitespace-nowrap">ĐÃ MỞ LỘC</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </main>
+
+          <footer className="w-full max-w-5xl text-center relative z-10 pt-2 pb-2">
+            <div className="flex flex-wrap justify-center gap-3 mb-3">
+              {attemptsLeft === 0 ? (
+                <button onClick={handleReset} className="px-8 sm:px-10 py-3.5 rounded-full border-2 border-yellow-200 bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-500 text-[#240307] font-black text-sm sm:text-base uppercase tracking-wider shadow-[0_0_35px_rgba(255,215,0,0.8)] transition-all transform hover:scale-105 active:scale-95 animate-bounce flex items-center gap-2">
+                  <span>🔄</span>
+                  <span>BẮT ĐẦU CHO KHÁCH HÀNG TIẾP THEO</span>
+                </button>
+              ) : (
+                <button onClick={handleReset} className="px-6 sm:px-8 py-2.5 rounded-full bg-red-950/70 hover:bg-red-900/80 border-2 border-amber-400/40 hover:border-amber-300 text-[#fff1cc] font-bold text-xs sm:text-sm uppercase tracking-wider shadow-[0_4px_20px_rgba(185,28,28,0.5)] transition active:scale-95 flex items-center gap-2">
+                  <span>🔄</span>
+                  <span>ĐẶT LẠI 8 HỘP QUÀ</span>
+                </button>
+              )}
+
+              {isCurrentAdmin && (
+                <button onClick={() => setShowAdminRatesModal(true)} className="px-5 sm:px-6 py-2.5 rounded-full bg-gradient-to-r from-amber-600/60 to-yellow-600/60 border border-amber-300 text-[#fff1cc] font-black text-xs uppercase tracking-wider shadow-lg">
+                  ⚙️ CÀI ĐẶT XÁC SUẤT (%)
+                </button>
+              )}
+            </div>
+            <div className="text-[10px] sm:text-xs text-[#ffd6bd] tracking-wider font-medium opacity-90 drop-shadow">
+              © 2026 VIỆN THẨM MỸ BÁC SĨ VĂN TRƯỜNG • HOTLINE: 0905.123.456
+            </div>
+          </footer>
+
+          {/* Modal Phần Quà 3D TO RÕ ĐỂ CHỤP ẢNH LƯU NIỆM */}
+          {showPrizeModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/90 animate-fadeIn">
+              <div className="relative w-full max-w-lg bg-gradient-to-b from-[#6b0716] via-[#380208] to-[#1a0003] rounded-3xl p-6 sm:p-8 border-3 border-amber-300 shadow-[0_0_100px_rgba(225,29,72,0.95)] text-center animate-scaleUp overflow-hidden">
+                <div className="bg-gradient-to-r from-red-700/70 via-amber-500/50 to-red-700/70 border-2 border-amber-300/70 rounded-2xl p-3 mb-3 shadow-xl">
+                  <div className="text-sm sm:text-base font-black gold-chrome-text uppercase tracking-wider flex items-center justify-center gap-1.5 drop-shadow">
+                    <span>🇻🇳</span>
+                    <span>CHÚC MỪNG ĐẠI LỄ QUỐC KHÁNH 2-9</span>
+                    <span>🇻🇳</span>
+                  </div>
+                  <div className="text-xs sm:text-sm font-black text-white tracking-wide mt-1 drop-shadow">
+                    CHÚC QUÝ KHÁCH MÃI LUÔN XINH ĐẸP &amp; RẠNG NGỜI! 💖
+                  </div>
+                </div>
+
+                <div className="inline-block px-5 py-1.5 rounded-full border-2 border-amber-300 bg-gradient-to-r from-amber-500/40 via-yellow-300/50 to-amber-500/40 text-[#fff5cc] text-xs sm:text-sm font-black uppercase tracking-wider mb-2 shadow-lg">
+                  {isShuffling ? "🎲 ĐANG QUAY MAY MẮN..." : displayedItem.badge}
+                </div>
+                <div className="my-2"><StandaloneLuxuryPrize3D item={displayedItem} /></div>
+                <h2 className="text-2xl sm:text-4xl font-black uppercase tracking-tight gold-chrome-text drop-shadow-[0_2px_16px_rgba(255,215,0,0.9)] my-2">
+                  {displayedItem.highlightText}
+                </h2>
+                <p className="text-xs sm:text-base text-[#ffe4d6] font-medium mb-4">{displayedItem.subText}</p>
+                {!isShuffling && (
+                  <div className="flex flex-col gap-2.5 animate-fadeIn">
+                    {attemptsLeft > 0 ? (
+                      <button onClick={() => setShowPrizeModal(false)} className="w-full py-3 sm:py-3.5 rounded-full border-2 border-yellow-200 bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-500 text-[#240307] font-black text-xs sm:text-sm uppercase tracking-wider shadow-[0_6px_25px_rgba(255,215,0,0.6)]">
+                        🎁 MỞ TIẾP HỘP QUÀ KHÁC (CÒN 0{attemptsLeft} LƯỢT)
+                      </button>
+                    ) : (
+                      <button onClick={handleReset} className="w-full py-3.5 rounded-full border-2 border-yellow-200 bg-gradient-to-r from-yellow-500 via-amber-300 to-yellow-500 text-[#240307] font-black text-sm sm:text-base uppercase tracking-wider shadow-[0_6px_30px_rgba(255,215,0,0.8)] animate-pulse">
+                        🔄 BẮT ĐẦU CHO KHÁCH HÀNG TIẾP THEO
+                      </button>
+                    )}
+                    {displayedItem.type === "win" && (
+                      <button onClick={() => alert(`Đã lưu "${displayedItem.highlightText}"! Quý khách chụp màn hình gửi Zalo 0905.123.456 để nhận quà nhé!`)} className="w-full py-2.5 rounded-full border border-amber-300/70 text-[#fff3cf] text-xs sm:text-sm font-bold uppercase tracking-wider">
+                        📸 Chụp Ảnh Lưu Niệm &amp; Gửi Zalo
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Modal Admin */}
+          {showAdminRatesModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/90 animate-fadeIn text-left">
+              <div className="relative w-full max-w-lg bg-gradient-to-b from-[#380208] to-[#0a0002] rounded-3xl p-6 border-2 border-amber-400 shadow-[0_0_80px_rgba(202,158,58,0.7)]">
+                <div className="flex justify-between items-center mb-4 pb-2 border-b border-amber-400/40">
+                  <span className="gold-chrome-text font-bold text-base uppercase">⚙️ CÀI ĐẶT TỈ LỆ TRÚNG THƯỞNG (%)</span>
+                  <button onClick={() => setShowAdminRatesModal(false)} className="w-8 h-8 rounded-full bg-white/10 text-white">✕</button>
+                </div>
+                <div className="flex flex-col gap-3 text-xs">
+                  <div className="bg-black/40 border border-amber-500/30 p-2.5 rounded-xl">
+                    <div className="flex justify-between text-yellow-300 font-bold mb-1"><span>👑 VÀNG 9999</span><span>{customRates.gold_1}%</span></div>
+                    <input type="range" min="0" max="100" value={customRates.gold_1} onChange={(e) => setCustomRates({...customRates, gold_1: Number(e.target.value)})} className="w-full accent-yellow-400" />
+                  </div>
+                  <div className="bg-black/40 border border-rose-500/30 p-2.5 rounded-xl">
+                    <div className="flex justify-between text-rose-300 font-bold mb-1"><span>💎 GIẢM 50% TIỂU PHẪU</span><span>{customRates.surgery_50}%</span></div>
+                    <input type="range" min="0" max="100" value={customRates.surgery_50} onChange={(e) => setCustomRates({...customRates, surgery_50: Number(e.target.value)})} className="w-full accent-rose-400" />
+                  </div>
+                  <div className="bg-black/40 border border-teal-500/30 p-2.5 rounded-xl">
+                    <div className="flex justify-between text-teal-300 font-bold mb-1"><span>💧 TẶNG 20% MESO</span><span>{customRates.meso_20}%</span></div>
+                    <input type="range" min="0" max="100" value={customRates.meso_20} onChange={(e) => setCustomRates({...customRates, meso_20: Number(e.target.value)})} className="w-full accent-teal-400" />
+                  </div>
+                  <div className="bg-black/40 border border-fuchsia-500/30 p-2.5 rounded-xl">
+                    <div className="flex justify-between text-fuchsia-300 font-bold mb-1"><span>🌸 TẶNG 01 LẦN TRIỆT LÔNG</span><span>{customRates.triet_long}%</span></div>
+                    <input type="range" min="0" max="100" value={customRates.triet_long} onChange={(e) => setCustomRates({...customRates, triet_long: Number(e.target.value)})} className="w-full accent-fuchsia-400" />
+                  </div>
+                  <div className="bg-black/40 border border-gray-500/30 p-2.5 rounded-xl">
+                    <div className="flex justify-between text-gray-300 font-bold mb-1"><span>💌 LỜI CHÚC TỪ BÁC SĨ</span><span>{customRates.miss}%</span></div>
+                    <input type="range" min="0" max="100" value={customRates.miss} onChange={(e) => setCustomRates({...customRates, miss: Number(e.target.value)})} className="w-full accent-gray-400" />
+                  </div>
+                </div>
+                <button onClick={() => setShowAdminRatesModal(false)} className="w-full py-2.5 rounded-full bg-gradient-to-r from-[#a67c1e] via-[#fbf5b7] to-[#ca9e3a] text-black font-bold uppercase tracking-wider mt-4">
+                  ✓ LƯU CÀI ĐẶT
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    ReactDOM.render(<App />, document.getElementById("root"));
+  </script>
+</body>
+</html>

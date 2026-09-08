@@ -1,0 +1,14 @@
+{
+  "fx": 1462.4,
+  "fy": 1462.4,
+  "cx": 720.0,
+  "cy": 960.0,
+  "imageWidth": 1440,
+  "imageHeight": 1920,
+  "lensDistortionCoefficients": [
+    -0.045,
+    0.082,
+    0.0,
+    0.0
+  ]
+}

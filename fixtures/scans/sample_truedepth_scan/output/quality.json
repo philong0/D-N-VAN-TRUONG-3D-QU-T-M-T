@@ -1,0 +1,14 @@
+{
+  "overall": "pass",
+  "viewsUsed": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "coverageFraction": 0.3410583020032546,
+  "eyeToEyeDistanceMm": 33.724906739697396,
+  "geometryConsistency": "pass",
+  "landmarkCount": 6,
+  "processingTimeMs": 43771
+}

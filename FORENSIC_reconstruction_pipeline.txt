@@ -1,0 +1,80 @@
+================================================================================
+RECONSTRUCTION PIPELINE TRACE (EXACT CODEPATH)
+================================================================================
+
+1. SCAN SESSION INITIATION & CAPTURE
+   - Frontend Component: src/components/scan/GuidedFaceScan.tsx
+   - API Endpoint: POST /api/patients/[id]/scan-sessions
+     * File: src/app/api/patients/[id]/scan-sessions/route.ts
+     * Function: POST(request, { params })
+     * Input: { scannerKind: "web_camera" | "ios_native" }
+     * Output: JSON { patientId, session: { id, status: "created", frames: [] } }
+
+2. FRAME UPLOAD & BUFFERING
+   - Frontend Action: Captures 4 standard origin frames (left_origin.jpg, right_origin.jpg, up_origin.jpg, down_origin.jpg) + up to 20 burst buffer frames.
+   - API Endpoint: POST /api/patients/[id]/scan-sessions/[sessionId]/burst-frames
+     * File: src/app/api/patients/[id]/scan-sessions/[sessionId]/burst-frames/route.ts
+     * Function: POST(request, { params })
+     * Input: multipart/form-data with frames: Blob[], metadata: JSON string
+     * Disk Output: .data/patients/[id]/scans/[sessionId]/frames/burst_*.jpg, *_origin.jpg
+     * Memory/DB Output: Appends frames to session.frames and evaluates burst quality.
+
+3. QUALITY EVALUATION & FINALIZATION
+   - API Endpoint: PATCH /api/patients/[id]/scan-sessions/[sessionId]
+     * File: src/app/api/patients/[id]/scan-sessions/[sessionId]/route.ts
+     * Function: PATCH(request, { params })
+     * Input: { action: "finalize" }
+     * Quality Evaluators:
+       - evaluateBurstScanQuality(frames) in src/lib/scan/quality.ts (for web_camera burst)
+       - evaluateScanQuality(frames, scannerKind) in src/lib/scan/quality.ts (for named 5-view/native)
+     * Output: session.quality report, status set to "quality_check" (or "needs_rescan" if fail).
+
+4. RECONSTRUCTION DISPATCH
+   - API Endpoint: PATCH /api/patients/[id]/scan-sessions/[sessionId]
+     * File: src/app/api/patients/[id]/scan-sessions/[sessionId]/route.ts
+     * Action: "request_reconstruction"
+     * Service Handler: requestReconstruction(session) -> PythonGNMReconstructionService.process(data)
+     * File: src/lib/scan/reconstruction-service.ts
+     * Inputs:
+       - framesFolder: .data/patients/[id]/scans/[sessionId]/frames/
+       - outputDir: public/models/patients/[id]/reconstruction/
+
+5. BACKEND PYTHON RECONSTRUCTION WORKERS
+   - Worker 1 (Mesh Interpolator from Buffer):
+     * Command: ai-engine/venv/bin/python ai-engine/mesh_interpolator.py --frames-dir <framesFolder> --output-dir <outputDir> --patient-id <id> --session-id <sessionId>
+     * Source File: ai-engine/mesh_interpolator.py
+     * Functions:
+       - extract_landmarks_from_frame(frame): MediaPipe FaceMesh (468 landmarks)
+       - generate_3d_mesh_from_buffer(frame_buffer): Alignment to Landmark #4 (Nose tip) + Temporal Median Filter + Mean Filter smoothing
+       - generate_canonical_face_triangles(pts): 2D Delaunay Triangulation
+       - export_to_obj_and_glb(mesh_data, obj_path, glb_path): Trimesh GLB & OBJ export
+     * Outputs:
+       - public/models/patients/[id]/reconstruction/baseline.obj
+       - public/models/patients/[id]/reconstruction/baseline.glb
+       - public/models/patients/[id]/reconstruction/reconstruction_report.json
+
+   - Worker 2 (GNM Multi-View Fallback Pipeline):
+     * Command: ai-engine/venv/bin/python ai-engine/reconstruct_cli.py --patient-id <id> --session-id <sessionId> --output-dir <outputDir> --angle1 <path> --angle2 <path> ...
+     * Source Files:
+       - ai-engine/reconstruct_cli.py
+       - ai-engine/reconstruct_gnm_fullhead.py
+       - ai-engine/dense_correspondence.py
+       - ai-engine/glb_export.py
+     * Functions:
+       - _reconstruct_from_rgb_multiview() in ai-engine/reconstruct_cli.py
+       - compute_dense_correspondence() in ai-engine/dense_correspondence.py
+       - export_glb() in ai-engine/glb_export.py
+     * Outputs:
+       - public/models/patients/[id]/reconstruction/baseline.glb
+       - public/models/patients/[id]/reconstruction/reconstruction_report.json
+
+   - Worker 3 (Native ARKit TrueDepth LiDAR Pipeline):
+     * Command: ai-engine/venv/bin/python ai-engine/reconstruct_native_truedepth.py --package-dir <sessionFolder> --patient-id <id> --session-id <sessionId> --output-dir <outputDir>
+     * Source File: ai-engine/reconstruct_native_truedepth.py
+     * Outputs:
+       - public/models/patients/[id]/reconstruction/baseline.glb
+
+6. FINAL RESULT & FRONTEND CONSUMPTION
+   - Session updated in Database: status = "ready", baselineModelFileName = "baseline.glb"
+   - Model Loaded by 3D Studio: /models/patients/[id]/reconstruction/baseline.glb via Three.js GLTFLoader.
+

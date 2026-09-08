@@ -1,0 +1,17 @@
+{
+  "shellTexelCount": 2650369,
+  "zeroPhotoCoverageTexels": 1963673,
+  "byViewCount": {
+    "0": 1963673,
+    "1": 474157,
+    "2": 139760,
+    "3": 62798,
+    "4": 9981
+  },
+  "perViewDominantTexelCount": {
+    "angle1": 267287,
+    "angle2": 137997,
+    "angle3": 112104,
+    "angle4": 169308
+  }
+}

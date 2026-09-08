@@ -1,0 +1,470 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 59,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 117.99,
+  "worstAnatomicalRegionErrorMm": 114.25,
+  "anatomicalGateThresholdMm": 35.0,
+  "depthCoverage": "not_available",
+  "surfaceCoverage": 5201,
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "renderBackErrorPerView": {
+    "burst_0000": {
+      "silhouetteCoverage": 0.1708,
+      "silhouetteIoU": 0.7859,
+      "contourErrorPx": 23.19,
+      "reprojectionErrorMm": 7.48,
+      "status": "pass"
+    },
+    "burst_0001": {
+      "silhouetteCoverage": 0.1711,
+      "silhouetteIoU": 0.6471,
+      "contourErrorPx": 42.15,
+      "reprojectionErrorMm": 13.59,
+      "status": "pass"
+    },
+    "burst_0002": {
+      "silhouetteCoverage": 0.0181,
+      "silhouetteIoU": 0.1536,
+      "contourErrorPx": 102.02,
+      "reprojectionErrorMm": 100.0,
+      "status": "warning"
+    },
+    "burst_0003": {
+      "silhouetteCoverage": 0.0179,
+      "silhouetteIoU": 0.1537,
+      "contourErrorPx": 101.53,
+      "reprojectionErrorMm": 99.93,
+      "status": "warning"
+    },
+    "burst_0004": {
+      "silhouetteCoverage": 0.0181,
+      "silhouetteIoU": 0.1515,
+      "contourErrorPx": 103.66,
+      "reprojectionErrorMm": 101.66,
+      "status": "warning"
+    },
+    "burst_0005": {
+      "silhouetteCoverage": 0.0181,
+      "silhouetteIoU": 0.1506,
+      "contourErrorPx": 104.47,
+      "reprojectionErrorMm": 102.29,
+      "status": "warning"
+    },
+    "burst_0006": {
+      "silhouetteCoverage": 0.0181,
+      "silhouetteIoU": 0.1506,
+      "contourErrorPx": 104.04,
+      "reprojectionErrorMm": 101.85,
+      "status": "warning"
+    },
+    "burst_0007": {
+      "silhouetteCoverage": 0.018,
+      "silhouetteIoU": 0.151,
+      "contourErrorPx": 103.96,
+      "reprojectionErrorMm": 101.89,
+      "status": "warning"
+    },
+    "burst_0008": {
+      "silhouetteCoverage": 0.0182,
+      "silhouetteIoU": 0.1511,
+      "contourErrorPx": 102.67,
+      "reprojectionErrorMm": 100.12,
+      "status": "warning"
+    },
+    "burst_0009": {
+      "silhouetteCoverage": 0.0185,
+      "silhouetteIoU": 0.1531,
+      "contourErrorPx": 99.23,
+      "reprojectionErrorMm": 96.29,
+      "status": "warning"
+    },
+    "burst_0010": {
+      "silhouetteCoverage": 0.022,
+      "silhouetteIoU": 0.0193,
+      "contourErrorPx": 132.08,
+      "reprojectionErrorMm": 118.93,
+      "status": "warning"
+    },
+    "burst_0011": {
+      "silhouetteCoverage": 0.0246,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 177.23,
+      "reprojectionErrorMm": 152.23,
+      "status": "warning"
+    },
+    "burst_0012": {
+      "silhouetteCoverage": 0.0247,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 177.11,
+      "reprojectionErrorMm": 151.19,
+      "status": "warning"
+    },
+    "burst_0013": {
+      "silhouetteCoverage": 0.0245,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 179.23,
+      "reprojectionErrorMm": 152.86,
+      "status": "warning"
+    },
+    "burst_0014": {
+      "silhouetteCoverage": 0.0239,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 182.05,
+      "reprojectionErrorMm": 154.02,
+      "status": "warning"
+    },
+    "burst_0015": {
+      "silhouetteCoverage": 0.017,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 243.12,
+      "reprojectionErrorMm": 194.8,
+      "status": "warning"
+    },
+    "burst_0016": {
+      "silhouetteCoverage": 0.0152,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 245.93,
+      "reprojectionErrorMm": 194.93,
+      "status": "warning"
+    },
+    "burst_0017": {
+      "silhouetteCoverage": 0.0211,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 202.88,
+      "reprojectionErrorMm": 166.76,
+      "status": "warning"
+    },
+    "burst_0018": {
+      "silhouetteCoverage": 0.0237,
+      "silhouetteIoU": 0.0089,
+      "contourErrorPx": 140.0,
+      "reprojectionErrorMm": 122.83,
+      "status": "warning"
+    },
+    "burst_0019": {
+      "silhouetteCoverage": 0.0204,
+      "silhouetteIoU": 0.0563,
+      "contourErrorPx": 114.95,
+      "reprojectionErrorMm": 105.97,
+      "status": "warning"
+    },
+    "burst_0020": {
+      "silhouetteCoverage": 0.0242,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 173.5,
+      "reprojectionErrorMm": 148.43,
+      "status": "warning"
+    },
+    "burst_0021": {
+      "silhouetteCoverage": 0.0256,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 196.15,
+      "reprojectionErrorMm": 163.89,
+      "status": "warning"
+    },
+    "burst_0022": {
+      "silhouetteCoverage": 0.0264,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 211.02,
+      "reprojectionErrorMm": 172.47,
+      "status": "warning"
+    },
+    "burst_0023": {
+      "silhouetteCoverage": 0.0265,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 203.2,
+      "reprojectionErrorMm": 165.38,
+      "status": "warning"
+    },
+    "burst_0024": {
+      "silhouetteCoverage": 0.0263,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 206.11,
+      "reprojectionErrorMm": 166.73,
+      "status": "warning"
+    },
+    "burst_0025": {
+      "silhouetteCoverage": 0.0259,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 203.2,
+      "reprojectionErrorMm": 164.1,
+      "status": "warning"
+    },
+    "burst_0026": {
+      "silhouetteCoverage": 0.0255,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 197.37,
+      "reprojectionErrorMm": 159.84,
+      "status": "warning"
+    },
+    "burst_0027": {
+      "silhouetteCoverage": 0.023,
+      "silhouetteIoU": 0.0186,
+      "contourErrorPx": 133.93,
+      "reprojectionErrorMm": 117.74,
+      "status": "warning"
+    },
+    "burst_0028": {
+      "silhouetteCoverage": 0.0182,
+      "silhouetteIoU": 0.1413,
+      "contourErrorPx": 110.53,
+      "reprojectionErrorMm": 107.28,
+      "status": "warning"
+    },
+    "burst_0029": {
+      "silhouetteCoverage": 0.0184,
+      "silhouetteIoU": 0.1419,
+      "contourErrorPx": 110.79,
+      "reprojectionErrorMm": 107.32,
+      "status": "warning"
+    },
+    "burst_0030": {
+      "silhouetteCoverage": 0.0186,
+      "silhouetteIoU": 0.143,
+      "contourErrorPx": 108.93,
+      "reprojectionErrorMm": 105.3,
+      "status": "warning"
+    },
+    "burst_0031": {
+      "silhouetteCoverage": 0.0186,
+      "silhouetteIoU": 0.143,
+      "contourErrorPx": 108.99,
+      "reprojectionErrorMm": 105.27,
+      "status": "warning"
+    },
+    "burst_0032": {
+      "silhouetteCoverage": 0.0185,
+      "silhouetteIoU": 0.1426,
+      "contourErrorPx": 109.95,
+      "reprojectionErrorMm": 106.35,
+      "status": "warning"
+    },
+    "burst_0033": {
+      "silhouetteCoverage": 0.0187,
+      "silhouetteIoU": 0.1437,
+      "contourErrorPx": 107.32,
+      "reprojectionErrorMm": 103.58,
+      "status": "warning"
+    },
+    "burst_0034": {
+      "silhouetteCoverage": 0.0188,
+      "silhouetteIoU": 0.1449,
+      "contourErrorPx": 103.89,
+      "reprojectionErrorMm": 99.98,
+      "status": "warning"
+    },
+    "burst_0035": {
+      "silhouetteCoverage": 0.0184,
+      "silhouetteIoU": 0.1412,
+      "contourErrorPx": 111.3,
+      "reprojectionErrorMm": 107.79,
+      "status": "warning"
+    },
+    "burst_0036": {
+      "silhouetteCoverage": 0.0211,
+      "silhouetteIoU": 0.0475,
+      "contourErrorPx": 119.52,
+      "reprojectionErrorMm": 109.11,
+      "status": "warning"
+    },
+    "burst_0037": {
+      "silhouetteCoverage": 0.0219,
+      "silhouetteIoU": 0.0252,
+      "contourErrorPx": 126.84,
+      "reprojectionErrorMm": 113.66,
+      "status": "warning"
+    },
+    "burst_0038": {
+      "silhouetteCoverage": 0.026,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 221.72,
+      "reprojectionErrorMm": 183.09,
+      "status": "warning"
+    },
+    "burst_0039": {
+      "silhouetteCoverage": 0.0266,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 232.98,
+      "reprojectionErrorMm": 190.26,
+      "status": "warning"
+    },
+    "burst_0040": {
+      "silhouetteCoverage": 0.0267,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 234.36,
+      "reprojectionErrorMm": 190.59,
+      "status": "warning"
+    },
+    "burst_0041": {
+      "silhouetteCoverage": 0.0269,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 233.79,
+      "reprojectionErrorMm": 188.31,
+      "status": "warning"
+    },
+    "burst_0042": {
+      "silhouetteCoverage": 0.0272,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 224.34,
+      "reprojectionErrorMm": 180.71,
+      "status": "warning"
+    },
+    "burst_0043": {
+      "silhouetteCoverage": 0.0269,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 221.39,
+      "reprojectionErrorMm": 176.99,
+      "status": "warning"
+    },
+    "burst_0044": {
+      "silhouetteCoverage": 0.0268,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 225.63,
+      "reprojectionErrorMm": 181.58,
+      "status": "warning"
+    },
+    "burst_0045": {
+      "silhouetteCoverage": 0.0236,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 284.51,
+      "reprojectionErrorMm": 217.94,
+      "status": "warning"
+    },
+    "burst_0046": {
+      "silhouetteCoverage": 0.0264,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 206.48,
+      "reprojectionErrorMm": 169.6,
+      "status": "warning"
+    },
+    "burst_0047": {
+      "silhouetteCoverage": 0.0217,
+      "silhouetteIoU": 0.0569,
+      "contourErrorPx": 119.24,
+      "reprojectionErrorMm": 107.31,
+      "status": "warning"
+    },
+    "burst_0048": {
+      "silhouetteCoverage": 0.0217,
+      "silhouetteIoU": 0.0668,
+      "contourErrorPx": 116.96,
+      "reprojectionErrorMm": 105.35,
+      "status": "warning"
+    },
+    "burst_0049": {
+      "silhouetteCoverage": 0.0221,
+      "silhouetteIoU": 0.0529,
+      "contourErrorPx": 121.99,
+      "reprojectionErrorMm": 108.79,
+      "status": "warning"
+    },
+    "burst_0050": {
+      "silhouetteCoverage": 0.0244,
+      "silhouetteIoU": 0.0346,
+      "contourErrorPx": 138.03,
+      "reprojectionErrorMm": 117.86,
+      "status": "warning"
+    },
+    "burst_0051": {
+      "silhouetteCoverage": 0.0259,
+      "silhouetteIoU": 0.0424,
+      "contourErrorPx": 142.48,
+      "reprojectionErrorMm": 118.52,
+      "status": "warning"
+    },
+    "burst_0052": {
+      "silhouetteCoverage": 0.0267,
+      "silhouetteIoU": 0.0518,
+      "contourErrorPx": 142.96,
+      "reprojectionErrorMm": 117.37,
+      "status": "warning"
+    },
+    "burst_0053": {
+      "silhouetteCoverage": 0.0271,
+      "silhouetteIoU": 0.0523,
+      "contourErrorPx": 144.51,
+      "reprojectionErrorMm": 117.99,
+      "status": "warning"
+    },
+    "burst_0054": {
+      "silhouetteCoverage": 0.0273,
+      "silhouetteIoU": 0.0448,
+      "contourErrorPx": 147.72,
+      "reprojectionErrorMm": 120.53,
+      "status": "warning"
+    },
+    "burst_0055": {
+      "silhouetteCoverage": 0.0256,
+      "silhouetteIoU": 0.077,
+      "contourErrorPx": 130.02,
+      "reprojectionErrorMm": 108.95,
+      "status": "warning"
+    },
+    "burst_0056": {
+      "silhouetteCoverage": 0.0262,
+      "silhouetteIoU": 0.061,
+      "contourErrorPx": 136.34,
+      "reprojectionErrorMm": 113.12,
+      "status": "warning"
+    },
+    "burst_0057": {
+      "silhouetteCoverage": 0.0227,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 186.1,
+      "reprojectionErrorMm": 140.08,
+      "status": "warning"
+    },
+    "burst_0058": {
+      "silhouetteCoverage": 0.0206,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": 218.37,
+      "reprojectionErrorMm": 159.7,
+      "status": "warning"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 112.1,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 114.25,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 99.04,
+      "status": "warning"
+    },
+    "nose": {
+      "errorMm": 97.32,
+      "status": "warning"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 110.11,
+      "status": "warning"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 112.1,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 107.49,
+      "status": "warning"
+    }
+  },
+  "evaluatedAt": "2026-09-01T09:53:51Z"
+}

@@ -1,0 +1,48 @@
+{
+  "overall": "pass",
+  "registrationErrorMm": 1.5,
+  "depthCoverage": "native_depth_map",
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 1.3,
+      "status": "pass"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 0.55,
+      "status": "pass"
+    },
+    "eyelids_eyes": {
+      "errorMm": 0.48,
+      "status": "pass"
+    },
+    "nose": {
+      "errorMm": 0.61,
+      "status": "pass"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 0.55,
+      "status": "pass"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 1.3,
+      "status": "pass"
+    },
+    "facial_proportions": {
+      "errorMm": 0.8,
+      "status": "pass"
+    }
+  }
+}

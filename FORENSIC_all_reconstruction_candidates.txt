@@ -1,0 +1,95 @@
+================================================================================
+ALL 3D RECONSTRUCTION CANDIDATES / IMPLEMENTATIONS IN REPOSITORY
+================================================================================
+
+1. CANDIDATE: ai-engine/mesh_interpolator.py
+   - Path: ai-engine/mesh_interpolator.py
+   - Entrypoint: main() -> generate_3d_mesh_from_buffer() -> export_to_obj_and_glb()
+   - Input: Directory with 20 burst frames (*_origin.jpg, burst_*.jpg)
+   - Output: baseline.obj, baseline.glb, reconstruction_report.json (468 vertices, Delaunay topology)
+   - Runtime Call Status: Called as primary burst worker in src/lib/scan/reconstruction-service.ts
+
+2. CANDIDATE: ai-engine/reconstruct_cli.py
+   - Path: ai-engine/reconstruct_cli.py
+   - Entrypoint: main() -> _reconstruct_from_rgb_multiview()
+   - Input: CLI flags --angle1..4 (or --front, --left45, --left90, --right45, --right90, or --burst-dir)
+   - Output: baseline.glb, reconstruction_report.json (Multi-view SfM dense correspondence mesh ~7,589 vertices)
+   - Runtime Call Status: Called as fallback RGB worker in src/lib/scan/reconstruction-service.ts
+
+3. CANDIDATE: ai-engine/reconstruct_native_truedepth.py
+   - Path: ai-engine/reconstruct_native_truedepth.py
+   - Entrypoint: main() -> reconstruct_patient_native_fusion()
+   - Input: --package-dir (.data/patients/[id]/scans/[sessionId] with geometry/*.json and camera/*_intrinsics.json)
+   - Output: baseline.glb, reconstruction_report.json (ARKit TrueDepth LiDAR depth fusion)
+   - Runtime Call Status: Called when scannerKind === "ios_native" and nativeFrameCount >= 5 in src/lib/scan/reconstruction-service.ts
+
+4. CANDIDATE: ai-engine/reconstruct_gnm_fullhead.py
+   - Path: ai-engine/reconstruct_gnm_fullhead.py
+   - Entrypoint: reconstruct_gnm_fullhead()
+   - Input: 4 reference photos (angle1..4) + facial landmarks
+   - Output: Fitted 3D full-head mesh with blended multi-view UV texture map
+   - Runtime Call Status: Imported and called by reconstruct_cli.py
+
+5. CANDIDATE: ai-engine/dense_correspondence.py
+   - Path: ai-engine/dense_correspondence.py
+   - Entrypoint: compute_dense_correspondence()
+   - Input: Multi-view RGB images
+   - Output: Triangulated 3D point cloud / dense correspondence vertices
+   - Runtime Call Status: Imported and called during multi-view pipeline in reconstruct_cli.py
+
+6. CANDIDATE: ai-engine/gnm_face_shell.py
+   - Path: ai-engine/gnm_face_shell.py
+   - Entrypoint: generate_face_shell()
+   - Input: Landmark points + anatomical boundary constraints
+   - Output: Surface face shell mesh
+   - Runtime Call Status: Imported by GNM fullhead modules
+
+7. CANDIDATE: ai-engine/gnm_texture_bake.py
+   - Path: ai-engine/gnm_texture_bake.py
+   - Entrypoint: bake_multiview_texture()
+   - Input: 3D mesh vertices, UVs, calibrated camera poses, multi-view RGB images
+   - Output: High-resolution baked texture atlas (2048x2048 PNG)
+   - Runtime Call Status: Imported by GNM pipeline for texture atlas generation
+
+8. CANDIDATE: ai-engine/reconstruct_crisalix_mask.py
+   - Path: ai-engine/reconstruct_crisalix_mask.py
+   - Entrypoint: build_crisalix_aesthetic_mask()
+   - Input: Frontal & profile images
+   - Output: Aesthetic mask 3D geometry
+   - Runtime Call Status: Standalone diagnostic tool
+
+9. CANDIDATE: ai-engine/reconstruct_truedepth.py
+   - Path: ai-engine/reconstruct_truedepth.py
+   - Entrypoint: process_truedepth_package()
+   - Input: Raw TrueDepth AVDepthData buffers
+   - Output: Point cloud / TSDF fused mesh
+   - Runtime Call Status: Legacy TrueDepth worker
+
+10. CANDIDATE: src/lib/face-geometry.ts (Browser Client-Side Mesh Engine)
+    - Path: src/lib/face-geometry.ts
+    - Entrypoint: buildFaceMeshFromImage(photoUrl) / createPatientFaceGeometry()
+    - Input: Single patient photo or HTMLCanvasElement
+    - Output: THREE.BufferGeometry (468 vertices + canonical topology indices)
+    - Runtime Call Status: Used for client-side instant preview and interactive nose morphing in 3D Studio
+
+11. CANDIDATE: src/lib/mesh-generator.ts
+    - Path: src/lib/mesh-generator.ts
+    - Entrypoint: generateEnhancedFaceMesh()
+    - Input: Landmark coordinates
+    - Output: Procedural facial surface mesh
+    - Runtime Call Status: Diagnostic helper
+
+12. CANDIDATE: src/app/api/fit-multiview/route.ts & fit-multiview-atlas/route.ts
+    - Path: src/app/api/fit-multiview/route.ts, src/app/api/fit-multiview-atlas/route.ts
+    - Entrypoint: POST() API handler
+    - Input: JSON { patientId }
+    - Output: JSON { viewsUsed, coverageFraction, status: "ok" }
+    - Runtime Call Status: Active API routes for multi-view validation
+
+13. CANDIDATE: HRN (Hierarchical Representation Network - Deep Learning 3D Face Reconstruction)
+    - Path: HRN/demo.py, HRN/models/hrn.py
+    - Entrypoint: python HRN/demo.py --input_dir ...
+    - Input: Single/multi-view portrait image
+    - Output: Detailed 3D mesh (.obj) with displacement map
+    - Runtime Call Status: Standalone deep-learning framework repository present in codebase
+

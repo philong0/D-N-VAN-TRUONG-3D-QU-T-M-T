@@ -1,0 +1,92 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 5,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 1.5,
+  "worstAnatomicalRegionErrorMm": 3.19,
+  "anatomicalGateThresholdMm": 35.0,
+  "depthCoverage": "not_available",
+  "surfaceCoverage": 5201,
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "renderBackErrorPerView": {
+    "burst_0000": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": null,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0007": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": null,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0014": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": null,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0020": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": null,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    },
+    "burst_0027": {
+      "silhouetteCoverage": 0.0,
+      "silhouetteIoU": 0.0,
+      "contourErrorPx": null,
+      "reprojectionErrorMm": null,
+      "status": "warning"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 3.19,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 2.27,
+      "status": "pass"
+    },
+    "eyelids_eyes": {
+      "errorMm": 2.06,
+      "status": "pass"
+    },
+    "nose": {
+      "errorMm": 2.01,
+      "status": "pass"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 1.51,
+      "status": "pass"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 3.19,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 2.37,
+      "status": "pass"
+    }
+  },
+  "evaluatedAt": "2026-09-01T10:09:26Z"
+}

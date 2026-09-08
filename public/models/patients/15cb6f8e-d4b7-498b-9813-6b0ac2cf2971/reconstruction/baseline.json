@@ -1,0 +1,29 @@
+{
+  "patientId": "15cb6f8e-d4b7-498b-9813-6b0ac2cf2971",
+  "modelVersion": "GNM Full-Head Identity-Fit + Face Shell (E2 topology, BUG A-D + G1-G4 fixes)",
+  "generatedAt": "2026-09-07T04:06:30Z",
+  "processingTimeMs": 155397,
+  "vertexCount": 8576,
+  "triangleCount": 16778,
+  "viewsUsed": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "warnings": [
+    "profile-silhouette: deformed 10350 vertices, max_shift=3.82mm"
+  ],
+  "coverageStats": {
+    "shellTexelCount": 3047100,
+    "coveredTexelCount": 1114392,
+    "viewsUsed": [
+      "angle1",
+      "angle2",
+      "angle3",
+      "angle4"
+    ],
+    "method": "Direct Single-Layer Projective Blending + Multi-Scale Skin Diffusion"
+  },
+  "reconstructionStatus": "completed"
+}

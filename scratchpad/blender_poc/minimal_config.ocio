@@ -1,0 +1,53 @@
+ocio_profile_version: 1
+
+roles:
+  color_picking: sRGB
+  color_timing: sRGB
+  compositing_linear: linear
+  compositing_log: sRGB
+  data: sRGB
+  default: sRGB
+  matte_paint: sRGB
+  reference: linear
+  scene_linear: linear
+  texture_paint: sRGB
+
+displays:
+  sRGB:
+    - !<View> {name: Standard, colorspace: sRGB}
+    - !<View> {name: Raw, colorspace: raw}
+
+active_displays: [sRGB]
+active_views: [Standard, Raw]
+
+colorspaces:
+  - !<ColorSpace>
+    name: linear
+    family: raw
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Scene linear
+    isdata: false
+    allocation: lg2
+
+  - !<ColorSpace>
+    name: sRGB
+    family: srgb
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      sRGB display space
+    isdata: false
+    allocation: uniform
+    to_reference: !<ExponentTransform> {value: [2.2, 2.2, 2.2, 1]}
+
+  - !<ColorSpace>
+    name: raw
+    family: raw
+    equalitygroup: ""
+    bitdepth: 32f
+    description: |
+      Raw data
+    isdata: true
+    allocation: uniform

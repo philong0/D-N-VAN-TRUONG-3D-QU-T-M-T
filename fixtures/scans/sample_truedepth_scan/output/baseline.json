@@ -1,0 +1,19 @@
+{
+  "patientId": "test-patient-dca63e1a",
+  "sessionId": "test-session-001",
+  "modelVersion": "GNM multi-view identity fit + trust-blended shell + eye sub-pipeline (Phase 1+2)",
+  "faceShellVersion": "GNM Face Shell v1 \u2014 ears + submental/neck transition, unified 2K HD texture (Phase 1)",
+  "generatedAt": "2026-08-30T05:28:14Z",
+  "processingTimeMs": 43771,
+  "vertexCount": 10995,
+  "triangleCount": 21686,
+  "glbFile": "baseline.glb",
+  "textureFile": "face_HD.png",
+  "viewsUsed": [
+    "angle1",
+    "angle2",
+    "angle3",
+    "angle4"
+  ],
+  "warnings": []
+}

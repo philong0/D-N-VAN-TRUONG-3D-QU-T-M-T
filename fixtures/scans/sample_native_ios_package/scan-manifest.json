@@ -1,0 +1,76 @@
+{
+  "packageVersion": "2.0.0",
+  "device": {
+    "model": "iPhone 14 Pro (iPhone15,2)",
+    "systemName": "iOS",
+    "systemVersion": "17.5.1",
+    "hasTrueDepth": true,
+    "arkitSupported": true
+  },
+  "patientId": "test-patient-native-ios",
+  "sessionId": "test-session-native-001",
+  "captureTimestamp": "2026-08-30T05:38:00Z",
+  "frames": [
+    {
+      "viewTag": "front",
+      "timestamp": 1725001000.0,
+      "rgbRelativePath": "frames/front.jpg",
+      "depthRelativePath": "depth/front_depth.raw",
+      "geometryRelativePath": "geometry/front_geometry.json",
+      "cameraRelativePath": "camera/intrinsics.json",
+      "isTracked": true,
+      "yawDeg": 0.0,
+      "pitchDeg": 0.0
+    },
+    {
+      "viewTag": "left_45",
+      "timestamp": 1725001000.0,
+      "rgbRelativePath": "frames/left_45.jpg",
+      "depthRelativePath": null,
+      "geometryRelativePath": "geometry/left_45_geometry.json",
+      "cameraRelativePath": "camera/intrinsics.json",
+      "isTracked": true,
+      "yawDeg": -35.0,
+      "pitchDeg": 0.0
+    },
+    {
+      "viewTag": "left_profile",
+      "timestamp": 1725001000.0,
+      "rgbRelativePath": "frames/left_profile.jpg",
+      "depthRelativePath": null,
+      "geometryRelativePath": "geometry/left_profile_geometry.json",
+      "cameraRelativePath": "camera/intrinsics.json",
+      "isTracked": false,
+      "yawDeg": -75.0,
+      "pitchDeg": 0.0
+    },
+    {
+      "viewTag": "right_45",
+      "timestamp": 1725001000.0,
+      "rgbRelativePath": "frames/right_45.jpg",
+      "depthRelativePath": null,
+      "geometryRelativePath": "geometry/right_45_geometry.json",
+      "cameraRelativePath": "camera/intrinsics.json",
+      "isTracked": true,
+      "yawDeg": 35.0,
+      "pitchDeg": 0.0
+    },
+    {
+      "viewTag": "right_profile",
+      "timestamp": 1725001000.0,
+      "rgbRelativePath": "frames/right_profile.jpg",
+      "depthRelativePath": null,
+      "geometryRelativePath": "geometry/right_profile_geometry.json",
+      "cameraRelativePath": "camera/intrinsics.json",
+      "isTracked": false,
+      "yawDeg": 75.0,
+      "pitchDeg": 0.0
+    }
+  ],
+  "qualitySummary": {
+    "totalViewsCaptured": 5,
+    "trackedViewsCount": 3,
+    "depthAvailable": true,
+    "overallAssessment": "pass"
+  }
+}

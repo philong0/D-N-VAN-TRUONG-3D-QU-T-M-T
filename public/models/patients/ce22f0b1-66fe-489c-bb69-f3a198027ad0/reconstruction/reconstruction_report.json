@@ -1,0 +1,246 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 27,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 4.38,
+  "worstAnatomicalRegionErrorMm": 16.09,
+  "anatomicalGateThresholdMm": 35.0,
+  "depthCoverage": "not_available",
+  "surfaceCoverage": 5229,
+  "textureCoverage": "photographic texture baked; coverage is not independently measured",
+  "renderBackErrorPerView": {
+    "burst_0000": {
+      "silhouetteCoverage": 0.1339,
+      "silhouetteIoU": 0.1955,
+      "contourErrorPx": 111.48,
+      "reprojectionErrorMm": 21.8,
+      "status": "warning"
+    },
+    "burst_0001": {
+      "silhouetteCoverage": 0.128,
+      "silhouetteIoU": 0.1924,
+      "contourErrorPx": 111.53,
+      "reprojectionErrorMm": 22.08,
+      "status": "warning"
+    },
+    "burst_0002": {
+      "silhouetteCoverage": 0.1664,
+      "silhouetteIoU": 0.9047,
+      "contourErrorPx": 9.35,
+      "reprojectionErrorMm": 2.63,
+      "status": "pass"
+    },
+    "burst_0003": {
+      "silhouetteCoverage": 0.1683,
+      "silhouetteIoU": 0.9028,
+      "contourErrorPx": 9.57,
+      "reprojectionErrorMm": 2.68,
+      "status": "pass"
+    },
+    "burst_0004": {
+      "silhouetteCoverage": 0.1667,
+      "silhouetteIoU": 0.9003,
+      "contourErrorPx": 9.74,
+      "reprojectionErrorMm": 2.74,
+      "status": "pass"
+    },
+    "burst_0005": {
+      "silhouetteCoverage": 0.1658,
+      "silhouetteIoU": 0.9032,
+      "contourErrorPx": 9.48,
+      "reprojectionErrorMm": 2.67,
+      "status": "pass"
+    },
+    "burst_0006": {
+      "silhouetteCoverage": 0.1668,
+      "silhouetteIoU": 0.9008,
+      "contourErrorPx": 9.69,
+      "reprojectionErrorMm": 2.71,
+      "status": "pass"
+    },
+    "burst_0007": {
+      "silhouetteCoverage": 0.1681,
+      "silhouetteIoU": 0.8998,
+      "contourErrorPx": 9.84,
+      "reprojectionErrorMm": 2.75,
+      "status": "pass"
+    },
+    "burst_0008": {
+      "silhouetteCoverage": 0.1665,
+      "silhouetteIoU": 0.9061,
+      "contourErrorPx": 9.19,
+      "reprojectionErrorMm": 2.58,
+      "status": "pass"
+    },
+    "burst_0009": {
+      "silhouetteCoverage": 0.1664,
+      "silhouetteIoU": 0.8902,
+      "contourErrorPx": 10.98,
+      "reprojectionErrorMm": 2.9,
+      "status": "pass"
+    },
+    "burst_0010": {
+      "silhouetteCoverage": 0.1743,
+      "silhouetteIoU": 0.8674,
+      "contourErrorPx": 13.62,
+      "reprojectionErrorMm": 3.53,
+      "status": "pass"
+    },
+    "burst_0011": {
+      "silhouetteCoverage": 0.1663,
+      "silhouetteIoU": 0.8706,
+      "contourErrorPx": 12.81,
+      "reprojectionErrorMm": 3.41,
+      "status": "pass"
+    },
+    "burst_0012": {
+      "silhouetteCoverage": 0.1808,
+      "silhouetteIoU": 0.839,
+      "contourErrorPx": 16.97,
+      "reprojectionErrorMm": 4.38,
+      "status": "pass"
+    },
+    "burst_0013": {
+      "silhouetteCoverage": 0.183,
+      "silhouetteIoU": 0.8455,
+      "contourErrorPx": 16.25,
+      "reprojectionErrorMm": 4.17,
+      "status": "pass"
+    },
+    "burst_0014": {
+      "silhouetteCoverage": 0.1853,
+      "silhouetteIoU": 0.839,
+      "contourErrorPx": 17.07,
+      "reprojectionErrorMm": 4.36,
+      "status": "pass"
+    },
+    "burst_0015": {
+      "silhouetteCoverage": 0.1837,
+      "silhouetteIoU": 0.8442,
+      "contourErrorPx": 16.4,
+      "reprojectionErrorMm": 4.2,
+      "status": "pass"
+    },
+    "burst_0016": {
+      "silhouetteCoverage": 0.1834,
+      "silhouetteIoU": 0.8321,
+      "contourErrorPx": 17.75,
+      "reprojectionErrorMm": 4.56,
+      "status": "pass"
+    },
+    "burst_0017": {
+      "silhouetteCoverage": 0.1866,
+      "silhouetteIoU": 0.8291,
+      "contourErrorPx": 18.21,
+      "reprojectionErrorMm": 4.65,
+      "status": "pass"
+    },
+    "burst_0018": {
+      "silhouetteCoverage": 0.2063,
+      "silhouetteIoU": 0.7574,
+      "contourErrorPx": 27.3,
+      "reprojectionErrorMm": 6.94,
+      "status": "pass"
+    },
+    "burst_0019": {
+      "silhouetteCoverage": 0.2081,
+      "silhouetteIoU": 0.6857,
+      "contourErrorPx": 36.74,
+      "reprojectionErrorMm": 9.54,
+      "status": "pass"
+    },
+    "burst_0020": {
+      "silhouetteCoverage": 0.2044,
+      "silhouetteIoU": 0.7318,
+      "contourErrorPx": 26.99,
+      "reprojectionErrorMm": 6.91,
+      "status": "pass"
+    },
+    "burst_0021": {
+      "silhouetteCoverage": 0.2046,
+      "silhouetteIoU": 0.7447,
+      "contourErrorPx": 28.1,
+      "reprojectionErrorMm": 7.2,
+      "status": "pass"
+    },
+    "burst_0022": {
+      "silhouetteCoverage": 0.2101,
+      "silhouetteIoU": 0.7223,
+      "contourErrorPx": 28.44,
+      "reprojectionErrorMm": 7.3,
+      "status": "pass"
+    },
+    "burst_0023": {
+      "silhouetteCoverage": 0.2045,
+      "silhouetteIoU": 0.7368,
+      "contourErrorPx": 25.86,
+      "reprojectionErrorMm": 6.7,
+      "status": "pass"
+    },
+    "burst_0024": {
+      "silhouetteCoverage": 0.2119,
+      "silhouetteIoU": 0.7351,
+      "contourErrorPx": 30.92,
+      "reprojectionErrorMm": 7.84,
+      "status": "pass"
+    },
+    "burst_0025": {
+      "silhouetteCoverage": 0.2096,
+      "silhouetteIoU": 0.7223,
+      "contourErrorPx": 32.73,
+      "reprojectionErrorMm": 8.39,
+      "status": "pass"
+    },
+    "burst_0026": {
+      "silhouetteCoverage": 0.2105,
+      "silhouetteIoU": 0.7026,
+      "contourErrorPx": 31.51,
+      "reprojectionErrorMm": 8.13,
+      "status": "pass"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": 15.16,
+      "status": "warning"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": 16.09,
+      "status": "warning"
+    },
+    "eyelids_eyes": {
+      "errorMm": 2.1,
+      "status": "pass"
+    },
+    "nose": {
+      "errorMm": 7.79,
+      "status": "warning"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": 5.39,
+      "status": "warning"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": 15.16,
+      "status": "warning"
+    },
+    "facial_proportions": {
+      "errorMm": 10.28,
+      "status": "warning"
+    }
+  },
+  "evaluatedAt": "2026-09-01T10:08:54Z"
+}

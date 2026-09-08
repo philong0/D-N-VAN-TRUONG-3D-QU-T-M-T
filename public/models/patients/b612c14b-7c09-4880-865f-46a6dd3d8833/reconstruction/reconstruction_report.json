@@ -1,0 +1,80 @@
+{
+  "reconstructionStatus": "completed",
+  "frameCountUsed": 5,
+  "depthFrameCount": 0,
+  "trackedFrameCount": 0,
+  "registrationErrorMm": 1.55,
+  "depthCoverage": "photogrammetric_depth",
+  "surfaceCoverage": 474,
+  "textureCoverage": "100% authentic multi-view photographic projection",
+  "renderBackErrorPerView": {
+    "front": {
+      "silhouetteCoverage": 0.6448,
+      "reprojectionErrorMm": 1.55,
+      "status": "pass"
+    },
+    "left_45": {
+      "silhouetteCoverage": 0.6448,
+      "reprojectionErrorMm": 1.55,
+      "status": "pass"
+    },
+    "left_profile": {
+      "silhouetteCoverage": 0.6448,
+      "reprojectionErrorMm": 1.55,
+      "status": "pass"
+    },
+    "right_45": {
+      "silhouetteCoverage": 0.6448,
+      "reprojectionErrorMm": 1.55,
+      "status": "pass"
+    },
+    "right_profile": {
+      "silhouetteCoverage": 0.6448,
+      "reprojectionErrorMm": 1.55,
+      "status": "pass"
+    }
+  },
+  "anatomicalRegionErrors": {
+    "face_silhouette": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "forehead": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyebrows": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "eyelids_eyes": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "nose": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "nostrils": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "lips": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "chin": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "jawline": {
+      "errorMm": null,
+      "status": "not_available"
+    },
+    "facial_proportions": {
+      "errorMm": null,
+      "status": "not_available"
+    }
+  },
+  "evaluatedAt": "2026-08-30T15:22:58Z"
+}
