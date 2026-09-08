@@ -71,7 +71,7 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://packets-leading-fonts-upc.trycloudflare.com"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://trip-conflicts-focus-curve.trycloudflare.com"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
