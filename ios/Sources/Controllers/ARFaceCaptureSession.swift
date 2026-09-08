@@ -345,11 +345,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     private func capture(_ candidate: CaptureCandidate) throws {
-        guard candidate.sample.faceAnchor.isTracked, candidate.sample.cameraTrackingNormal else {
-            throw NSError(domain: "Scanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "Tracking ARKit chưa ổn định."])
-        }
-        guard candidate.quality.isTracked, candidate.quality.isDistanceOptimal, candidate.quality.isLightingAdequate, !candidate.quality.isBlurry else {
-            throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Frame chưa đạt chất lượng TrueDepth (tracking/ánh sáng/độ nét/khoảng cách)."])
+        guard candidate.sample.faceAnchor.isTracked else {
+            throw NSError(domain: "Scanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "Chưa nhận diện được khuôn mặt."])
         }
         let frame = candidate.sample.frame
         let faceAnchor = candidate.sample.faceAnchor

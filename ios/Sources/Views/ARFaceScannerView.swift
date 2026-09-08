@@ -177,7 +177,7 @@ public struct ARFaceScannerView: View {
                                 captureSession.retakePreviousStep()
                             } label: {
                                 Image(systemName: "arrow.uturn.backward.circle.fill")
-                                    .font(.system(size: 32))
+                                    .font(.system(size: 34))
                                     .foregroundColor(.orange)
                             }
                             .accessibilityLabel("Chụp lại góc trước")
@@ -185,27 +185,40 @@ public struct ARFaceScannerView: View {
                         
                         // Big Shutter Button
                         Button(action: {
-                            do {
-                                try captureSession.captureCurrentStep()
-                            } catch {
-                                // captureCurrentStep has already placed a
-                                // concrete gate reason in the native HUD.
+                            if captureSession.capturedFrames.count >= 5 {
+                                captureSession.triggerPackageUpload { _ in }
+                            } else {
+                                do {
+                                    try captureSession.captureCurrentStep()
+                                } catch {
+                                    captureSession.guidanceFeedback = error.localizedDescription
+                                }
                             }
                         }) {
                             HStack(spacing: 8) {
-                                Image(systemName: "camera.fill")
+                                Image(systemName: captureSession.capturedFrames.count >= 5 ? "arrow.up.circle.fill" : "camera.fill")
                                     .font(.title3)
-                                Text(captureSession.isUploading ? "ĐANG TẢI LÊN..." : (captureSession.capturedFrames.count >= 5 ? "HOÀN TẤT (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)"))
+                                Text(captureSession.isUploading ? "ĐANG TẢI LÊN..." : (captureSession.capturedFrames.count >= 5 ? "GỬI TẢI LÊN (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)"))
                                     .font(.system(size: 15, weight: .black))
                             }
                             .foregroundColor(.white)
                             .padding(.horizontal, 26)
                             .padding(.vertical, 15)
-                            .background(captureSession.isPoseAligned ? Color.green : Color.blue)
+                            .background(captureSession.capturedFrames.count >= 5 ? Color.orange : (captureSession.isPoseAligned ? Color.green : Color.blue))
                             .cornerRadius(30)
                             .shadow(color: Color.black.opacity(0.5), radius: 8, x: 0, y: 4)
                         }
-                        .disabled(!captureSession.isTracking || captureSession.isUploading || captureSession.isAutoCapturing || captureSession.capturedFrames.count >= 5)
+                        .disabled(captureSession.isUploading)
+                        
+                        // Reset Scan Button
+                        Button {
+                            captureSession.resetScan()
+                        } label: {
+                            Image(systemName: "arrow.clockwise.circle.fill")
+                                .font(.system(size: 34))
+                                .foregroundColor(.white.opacity(0.85))
+                        }
+                        .accessibilityLabel("Quét lại từ đầu")
                     }
                     .padding(.bottom, 25)
                 }
