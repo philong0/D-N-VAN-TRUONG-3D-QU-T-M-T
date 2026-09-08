@@ -1,28 +1,42 @@
 workflows:
-  ios-scanner-build:
-    name: DrVanTruong Scanner — signed iPhone IPA
+  ios-scanner:
+    name: Dr Van Truong 3D Scanner iOS App
+    max_build_duration: 30
     instance_type: mac_mini_m2
-    max_build_duration: 60
     environment:
       xcode: latest
-      ios_signing:
-        # This fetches the existing signing identity from Codemagic's
-        # Code signing identities. A development profile produces an IPA
-        # installable on the devices registered in that profile.
-        distribution_type: development
-        bundle_identifier: com.drvantruong.scanner
+      cocoapods: default
+      vars:
+        XCODE_PROJECT: "ios/DrVanTruongScanner.xcodeproj"
+        XCODE_SCHEME: "DrVanTruongScanner"
     scripts:
-      - name: Apply existing iOS signing profile
+      - name: Build and Package unsigned iOS IPA for 3uTools
         script: |
-          cd "$CM_BUILD_DIR/ios"
-          xcode-project use-profiles
-      - name: Build signed IPA for registered iPhones
-        script: |
-          cd "$CM_BUILD_DIR/ios"
-          xcode-project build-ipa \
-            --project "DrVanTruongScanner.xcodeproj" \
-            --scheme "DrVanTruongScanner" \
-            --config "Release"
+          set -e
+          echo "=== 1. Building Xcode Release Archive ==="
+          xcodebuild archive \
+            -project "$XCODE_PROJECT" \
+            -scheme "$XCODE_SCHEME" \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$PWD/build/DrVanTruongScanner.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES
+
+          echo "=== 2. Creating unsigned IPA for 3uTools signing ==="
+          mkdir -p "$PWD/build/Payload"
+          cp -r "$PWD/build/DrVanTruongScanner.xcarchive/Products/Applications/DrVanTruongScanner.app" "$PWD/build/Payload/"
+
+          cd "$PWD/build"
+          zip -r "DrVanTruongScanner.ipa" Payload
+          cp "DrVanTruongScanner.ipa" "$CM_BUILD_DIR/"
+
+          echo "=== 3. Verify artifacts ==="
+          ls -la "$PWD"
     artifacts:
-      - ios/build/ios/ipa/*.ipa
-      - /tmp/xcodebuild_logs/*.log
+      - build/*.ipa
+      - "*.ipa"
+      - build/DrVanTruongScanner.xcarchive
+      - build/**/*.app
