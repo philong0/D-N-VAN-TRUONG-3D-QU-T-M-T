@@ -432,7 +432,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     public func triggerPackageUpload(completion: @escaping (Result<URL, Error>) -> Void) {
         guard !patientId.isEmpty, !sessionId.isEmpty else {
-            completion(.failure(NSError(domain: "Scanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Thiếu PatientID hoặc SessionID."])))
+            let err = NSError(domain: "Scanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Thiếu PatientID hoặc SessionID. Vui lòng mở phiên quét từ hồ sơ bệnh nhân."])
+            self.lastErrorMessage = err.localizedDescription
+            self.guidanceFeedback = "Lỗi: \(err.localizedDescription)"
+            completion(.failure(err))
             return
         }
         guard !isUploading else { return }
@@ -445,9 +448,6 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                     && frame.geometry.triangleIndices.count == 2304 * 3
                     && frame.geometry.textureCoordinates.count == 1220 * 2
                     && frame.intrinsics.fx > 0 && frame.intrinsics.fy > 0
-                    // A native TrueDepth baseline is a metric depth
-                    // reconstruction.  Do not accept an ARFace-only package
-                    // and silently turn it into a lower-fidelity path.
                     && frame.depthData != nil
                     && (frame.depthWidth ?? 0) > 0 && (frame.depthHeight ?? 0) > 0
                     && frame.depthIntrinsics != nil
@@ -456,7 +456,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                     && frame.pose.cameraTransformColumnMajor.count == 16
                     && !frame.rgbData.isEmpty
               }) else {
-            completion(.failure(NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu ARKit metric đầy đủ; không tải lên hoặc hạ cấp sang ảnh 2D."])) )
+            let err = NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu TrueDepth đầy đủ; vui lòng chụp lại góc chưa đạt."])
+            self.lastErrorMessage = err.localizedDescription
+            self.guidanceFeedback = "Lỗi: \(err.localizedDescription)"
+            completion(.failure(err))
             return
         }
         isUploading = true
