@@ -46,6 +46,11 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
+        // The clinic web UI has mobile breakpoints. Without an explicit
+        // mobile preference WKWebView can use a desktop layout viewport,
+        // which activates `lg:` layout rules and shifts the page offscreen
+        // on an iPhone.
+        config.defaultWebpagePreferences.preferredContentMode = .mobile
 
         let webView = WKWebView(frame: .zero, configuration: config)
         bridge.webView = webView
