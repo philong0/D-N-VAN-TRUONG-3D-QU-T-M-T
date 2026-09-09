@@ -477,10 +477,17 @@ class PatientNativeReconstructor:
                 frame = by_view[view]
                 vertices = frame.get("arface_vertices")
                 triangles = frame.get("arface_triangles")
+                depth = frame.get("depth_f32")
+                depth_K = frame.get("depth_intrinsics")
+                usable_depth_points = 0 if depth is None else int(np.count_nonzero(
+                    np.isfinite(depth) & (depth >= 0.15) & (depth <= 0.85)
+                ))
                 if (vertices is None or vertices.shape != (1220, 3)
                         or triangles is None or triangles.shape != (2304, 3)
-                        or frame.get("intrinsics") is None):
-                    invalid.append(view)
+                        or frame.get("intrinsics") is None
+                        or depth is None or depth_K is None
+                        or usable_depth_points < 100):
+                    invalid.append(view + " (missing/invalid metric depth, depth intrinsics, or ARKit geometry)")
             if missing or invalid:
                 detail = []
                 if missing:
@@ -612,8 +619,12 @@ class PatientNativeReconstructor:
                 "reconstruction rather than exporting a mesh that cannot be a real patient face."
             )
 
-        # Smooth boundary vertices while keeping central features 100% sharp
-        trimesh.smoothing.filter_laplacian(mesh, lamb=0.3, iterations=2)
+        # Never smooth a native depth surface: every vertex here is a direct
+        # metric observation and smoothing can alter the patient's measured
+        # nose, eyelids, jaw, or profile. The voxel fusion above is the only
+        # permitted noise reduction and averages coincident measurements.
+        if not is_native_ios:
+            trimesh.smoothing.filter_laplacian(mesh, lamb=0.3, iterations=2)
 
         # Extract real 3D anatomical landmarks directly from the patient's mesh
         landmarks_3d = self._extract_anatomical_landmarks(mesh.vertices)
@@ -1265,27 +1276,19 @@ class PatientNativeReconstructor:
             frame_face_arrays.append(grid_faces)
             n_used += 1
 
-        if self.manifest.get("captureSource") == "native_ios" and n_used != 5:
-            raise ValueError(
-                f"Native TrueDepth package yielded usable calibrated depth for only {n_used}/5 required views."
-            )
         if n_used == 0:
             if self.manifest.get("captureSource") == "native_ios":
-                raise ValueError("Native TrueDepth depth maps contained no usable calibrated metric samples.")
+                raise RuntimeError(
+                    "Native TrueDepth package contains no usable metric depth grid; "
+                    "refusing ARFace/RGB fallback because it would not be a depth reconstruction."
+                )
             if fused_mesh is not None:
                 print(
-                    "_refine_surface_with_truedepth: depth frames present but none produced a usable "
-                    "per-pixel grid mesh (missing intrinsics or no valid depth pixels) — keeping the "
-                    "sparser prior surface estimate instead of crashing.",
+                    "_refine_surface_with_truedepth: no depth frames produced a usable "
+                    "per-pixel grid mesh — keeping the fused ARFace surface estimate.",
                     flush=True,
                 )
                 return fused_mesh
-            # Depth was the ONLY source dispatched (see D-dispatchorder in
-            # reconstruct_patient_surface) and produced nothing usable —
-            # fall back to real RGB multi-view SfM rather than crash with
-            # no geometry at all. Still 100% real (no template, no fake
-            # depth); just a lower-fidelity real source than the depth data
-            # that was expected but turned out unusable.
             print(
                 "_refine_surface_with_truedepth: no usable depth frames and no prior estimate — "
                 "falling back to real RGB multi-view reconstruction.",

@@ -345,8 +345,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     private func capture(_ candidate: CaptureCandidate) throws {
-        guard candidate.sample.faceAnchor.isTracked else {
-            throw NSError(domain: "Scanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "Chưa nhận diện được khuôn mặt."])
+        guard candidate.sample.faceAnchor.isTracked, candidate.sample.cameraTrackingNormal else {
+            throw NSError(domain: "Scanner", code: 404, userInfo: [NSLocalizedDescriptionKey: "Tracking ARKit chưa ổn định."])
+        }
+        guard candidate.quality.isTracked, candidate.quality.isDistanceOptimal, candidate.quality.isLightingAdequate, !candidate.quality.isBlurry else {
+            throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Frame chưa đạt chất lượng TrueDepth (tracking/ánh sáng/độ nét/khoảng cách)."])
         }
         let frame = candidate.sample.frame
         let faceAnchor = candidate.sample.faceAnchor
@@ -366,16 +369,33 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             depthH = processed.height
             if let calibration = capturedDepth.cameraCalibrationData {
                 let reference = calibration.intrinsicMatrixReferenceDimensions
-                let sx = Float(processed.width) / Float(reference.width)
-                let sy = Float(processed.height) / Float(reference.height)
+                // `processed` is portrait CW while AVFoundation calibration
+                // is in raw sensor pixels. Scale first in sensor space, then
+                // rotate K with u' = H - 1 - v, v' = u.
+                let sensorWidth = processed.height
+                let sensorHeight = processed.width
+                let sx = Float(sensorWidth) / Float(reference.width)
+                let sy = Float(sensorHeight) / Float(reference.height)
                 let k = calibration.intrinsicMatrix
-                depthIntrinsics = CameraIntrinsicsDTO(fx: k[0, 0] * sx, fy: k[1, 1] * sy, cx: k[2, 0] * sx, cy: k[2, 1] * sy, imageWidth: processed.width, imageHeight: processed.height, lensDistortionCoefficients: nil)
+                depthIntrinsics = CameraIntrinsicsDTO(fx: k[1, 1] * sy, fy: k[0, 0] * sx, cx: Float(sensorHeight - 1) - k[2, 1] * sy, cy: k[2, 0] * sx, imageWidth: processed.width, imageHeight: processed.height, lensDistortionCoefficients: nil)
             }
         }
 
         let intr = frame.camera.intrinsics
         let resolution = frame.camera.imageResolution
-        let intrinsicsDTO = CameraIntrinsicsDTO(fx: intr[0, 0], fy: intr[1, 1], cx: intr[2, 0], cy: intr[2, 1], imageWidth: Int(resolution.width), imageHeight: Int(resolution.height), lensDistortionCoefficients: nil)
+        // `capturedImage` is a landscape sensor buffer, while the JPEG above
+        // is explicitly rotated 90° CW into portrait.  Intrinsics must be in
+        // the exact pixel coordinate system of that stored JPEG: u' = H-1-v,
+        // v' = u. Keeping the sensor K here projects every texture/depth
+        // observation with swapped axes and the wrong principal point.
+        let sensorWidth = Int(resolution.width)
+        let sensorHeight = Int(resolution.height)
+        let intrinsicsDTO = CameraIntrinsicsDTO(
+            fx: intr[1, 1], fy: intr[0, 0],
+            cx: Float(sensorHeight - 1) - intr[2, 1], cy: intr[2, 0],
+            imageWidth: sensorHeight, imageHeight: sensorWidth,
+            lensDistortionCoefficients: nil
+        )
         let poseDTO = ARKitTransformDTO(
             faceTransformColumnMajor: Self.flattenColumnMajor(faceAnchor.transform),
             cameraTransformColumnMajor: Self.flattenColumnMajor(frame.camera.transform),
@@ -448,8 +468,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                     && frame.pose.faceTransformColumnMajor.count == 16
                     && frame.pose.cameraTransformColumnMajor.count == 16
                     && !frame.rgbData.isEmpty
+                    // A native TrueDepth baseline is a metric depth
+                    // reconstruction. Do not accept ARFace-only capture or
+                    // silently downgrade it to an RGB reconstruction.
+                    && frame.depthData != nil
+                    && (frame.depthWidth ?? 0) > 0 && (frame.depthHeight ?? 0) > 0
+                    && frame.depthIntrinsics != nil
+                    && (frame.depthData?.count == (frame.depthWidth ?? 0) * (frame.depthHeight ?? 0) * MemoryLayout<Float32>.size)
               }) else {
-            let err = NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu khuôn mặt 3D hợp lệ; vui lòng quét lại."])
+            let err = NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu ARKit metric đầy đủ; không tải lên hoặc hạ cấp sang ảnh 2D."])
             self.lastErrorMessage = err.localizedDescription
             self.guidanceFeedback = "Lỗi: \(err.localizedDescription)"
             completion(.failure(err))

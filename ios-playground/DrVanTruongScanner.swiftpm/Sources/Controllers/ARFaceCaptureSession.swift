@@ -369,16 +369,28 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             depthH = processed.height
             if let calibration = capturedDepth.cameraCalibrationData {
                 let reference = calibration.intrinsicMatrixReferenceDimensions
-                let sx = Float(processed.width) / Float(reference.width)
-                let sy = Float(processed.height) / Float(reference.height)
+                let sensorWidth = processed.height
+                let sensorHeight = processed.width
+                let sx = Float(sensorWidth) / Float(reference.width)
+                let sy = Float(sensorHeight) / Float(reference.height)
                 let k = calibration.intrinsicMatrix
-                depthIntrinsics = CameraIntrinsicsDTO(fx: k[0, 0] * sx, fy: k[1, 1] * sy, cx: k[2, 0] * sx, cy: k[2, 1] * sy, imageWidth: processed.width, imageHeight: processed.height, lensDistortionCoefficients: nil)
+                depthIntrinsics = CameraIntrinsicsDTO(fx: k[1, 1] * sy, fy: k[0, 0] * sx, cx: Float(sensorHeight - 1) - k[2, 1] * sy, cy: k[2, 0] * sx, imageWidth: processed.width, imageHeight: processed.height, lensDistortionCoefficients: nil)
             }
         }
 
         let intr = frame.camera.intrinsics
         let resolution = frame.camera.imageResolution
-        let intrinsicsDTO = CameraIntrinsicsDTO(fx: intr[0, 0], fy: intr[1, 1], cx: intr[2, 0], cy: intr[2, 1], imageWidth: Int(resolution.width), imageHeight: Int(resolution.height), lensDistortionCoefficients: nil)
+        // JPEG pixels are rotated 90° CW from the sensor buffer. Persist K
+        // in those portrait JPEG coordinates so texture projection agrees
+        // with the saved RGB frame.
+        let sensorWidth = Int(resolution.width)
+        let sensorHeight = Int(resolution.height)
+        let intrinsicsDTO = CameraIntrinsicsDTO(
+            fx: intr[1, 1], fy: intr[0, 0],
+            cx: Float(sensorHeight - 1) - intr[2, 1], cy: intr[2, 0],
+            imageWidth: sensorHeight, imageHeight: sensorWidth,
+            lensDistortionCoefficients: nil
+        )
         let poseDTO = ARKitTransformDTO(
             faceTransformColumnMajor: Self.flattenColumnMajor(faceAnchor.transform),
             cameraTransformColumnMajor: Self.flattenColumnMajor(frame.camera.transform),
@@ -455,6 +467,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                     && frame.pose.faceTransformColumnMajor.count == 16
                     && frame.pose.cameraTransformColumnMajor.count == 16
                     && !frame.rgbData.isEmpty
+                    && frame.depthData != nil
+                    && frame.depthWidth != nil && frame.depthHeight != nil
+                    && frame.depthIntrinsics != nil
+                    && (frame.depthData?.count == (frame.depthWidth ?? 0) * (frame.depthHeight ?? 0) * MemoryLayout<Float32>.size)
               }) else {
             completion(.failure(NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Gói quét thiếu dữ liệu ARKit metric đầy đủ; không tải lên hoặc hạ cấp sang ảnh 2D."])) )
             return

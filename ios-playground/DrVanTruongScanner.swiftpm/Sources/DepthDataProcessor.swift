@@ -45,7 +45,10 @@ public final class DepthDataProcessor {
         let bytesPerRow = CVPixelBufferGetBytesPerRow(depthPixelBuffer)
         let floatBuffer = baseAddress.assumingMemoryBound(to: Float32.self)
         
-        var outputData = Data(count: width * height * MemoryLayout<Float32>.size)
+        // Store depth in the same portrait coordinates as the rotated RGB.
+        let portraitWidth = height
+        let portraitHeight = width
+        var outputData = Data(count: portraitWidth * portraitHeight * MemoryLayout<Float32>.size)
         var minD: Float = Float.greatestFiniteMagnitude
         var maxD: Float = 0.0
         var validPoints = 0
@@ -57,7 +60,7 @@ public final class DepthDataProcessor {
                 let rowStart = baseAddress.advanced(by: y * bytesPerRow).assumingMemoryBound(to: Float32.self)
                 for x in 0..<width {
                     let rawVal = rowStart[x]
-                    let idx = y * width + x
+                    let idx = x * portraitWidth + (height - 1 - y)
                     
                     // Filter out invalid/NaN depth values
                     if rawVal.isFinite && rawVal > 0.15 && rawVal < 1.2 { // Valid face range: 15cm - 120cm
@@ -73,8 +76,8 @@ public final class DepthDataProcessor {
         }
         
         return DepthMapOutput(
-            width: width,
-            height: height,
+            width: portraitWidth,
+            height: portraitHeight,
             rawData: outputData,
             minDepthMm: minD == Float.greatestFiniteMagnitude ? 0 : minD * 1000.0,
             maxDepthMm: maxD * 1000.0,

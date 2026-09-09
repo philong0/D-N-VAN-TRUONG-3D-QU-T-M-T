@@ -40,7 +40,7 @@ export interface TrueDepthFrameCapture {
   view: ScanCaptureView;
   timestamp: number;
   rgbFileName: string; // e.g. "front_rgb.jpg"
-  depthFileName?: string; // e.g. "front_depth.raw" (16-bit float millimeters)
+  depthFileName?: string; // e.g. "front_depth.raw" (little-endian Float32 meters)
   depthWidth?: number;
   depthHeight?: number;
   intrinsics: CameraIntrinsics;
@@ -63,4 +63,3 @@ export interface TrueDepthCapturePackageManifest {
   capturedAt: string;
   frames: TrueDepthFrameCapture[];
 }
-

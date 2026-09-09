@@ -164,7 +164,7 @@ public struct CapturedFramePackage: Identifiable {
     public let step: ScanAngleStep
     public let timestamp: Double
     public let rgbData: Data
-    public let depthData: Data? // Float32 millimeters
+    public let depthData: Data? // Little-endian Float32 meters, portrait-aligned with RGB
     public let depthWidth: Int?
     public let depthHeight: Int?
     /// Intrinsics in the depth-map pixel coordinate system. RGB intrinsics

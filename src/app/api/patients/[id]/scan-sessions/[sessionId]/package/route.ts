@@ -71,13 +71,15 @@ export async function POST(
       if (manifest.hasTrueDepth !== true) {
         return NextResponse.json({ error: "Gói native iOS phải xác nhận cảm biến TrueDepth thực tế." }, { status: 422 });
       }
+      if (manifest.patientId !== patientId || manifest.sessionId !== sessionId) {
+        return NextResponse.json({ error: "Patient/session trong manifest không khớp với phiên upload; từ chối trộn dữ liệu khác người hoặc khác phiên." }, { status: 422 });
+      }
       if (framesDTO.length !== Object.keys(nativeTargets).length) {
         return NextResponse.json({ error: "Gói TrueDepth phải có đủ 5 góc quét chuẩn." }, { status: 422 });
       }
       const seenViews = new Set<string>();
       for (const frame of framesDTO) {
         const config = nativeTargets[frame.view];
-        const quality = frame.quality;
         const geometry = frame.geometry;
         const intrinsics = frame.intrinsics;
         const pose = frame.pose;
@@ -94,14 +96,12 @@ export async function POST(
           && isFiniteNumber(intrinsics.cx) && isFiniteNumber(intrinsics.cy) && Number.isInteger(intrinsics.imageWidth) && (intrinsics.imageWidth as number) > 0
           && Number.isInteger(intrinsics.imageHeight) && (intrinsics.imageHeight as number) > 0);
         const depthIntrinsics = frame.depthIntrinsics;
-        const validDepthDeclaration = !frame.depthFileName || (
-          typeof frame.depthFileName === "string" && frame.depthFileName.length > 0
+        const validDepthDeclaration = typeof frame.depthFileName === "string" && frame.depthFileName.length > 0
           && Number.isInteger(frame.depthWidth) && (frame.depthWidth as number) > 0
           && Number.isInteger(frame.depthHeight) && (frame.depthHeight as number) > 0
           && Boolean(depthIntrinsics && isFiniteNumber(depthIntrinsics.fx) && depthIntrinsics.fx > 0
             && isFiniteNumber(depthIntrinsics.fy) && depthIntrinsics.fy > 0
-            && isFiniteNumber(depthIntrinsics.cx) && isFiniteNumber(depthIntrinsics.cy))
-        );
+            && isFiniteNumber(depthIntrinsics.cx) && isFiniteNumber(depthIntrinsics.cy));
         const validPose = Boolean(pose && Array.isArray(pose.faceTransformColumnMajor) && pose.faceTransformColumnMajor.length === 16
           && pose.faceTransformColumnMajor.every(isFiniteNumber) && Array.isArray(pose.cameraTransformColumnMajor)
           && pose.cameraTransformColumnMajor.length === 16 && pose.cameraTransformColumnMajor.every(isFiniteNumber));
@@ -148,6 +148,8 @@ export async function POST(
         depthSaved = true;
         const depthBuffer = Buffer.from(await depthFile.arrayBuffer());
         await writeFile(path.join(dir, `${view}_depth.raw`), depthBuffer);
+      } else if (manifest.captureSource === "native_ios") {
+        return NextResponse.json({ error: `Thiếu metric depth Float32 đồng bộ cho góc ${view}; native reconstruction bị từ chối.` }, { status: 422 });
       }
 
       const geometryDir = path.join(dir, "geometry");
