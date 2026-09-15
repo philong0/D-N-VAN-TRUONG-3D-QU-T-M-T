@@ -38,6 +38,7 @@ public final class BackendAPIClient: ObservableObject {
     @Published public var uploadProgress: Float = 0.0
     @Published public var uploadStatusMessage: String = ""
     @Published public var studioURL: URL? = nil
+    public var onProgressUpdate: ((Float, String) -> Void)?
 
     public init() {}
 
@@ -300,34 +301,129 @@ public final class BackendAPIClient: ObservableObject {
                 return
             }
             
-            // 4. Kiểm tra session status "ready" và baseline GLB hợp lệ
+            // 4. Kiểm tra session status
             let sessionStatus = respObj.session?.status
             let glbFileName = respObj.session?.reconstruction?.baselineModelFileName
             
-            guard sessionStatus == "ready" && glbFileName != nil && !glbFileName!.isEmpty else {
-                let reconErr = respObj.session?.reconstruction?.error ?? "Chưa tạo được mô hình baseline 3D hợp lệ từ dữ liệu quét."
-                let err = NSError(domain: "Reconstruction", code: 500, userInfo: [NSLocalizedDescriptionKey: reconErr])
+            // Nếu đã sẵn sàng baseline.glb (trường hợp hiếm khi đã dựng xong tức thì)
+            if sessionStatus == "ready" && glbFileName != nil && !glbFileName!.isEmpty {
+                guard let studio = URL(string: "\(self.activeServerURL)/patients/\(patientId)/studio") else {
+                    let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi tạo đường dẫn 3D Studio."])
+                    DispatchQueue.main.async {
+                        self.uploadStatusMessage = err.localizedDescription
+                        self.onProgressUpdate?(self.uploadProgress, err.localizedDescription)
+                        completion(.failure(err))
+                    }
+                    return
+                }
+                
                 DispatchQueue.main.async {
-                    self.uploadStatusMessage = reconErr
-                    completion(.failure(err))
+                    self.studioURL = studio
+                    self.uploadProgress = 1.0
+                    self.uploadStatusMessage = "✓ Tái tạo baseline.glb thành công!"
+                    self.onProgressUpdate?(1.0, "✓ Tái tạo baseline.glb thành công!")
+                    completion(.success(studio))
                 }
                 return
             }
             
-            guard let studio = URL(string: "\(self.activeServerURL)/patients/\(patientId)/studio") else {
-                let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi tạo đường dẫn 3D Studio."])
+            // Nếu server đang xử lý bất đồng bộ ("processing") -> Tiến hành Polling trạng thái kèm cập nhật UI
+            self.pollReconstructionReady(patientId: patientId, sessionId: sessionId, startTime: Date(), completion: completion)
+        }.resume()
+    }
+
+    private func pollReconstructionReady(patientId: String, sessionId: String, startTime: Date, completion: @escaping (Result<URL, Error>) -> Void) {
+        guard let url = URL(string: "\(activeServerURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)") else {
+            completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL polling không hợp lệ"])))
+            return
+        }
+        
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 15
+        
+        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+            guard let self = self else { return }
+            
+            let elapsed = Date().timeIntervalSince(startTime)
+            if elapsed > 180 { // 3 phút timeout tối đa
                 DispatchQueue.main.async {
-                    self.uploadStatusMessage = err.localizedDescription
-                    completion(.failure(err))
+                    self.isUploading = false
+                    let timeoutErr = NSError(domain: "Reconstruction", code: 408, userInfo: [NSLocalizedDescriptionKey: "Quá thời gian chờ AI Engine dựng 3D. Vui lòng thử lại."])
+                    self.uploadStatusMessage = timeoutErr.localizedDescription
+                    self.onProgressUpdate?(self.uploadProgress, timeoutErr.localizedDescription)
+                    completion(.failure(timeoutErr))
                 }
                 return
             }
             
+            // Cập nhật thông điệp và tiến trình theo thời gian thực để người dùng thấy rõ AI đang làm việc
             DispatchQueue.main.async {
-                self.studioURL = studio
-                self.uploadProgress = 1.0
-                self.uploadStatusMessage = "✓ Tái tạo baseline.glb thành công!"
-                completion(.success(studio))
+                self.isUploading = true
+                let prog: Float
+                let msg: String
+                if elapsed < 8 {
+                    prog = 0.45
+                    msg = "AI Engine đang tiếp nhận & đối chiếu các góc quét TrueDepth..."
+                } else if elapsed < 20 {
+                    prog = 0.60
+                    msg = "Đang dựng cấu trúc nhân trắc GNM Full-Head (tai, cằm, mũi)..."
+                } else if elapsed < 35 {
+                    prog = 0.75
+                    msg = "Đang tinh chỉnh độ dày mô mềm & tính đối xứng lâm sàng..."
+                } else if elapsed < 55 {
+                    prog = 0.88
+                    msg = "Đang hoàn thiện vân da bề mặt Ultra-HD (PBR Shader)..."
+                } else {
+                    prog = 0.94
+                    msg = "Đang hoàn tất đóng gói mô hình 3D..."
+                }
+                self.uploadProgress = prog
+                self.uploadStatusMessage = msg
+                self.onProgressUpdate?(prog, msg)
+            }
+            
+            if let data = data,
+               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let session = json["session"] as? [String: Any] {
+                
+                let status = session["status"] as? String
+                let recon = session["reconstruction"] as? [String: Any]
+                let baselineGLB = recon?["baselineModelFileName"] as? String
+                
+                if status == "ready" || (baselineGLB != nil && !baselineGLB!.isEmpty) {
+                    DispatchQueue.main.async {
+                        self.uploadProgress = 1.0
+                        let successMsg = "✓ Dựng 3D hoàn tất! Đang chuyển vào 3D Studio..."
+                        self.uploadStatusMessage = successMsg
+                        self.onProgressUpdate?(1.0, successMsg)
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                            self.isUploading = false
+                            if let studio = URL(string: "\(self.activeServerURL)/patients/\(patientId)/studio") {
+                                self.studioURL = studio
+                                completion(.success(studio))
+                            }
+                        }
+                    }
+                    return
+                }
+                
+                if status == "failed" {
+                    let errReason = recon?["error"] as? String ?? "AI Engine không thể tái tạo mô hình 3D từ dữ liệu quét này."
+                    DispatchQueue.main.async {
+                        self.isUploading = false
+                        let err = NSError(domain: "Reconstruction", code: 422, userInfo: [NSLocalizedDescriptionKey: errReason])
+                        self.uploadStatusMessage = errReason
+                        self.onProgressUpdate?(self.uploadProgress, errReason)
+                        completion(.failure(err))
+                    }
+                    return
+                }
+            }
+            
+            // Tiếp tục poll sau 2.0 giây
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                self.pollReconstructionReady(patientId: patientId, sessionId: sessionId, startTime: startTime, completion: completion)
             }
         }.resume()
     }

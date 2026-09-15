@@ -31,6 +31,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var isAutoCapturing = false
     @Published public var isUploading = false
     @Published public var uploadProgress: Float = 0
+    @Published public var uploadStatusMessage: String = ""
     @Published public var lastErrorMessage: String?
 
     // MARK: - Dual Mode & Face ID Sweep States
@@ -335,11 +336,21 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     private func completeFaceIdSweep() {
         guard !isUploading, !isSweepCompleted else { return }
-        // Safe Gate: Có ảnh chính diện + 2 bên trái/phải thực tế VÀ có dữ liệu sweep (>= 8 nấc hoặc >= 6 frames)
-        guard clinicalPhotos["front"] != nil,
-              (clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil),
-              (clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil),
-              (faceIdFilledCount >= 8 || sweepFrames.count >= 6) else {
+        
+        // Bắt buộc phải có đủ ảnh lâm sàng cốt lõi
+        let hasCorePhotos = clinicalPhotos["front"] != nil
+            && (clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil)
+            && (clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil)
+            
+        let elapsedSweepTime = sweepStartTime != nil ? (Date().timeIntervalSince1970 - sweepStartTime!) : 0.0
+        
+        // Điều kiện hoàn tất:
+        // 1. Phủ kín ít nhất 28/36 nấc xanh (>= 78% vòng tròn) VÀ đủ ảnh lâm sàng
+        // 2. Hoặc sau 15 giây quét liên tục và đạt ít nhất 22/36 nấc xanh (đảm bảo không kẹt bệnh nhân khó xoay cổ)
+        let isFullyFilled = faceIdFilledCount >= 28 && hasCorePhotos
+        let isTimedSufficient = elapsedSweepTime >= 15.0 && faceIdFilledCount >= 22 && hasCorePhotos
+        
+        guard isFullyFilled || isTimedSufficient else {
             return
         }
 
@@ -348,7 +359,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT CHUẨN XÁC!"
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
 
-        // Chờ 0.8s để người dùng nhìn thấy các nấc xanh hoàn tất vòng quét
+        // Chờ 0.8s để người dùng nhìn thấy toàn bộ vòng tròn xanh hoàn tất
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             guard let self = self else { return }
             self.triggerPackageUpload { _ in }
@@ -626,7 +637,16 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        BackendAPIClient().uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: allFramesToUpload, scannerMode: scannerMode) { [weak self] result in
+        let apiClient = BackendAPIClient()
+        apiClient.onProgressUpdate = { [weak self] progress, message in
+            DispatchQueue.main.async {
+                self?.uploadProgress = progress
+                self?.uploadStatusMessage = message
+                self?.guidanceFeedback = message
+            }
+        }
+
+        apiClient.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: allFramesToUpload, scannerMode: scannerMode) { [weak self] result in
             DispatchQueue.main.async {
                 self?.isUploading = false
                 switch result {
@@ -646,6 +666,9 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     public func resetScan() {
         isScanningActive = false
         isSweepCompleted = false
+        isUploading = false
+        uploadProgress = 0
+        uploadStatusMessage = ""
         capturedFrames.removeAll()
         sweepFrames.removeAll()
         clinicalPhotos.removeAll()

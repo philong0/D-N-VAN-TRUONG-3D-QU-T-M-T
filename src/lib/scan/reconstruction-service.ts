@@ -56,6 +56,8 @@ export interface IReconstructionService {
  * stand-in (ai-engine's own D-notemplate contract, enforced by
  * test_anti_template.py).
  */
+const activePatientRecons = new Set<string>();
+
 export class PythonGNMReconstructionService implements IReconstructionService {
   readonly providerName = "Patient-specific multi-view reconstruction";
   readonly isReady = true;
@@ -63,6 +65,17 @@ export class PythonGNMReconstructionService implements IReconstructionService {
   async process(data: ScanData): Promise<ReconstructionResult> {
     const { patientId, sessionId } = data;
     const now = new Date().toISOString();
+
+    if (activePatientRecons.has(patientId)) {
+      console.log(`[reconstruction-service] Patient ${patientId} is already running 3D reconstruction; skipping duplicate run.`);
+      return {
+        status: "queued",
+        provider: this.providerName,
+        reason: "Reconstruction is already running for this patient",
+        evaluatedAt: now,
+      };
+    }
+    activePatientRecons.add(patientId);
 
     try {
       const framesFolder = scanFramesDir(patientId, sessionId);
@@ -401,6 +414,8 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         reason: err instanceof Error ? err.message : "Lỗi thực thi Reconstruction Service.",
         evaluatedAt: now,
       };
+    } finally {
+      activePatientRecons.delete(patientId);
     }
   }
 }

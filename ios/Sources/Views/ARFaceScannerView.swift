@@ -624,7 +624,7 @@ public struct ARFaceScannerView: View {
                     Color.black.opacity(0.92).edgesIgnoringSafeArea(.all)
                     VStack(spacing: 20) {
                         ProgressView()
-                            .scaleEffect(1.8)
+                            .scaleEffect(1.6)
                             .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.18, green: 0.85, blue: 0.35)))
                         
                         Text("ĐANG DỰNG MÔ HÌNH 3D FULL-HEAD")
@@ -632,11 +632,25 @@ public struct ARFaceScannerView: View {
                             .bold()
                             .foregroundColor(.white)
                         
-                        Text(captureSession.lastErrorMessage == nil ? "Dữ liệu đang được gửi tới AI Engine để tạo mô hình 3D thực tế (tai, tóc, mắt, sống mũi)..." : (captureSession.lastErrorMessage ?? ""))
+                        // Thanh tiến trình ngang mượt mà
+                        VStack(spacing: 6) {
+                            ProgressView(value: Double(max(0.08, captureSession.uploadProgress)), total: 1.0)
+                                .progressViewStyle(LinearProgressViewStyle(tint: Color(red: 0.18, green: 0.85, blue: 0.35)))
+                                .frame(width: 220)
+                            
+                            Text("\(Int(max(0.08, captureSession.uploadProgress) * 100))%")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(Color(red: 0.18, green: 0.85, blue: 0.35))
+                        }
+                        
+                        Text(captureSession.lastErrorMessage == nil
+                             ? (!captureSession.uploadStatusMessage.isEmpty ? captureSession.uploadStatusMessage : "Dữ liệu đang được gửi tới AI Engine để tạo mô hình 3D thực tế...")
+                             : (captureSession.lastErrorMessage ?? ""))
                             .font(.footnote)
-                            .foregroundColor(captureSession.lastErrorMessage == nil ? .white.opacity(0.85) : Color(red: 1.0, green: 0.4, blue: 0.4))
+                            .foregroundColor(captureSession.lastErrorMessage == nil ? .white.opacity(0.9) : Color(red: 1.0, green: 0.4, blue: 0.4))
                             .multilineTextAlignment(.center)
-                            .padding(.horizontal, 28)
+                            .padding(.horizontal, 24)
+                            .animation(.easeInOut(duration: 0.3), value: captureSession.uploadStatusMessage)
                         
                         if captureSession.lastErrorMessage != nil {
                             Button {

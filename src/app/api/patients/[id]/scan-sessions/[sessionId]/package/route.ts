@@ -442,50 +442,70 @@ export async function POST(
       scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
     }));
 
-    // Auto-trigger reconstruction directly upon package upload
-    try {
-      const { requestReconstruction } = await import("@/lib/scan/reconstruction-service");
-      const reconResult = await requestReconstruction(updatedSession);
+    // Cập nhật session status thành "processing" để client biết AI Engine đang dựng 3D
+    updatedSession.status = "processing";
+    await updatePatient(patientId, (stored) => ({
+      ...stored,
+      photos: { ...stored.photos, ...framePhotoEntries },
+      scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
+    }));
 
-      if (reconResult.status === "completed" && reconResult.artifacts?.baselineModelFileName) {
-        updatedSession.status = "ready";
-        updatedSession.reconstruction = {
-          provider: reconResult.provider,
-          requestedAt: new Date().toISOString(),
-          baselineModelFileName: reconResult.artifacts.baselineModelFileName,
-          baselineObjFileName: reconResult.artifacts.baselineObjFileName,
-        };
+    // Khởi chạy Reconstruction bất đồng bộ ở background, không khóa luồng HTTP POST của thiết bị
+    (async () => {
+      try {
+        const { requestReconstruction } = await import("@/lib/scan/reconstruction-service");
+        const reconResult = await requestReconstruction(updatedSession);
 
-        await updatePatient(patientId, (stored) => ({
-          ...stored,
-          status: "da-tao-mo-hinh",
-          model3d: {
-            before: {
-              generatedAt: new Date().toISOString(),
-              sourcePhotos: (Object.keys({ ...stored.photos, ...framePhotoEntries }) as (keyof typeof stored.photos)[]),
-              method: reconResult.provider,
-              coverageFraction: 1.0,
+        if (reconResult.status === "completed" && reconResult.artifacts?.baselineModelFileName) {
+          updatedSession.status = "ready";
+          updatedSession.reconstruction = {
+            provider: reconResult.provider,
+            requestedAt: new Date().toISOString(),
+            baselineModelFileName: reconResult.artifacts.baselineModelFileName,
+            baselineObjFileName: reconResult.artifacts.baselineObjFileName,
+          };
+
+          await updatePatient(patientId, (stored) => ({
+            ...stored,
+            status: "da-tao-mo-hinh",
+            model3d: {
+              before: {
+                generatedAt: new Date().toISOString(),
+                sourcePhotos: (Object.keys({ ...stored.photos, ...framePhotoEntries }) as (keyof typeof stored.photos)[]),
+                method: reconResult.provider,
+                coverageFraction: 1.0,
+              },
             },
-          },
-          scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
-        }));
-      } else {
+            scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
+          }));
+          console.log(`[package/route] 3D Reconstruction completed successfully for patient ${patientId}`);
+        } else {
+          updatedSession.status = "needs_rescan";
+          updatedSession.reconstruction = {
+            provider: reconResult.provider,
+            requestedAt: new Date().toISOString(),
+            error: reconResult.reason || "Reconstruction failed",
+          };
+          await updatePatient(patientId, (stored) => ({
+            ...stored,
+            scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
+          }));
+          console.warn(`[package/route] 3D Reconstruction did not complete: ${reconResult.reason}`);
+        }
+      } catch (reconErr) {
+        console.error(`[package/route] Async reconstruction error for patient ${patientId}:`, reconErr);
+        updatedSession.status = "needs_rescan";
         await updatePatient(patientId, (stored) => ({
           ...stored,
           scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
         }));
       }
-    } catch (reconErr) {
-      console.warn("Auto-reconstruction note in package route:", reconErr);
-      await updatePatient(patientId, (stored) => ({
-        ...stored,
-        scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
-      }));
-    }
+    })();
 
     return NextResponse.json({
       success: true,
-      message: "Đã nạp gói dữ liệu TrueDepth Native từ thiết bị iOS thành công.",
+      status: "processing",
+      message: "Đã nạp gói dữ liệu TrueDepth Native thành công. AI Engine đang dựng mô hình 3D.",
       session: updatedSession,
       quality: qualityReport,
       studioUrl: `/patients/${patientId}/studio`,
