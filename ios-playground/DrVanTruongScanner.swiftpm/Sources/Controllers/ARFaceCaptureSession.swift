@@ -41,6 +41,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var clinicalPhotos: [String: CapturedFramePackage] = [:]
     @Published public var isRearCameraActive: Bool = false
     @Published public var isFaceInFramingRect: Bool = false
+    @Published public var isScanningActive: Bool = false
+    @Published public var isSweepCompleted: Bool = false
     public var latestRearFrame: ARFrame?
     public var sweepStartTime: TimeInterval?
 
@@ -164,6 +166,21 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let isCentered = abs(yaw) <= 18 && abs(pitch) <= 20 && pose.distanceMeters >= 0.30 && pose.distanceMeters <= 0.60
         isFaceInFramingRect = isCentered
 
+        // CHỈ xử lý ghi nhận dữ liệu khi chế độ quét được kích hoạt thật sự
+        guard isScanningActive else { return }
+
+        // Chờ người dùng định vị khuôn mặt vào tâm vòng tròn trước khi tính giờ quét
+        if sweepStartTime == nil {
+            if isCentered {
+                sweepStartTime = frame.timestamp
+                guidanceFeedback = "Di chuyển chậm đầu của bạn theo hình tròn."
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            } else {
+                guidanceFeedback = "Định vị khuôn mặt trong vòng tròn"
+                return
+            }
+        }
+
         // 2. Hybrid Progressive Arc Binning (Hỗ trợ cả xoay ngang thuần túy lẫn xoay tròn hình nón)
         // Hệ tọa độ đồng hồ 36 nấc Face ID:
         // - 12h (bin 0): Trực diện / Hơi nhìn lên
@@ -241,16 +258,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             UISelectionFeedbackGenerator().selectionChanged()
         }
 
-        // 3. Khởi tạo sweepStartTime khi người dùng bắt đầu có tương tác xoay
-        if sweepStartTime == nil && (faceIdFilledCount >= 2 || coneRadius >= 4.0) {
-            sweepStartTime = frame.timestamp
-        }
-
-        // 4. Background banking tự động chọn 6 góc ảnh hồ sơ lâm sàng chuẩn y khoa
+        // 3. Background banking tự động chọn 6 góc ảnh hồ sơ lâm sàng chuẩn y khoa
         checkAndBankClinicalPhotos(frame: frame, faceAnchor: faceAnchor, pose: pose)
 
-        // 5. Dynamic Guidance Text chuẩn Apple Face ID (nhẹ nhàng, không đếm số góc)
-        let elapsed = sweepStartTime != nil ? (frame.timestamp - (sweepStartTime ?? frame.timestamp)) : 0
+        // 4. Dynamic Guidance Text chuẩn Apple Face ID (nhẹ nhàng, không đếm số góc)
+        let elapsed = frame.timestamp - (sweepStartTime ?? frame.timestamp)
         let hasFront = clinicalPhotos["front"] != nil
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
@@ -259,7 +271,6 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         // Safe Exit Gate: Hoàn tất khi có đủ ảnh Chính diện + Trái + Phải, có dữ liệu sweep (>= 8 nấc hoặc >= 6 frame) và thời gian >= 2.2s
         let isReadyToComplete = hasFront && hasLeft && hasRight && (faceIdFilledCount >= 8 || sweepFrames.count >= 6) && elapsed >= 2.2
         if isReadyToComplete {
-            guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT CHUẨN XÁC!"
             completeFaceIdSweep()
         } else if pose.distanceMeters < 0.30 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
@@ -370,7 +381,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     private func completeFaceIdSweep() {
-        guard !isUploading else { return }
+        guard !isUploading, !isSweepCompleted else { return }
         // Safe Gate: Có ảnh chính diện + 2 bên trái/phải thực tế VÀ có dữ liệu sweep (>= 8 nấc hoặc >= 6 frames)
         guard clinicalPhotos["front"] != nil,
               (clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil),
@@ -379,8 +390,16 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
 
+        isSweepCompleted = true
+        isScanningActive = false
+        guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT CHUẨN XÁC!"
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-        triggerPackageUpload { _ in }
+
+        // Chờ 0.8s để người dùng nhìn thấy các nấc xanh hoàn tất vòng quét
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self = self else { return }
+            self.triggerPackageUpload { _ in }
+        }
     }
 
     // MARK: - Mode 2: Rear Camera Processing
@@ -672,6 +691,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     public func resetScan() {
+        isScanningActive = false
+        isSweepCompleted = false
         capturedFrames.removeAll()
         sweepFrames.removeAll()
         clinicalPhotos.removeAll()
@@ -684,6 +705,12 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         isBankingInProgress = false
         clearLivePoseState()
         guidanceFeedback = scannerMode == .faceIdSelfScan ? "Đưa khuôn mặt vào trong vòng tròn" : "Điều Dưỡng Quét: Đã sẵn sàng."
+    }
+
+    public func startActiveSweep() {
+        resetScan()
+        isScanningActive = true
+        guidanceFeedback = "Định vị khuôn mặt trong vòng tròn"
     }
 
     private func clearLivePoseState() {
