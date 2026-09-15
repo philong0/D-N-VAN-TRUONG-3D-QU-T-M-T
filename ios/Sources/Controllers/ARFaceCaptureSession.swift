@@ -250,6 +250,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
 
+        let elapsed = sweepStartTime != nil ? (frame.timestamp - sweepStartTime!) : 0.0
+
         // Điều kiện TỰ ĐỘNG HOÀN TẤT & NHẢY VÀO TẠO 3D (100% rảnh tay, không cần bấm nút):
         // 1. Đã ghi nhận đủ 4 góc lâm sàng cốt lõi (Chính diện + Ngửa cằm + Nghiêng trái + Nghiêng phải) VÀ có ít nhất 18 nấc xanh
         // 2. Hoặc vòng tròn quét đã đạt >= 26 nấc xanh
