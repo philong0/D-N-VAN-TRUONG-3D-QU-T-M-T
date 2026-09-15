@@ -183,41 +183,42 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 2. Strict Physical Latching (Chỉ bật XANH khi đầu thực sự xoay/nghiêng ĐÚNG góc vật lý)
-        // Hệ tọa độ đồng hồ 36 nấc Face ID:
-        // - 12h (bins 34, 35, 0, 1, 2): Ngửa cằm thật sự (pitch >= 12°)
-        // - 3h (bins 7, 8, 9, 10, 11): Quay phải thật sự (yaw >= 20°)
-        // - 6h (bins 16, 17, 18, 19, 20): Cúi nhẹ thật sự (pitch <= -8°)
-        // - 9h (bins 25, 26, 27, 28, 29): Quay trái thật sự (yaw <= -20°)
+        // 2. Strict Physical Sector Latching (Chỉ bật XANH khi đầu thực sự xoay/nghiêng ĐÚNG góc vật lý)
         let coneRadius = sqrt(Double(yaw * yaw + pitch * pitch))
         var currentBin: Int? = nil
 
-        if coneRadius >= 14.0 {
+        if coneRadius >= 10.0 {
             // Xác định chính xác góc phương vị tức thời theo mặt phẳng đồng hồ (yaw, pitch)
             let clockRad = atan2(Double(yaw), Double(pitch))
             var clockDeg = clockRad * 180.0 / .pi
             if clockDeg < 0 { clockDeg += 360.0 }
             let bin = Int((clockDeg / 10.0).rounded()) % 36
 
-            // Kiểm tra nghiêm ngặt: đầu phải thực sự xoay/nghiêng đúng hướng thì mới được tính nấc đó
+            // Kiểm tra nghiêm ngặt từng cung 45 độ trên vòng tròn:
             var isPhysicallyValidAngle = false
             if (bin >= 34 || bin <= 2) && pitch >= 10.0 {
-                // Hướng ngửa cằm (12h)
+                // 12h: Ngửa cằm
                 isPhysicallyValidAngle = true
-            } else if (bin >= 7 && bin <= 11) && yaw >= 18.0 {
-                // Hướng quay phải (3h)
+            } else if (bin >= 3 && bin <= 6) && yaw >= 8.0 && pitch >= 4.0 {
+                // 1h-2h: Góc trên bên phải
+                isPhysicallyValidAngle = true
+            } else if (bin >= 7 && bin <= 11) && yaw >= 16.0 {
+                // 3h: Quay phải
+                isPhysicallyValidAngle = true
+            } else if (bin >= 12 && bin <= 15) && yaw >= 8.0 && pitch <= -4.0 {
+                // 4h-5h: Góc dưới bên phải
                 isPhysicallyValidAngle = true
             } else if (bin >= 16 && bin <= 20) && pitch <= -7.0 {
-                // Hướng cúi nhẹ (6h)
+                // 6h: Cúi cằm
                 isPhysicallyValidAngle = true
-            } else if (bin >= 25 && bin <= 29) && yaw <= -18.0 {
-                // Hướng quay trái (9h)
+            } else if (bin >= 21 && bin <= 24) && yaw <= -8.0 && pitch <= -4.0 {
+                // 7h-8h: Góc dưới bên trái
                 isPhysicallyValidAngle = true
-            } else if coneRadius >= 9.0 {
-                // Các góc chéo kết hợp — hạ ngưỡng từ 15 xuống 9: động tác quay
-                // đầu tự nhiên (nhìn trái/phải/lên/xuống tuần tự, không phải vẽ
-                // hình nón cố ý) vẫn thoáng qua các nấc trung gian này ở biên độ
-                // vừa phải, không cần ép buộc chuyển động 2 trục đồng thời.
+            } else if (bin >= 25 && bin <= 29) && yaw <= -16.0 {
+                // 9h: Quay trái
+                isPhysicallyValidAngle = true
+            } else if (bin >= 30 && bin <= 33) && yaw <= -8.0 && pitch >= 4.0 {
+                // 10h-11h: Góc trên bên trái
                 isPhysicallyValidAngle = true
             }
 
@@ -229,9 +230,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             currentBin = 0
         }
 
-        // BẬT XANH NẤC: Chỉ khi góc đo đạc thực tế thỏa mãn điều kiện vật lý
+        // BẬT XANH NẤC: Mỗi nấc nạp cách nhau tối thiểu 70ms để người dùng xoay đầu tự nhiên, không bị nhảy vèo
         if let b = currentBin, b >= 0 && b < 36 {
-            if !faceIdTicks[b] {
+            let now = frame.timestamp
+            if !faceIdTicks[b] && (now - lastBankedTimestamp >= 0.070 || faceIdFilledCount == 0) {
+                lastBankedTimestamp = now
                 faceIdTicks[b] = true
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
                 UISelectionFeedbackGenerator().selectionChanged()
@@ -244,31 +247,36 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 3. Dynamic Guidance Text hướng dẫn xoay đúng các góc còn chưa quét
+        // 3. Dynamic Guidance Text & BẮT BUỘC ĐỦ TẤT CẢ CÁC GÓC LÂM SÀNG CỐT LÕI:
         let hasFront = clinicalPhotos["front"] != nil
         let hasBasal = clinicalPhotos["basal_nostrils"] != nil
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
+        let isFullCircleCovered = faceIdFilledCount >= 34
 
-        // Điều kiện TỰ ĐỘNG HOÀN TẤT & NHẢY VÀO TẠO 3D:
-        // CHỈ TỰ ĐỘNG KHI NGƯỜI DÙNG QUÉT XONG TOÀN BỘ VÒNG TRÒN (>= 34/36 nấc xanh)!
-        // KHÔNG BAO GIỜ ngắt sớm giữa chừng khi người dùng chưa quét xong vòng tròn!
-        let isRingCompleted = faceIdFilledCount >= 34
-        
-        if isRingCompleted {
+        // ĐIỀU KIỆN TỰ ĐỘNG CHUYỂN 3D:
+        // BẮT BUỘC ĐỦ CẢ 5 YẾU TỐ:
+        // 1. Vòng tròn xanh đã phủ kín (>= 34/36 nấc)
+        // 2. Đã có ảnh chính diện (front)
+        // 3. Đã có ảnh ngửa cằm đáy mũi (basal_nostrils)
+        // 4. Đã có ảnh nghiêng trái (left)
+        // 5. Đã có ảnh nghiêng phải (right)
+        if isFullCircleCovered && hasFront && hasBasal && hasLeft && hasRight {
             completeFaceIdSweep()
         } else if !hasBasal {
-            guidanceFeedback = "Hơi ngửa cằm lên (20°-25°) để phủ nấc ngửa cằm & đáy mũi (\(faceIdFilledCount)/36)"
+            guidanceFeedback = "👆 Hơi ngửa cằm lên (20°-25°) để quét chân mũi & đáy mũi (\(faceIdFilledCount)/36)"
         } else if !hasLeft {
-            guidanceFeedback = "Nghiêng mặt sang TRÁI (35°-45°) để phủ các nấc bên trái (\(faceIdFilledCount)/36)"
+            guidanceFeedback = "👈 Nghiêng mặt sang TRÁI (35°-45°) để quét má trái (\(faceIdFilledCount)/36)"
         } else if !hasRight {
-            guidanceFeedback = "Nghiêng mặt sang PHẢI (35°-45°) để phủ các nấc bên phải (\(faceIdFilledCount)/36)"
+            guidanceFeedback = "👉 Nghiêng mặt sang PHẢI (35°-45°) để quét má phải (\(faceIdFilledCount)/36)"
+        } else if !hasFront {
+            guidanceFeedback = "Nhìn thẳng chính diện vào camera (\(faceIdFilledCount)/36)"
         } else if pose.distanceMeters < 0.28 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
         } else if pose.distanceMeters > 0.65 {
             guidanceFeedback = "Đưa máy lại gần hơn một chút"
         } else {
-            guidanceFeedback = "Tiếp tục xoay nhẹ đầu theo vòng tròn để phủ kín các nấc còn lại (\(faceIdFilledCount)/36)."
+            guidanceFeedback = "Tiếp tục xoay đều đầu để hoàn thành các nấc còn lại (\(faceIdFilledCount)/36)."
         }
     }
 
