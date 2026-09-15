@@ -288,8 +288,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 isBetter = true
             }
         }
-        // 6. Ảnh Đáy Mũi (Basal / Submental View): ngửa nhẹ cằm pitch >= 8°, yaw [-18°, 18°]
-        else if pitch >= 8.0 && abs(yaw) <= 18 {
+        // 6. Ảnh Đáy Mũi (Basal / Submental View - Chuẩn Dallas Rhinoplasty): ngửa cằm pitch [14°, 38°], yaw [-22°, 22°]
+        else if pitch >= 14.0 && pitch <= 38.0 && abs(yaw) <= 22 {
             let existingPitch = clinicalPhotos["basal_nostrils"]?.pose.eulerRotationDeg["pitch"] ?? 0
             if clinicalPhotos["basal_nostrils"] == nil || pitch > existingPitch || (hasValidDepth && clinicalPhotos["basal_nostrils"]?.depthData == nil) {
                 targetSlot = "basal_nostrils"

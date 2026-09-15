@@ -45,7 +45,9 @@ public final class DepthDataProcessor {
         let bytesPerRow = CVPixelBufferGetBytesPerRow(depthPixelBuffer)
         let floatBuffer = baseAddress.assumingMemoryBound(to: Float32.self)
         
-        // Store depth in the same portrait coordinates as the rotated RGB.
+        // Match the RGB JPEG's `.right` transform: sensor (x, y) becomes
+        // portrait (H - 1 - y, x). Depth pixels and depth K must share this
+        // coordinate system; otherwise RGB and metric geometry are offset.
         let portraitWidth = height
         let portraitHeight = width
         var outputData = Data(count: portraitWidth * portraitHeight * MemoryLayout<Float32>.size)
