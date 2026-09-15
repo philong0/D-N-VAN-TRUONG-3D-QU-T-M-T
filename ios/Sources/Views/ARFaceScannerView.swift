@@ -472,10 +472,15 @@ public struct ARFaceScannerView: View {
                         .padding(.bottom, 36)
                     }
                     .onChange(of: captureSession.isFaceInFramingRect) { inFraming in
-                        // Khi ở khung chữ nhật và khuôn mặt đã lọt vào tâm -> Nhảy sang Vòng tròn Face ID!
-                        if inFraming && enrollmentPhase == 1 {
-                            withAnimation(.spring(response: 0.65, dampingFraction: 0.75)) {
-                                enrollmentPhase = 2
+                        // Khi khuôn mặt lọt vào tâm -> Nhảy sang Vòng tròn Face ID và TỰ ĐỘNG BẮT ĐẦU QUÉT NGAY
+                        if inFraming {
+                            if enrollmentPhase == 1 {
+                                withAnimation(.spring(response: 0.65, dampingFraction: 0.75)) {
+                                    enrollmentPhase = 2
+                                }
+                            }
+                            if !captureSession.isScanningActive {
+                                captureSession.startActiveSweep()
                             }
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         }

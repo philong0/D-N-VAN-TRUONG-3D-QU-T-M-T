@@ -250,16 +250,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
 
-        // Điều kiện hoàn tất: Vòng tròn đã thực sự phủ kín các góc vật lý (>= 30 nấc xanh hoặc >= 26 nấc sau 5s)
-        let elapsed = frame.timestamp - (sweepStartTime ?? frame.timestamp)
-        // Hạ từ 30/26 xuống 22/16: 4 cụm nấc thuần 1 trục (12h/3h/6h/9h) cộng
-        // vùng trung tâm chỉ cấp tối đa ~21 nấc bằng chuyển động tự nhiên
-        // (nhìn trái-phải-lên-xuống tuần tự); ngưỡng cũ cao hơn số nấc khả thi
-        // thực tế nên không bao giờ tự hoàn tất được.
-        let isRingCompleted = faceIdFilledCount >= 22
-        let isTimedSweepDone = elapsed >= 5.0 && faceIdFilledCount >= 16
+        // Điều kiện TỰ ĐỘNG HOÀN TẤT & NHẢY VÀO TẠO 3D (100% rảnh tay, không cần bấm nút):
+        // 1. Đã ghi nhận đủ 4 góc lâm sàng cốt lõi (Chính diện + Ngửa cằm + Nghiêng trái + Nghiêng phải) VÀ có ít nhất 18 nấc xanh
+        // 2. Hoặc vòng tròn quét đã đạt >= 26 nấc xanh
+        // 3. Hoặc sau 5 giây quét có đủ 3 góc cơ bản và >= 16 nấc
+        let hasAllCoreAngles = hasFront && hasBasal && hasLeft && hasRight && faceIdFilledCount >= 18
+        let isRingCompleted = faceIdFilledCount >= 26
+        let isTimedSweepDone = elapsed >= 5.0 && hasFront && (hasLeft || hasRight) && faceIdFilledCount >= 16
         
-        if isRingCompleted || isTimedSweepDone {
+        if hasAllCoreAngles || isRingCompleted || isTimedSweepDone {
             completeFaceIdSweep()
         } else if !hasBasal {
             guidanceFeedback = "Hơi ngửa nhẹ cằm (20°-25°) để mở nấc ngửa vòm mũi"
