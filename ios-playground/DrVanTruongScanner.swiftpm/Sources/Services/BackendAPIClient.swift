@@ -15,15 +15,25 @@ public struct PatientSummaryDTO: Codable, Identifiable {
 
 public final class BackendAPIClient: ObservableObject {
 
-    // 2026-09-05 fix — this used to be a hardcoded dead tunnel URL
-    // (expo-correct-quote-seal.trycloudflare.com) with no relation at all
-    // to whatever the user configured in RootView's own Settings sheet
-    // (`@AppStorage("clinicServerURL")`) — the WebView would load the
-    // correct user-entered address while every actual upload here
-    // (uploadScanPackage/triggerReconstruction) silently kept hitting the
-    // dead default. Reading from the SAME UserDefaults key at init time
-    // keeps both in sync without a second settings UI to maintain.
-    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "https://YOUR-SERVER-URL-HERE"
+    public var activeServerURL: String {
+        var url = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.isEmpty {
+            url = "http://149.118.63.240:3000"
+        }
+        if !url.hasPrefix("http://") && !url.hasPrefix("https://") {
+            url = "http://" + url
+        }
+        if url.hasSuffix("/") {
+            url = String(url.dropLast())
+        }
+        return url
+    }
+
+    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "http://149.118.63.240:3000" {
+        didSet {
+            UserDefaults.standard.set(serverBaseURL, forKey: "clinicServerURL")
+        }
+    }
     @Published public var isUploading: Bool = false
     @Published public var uploadProgress: Float = 0.0
     @Published public var uploadStatusMessage: String = ""
@@ -39,7 +49,7 @@ public final class BackendAPIClient: ObservableObject {
     // exact same `POST .../scan-sessions` + `PATCH action:"start"` calls
     // `GuidedFaceScan.tsx` already makes on the web side).
     public func fetchPatients(completion: @escaping (Result<[PatientSummaryDTO], Error>) -> Void) {
-        guard let url = URL(string: "\(serverBaseURL)/api/patients") else {
+        guard let url = URL(string: "\(activeServerURL)/api/patients") else {
             completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL máy chủ không hợp lệ."])))
             return
         }
@@ -65,7 +75,7 @@ public final class BackendAPIClient: ObservableObject {
     }
 
     public func createScanSession(patientId: String, completion: @escaping (Result<String, Error>) -> Void) {
-        guard let url = URL(string: "\(serverBaseURL)/api/patients/\(patientId)/scan-sessions") else {
+        guard let url = URL(string: "\(activeServerURL)/api/patients/\(patientId)/scan-sessions") else {
             completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL máy chủ không hợp lệ."])))
             return
         }
@@ -100,7 +110,7 @@ public final class BackendAPIClient: ObservableObject {
     }
 
     private func markScanSessionStarted(patientId: String, sessionId: String, completion: @escaping (Result<Void, Error>) -> Void) {
-        guard let url = URL(string: "\(serverBaseURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)") else {
+        guard let url = URL(string: "\(activeServerURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)") else {
             completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL máy chủ không hợp lệ."])))
             return
         }
@@ -121,17 +131,19 @@ public final class BackendAPIClient: ObservableObject {
         patientId: String,
         sessionId: String,
         frames: [ScanAngleStep: CapturedFramePackage],
+        scannerMode: ScannerMode = .faceIdSelfScan,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
-        guard let url = URL(string: "\(serverBaseURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)/package") else {
+        guard let url = URL(string: "\(activeServerURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)/package") else {
             completion(.failure(NSError(domain: "API", code: 400, userInfo: [NSLocalizedDescriptionKey: "URL máy chủ không hợp lệ."])))
             return
         }
         
+        let isRear = scannerMode == .rearClinicalAssistant
         DispatchQueue.main.async {
             self.isUploading = true
             self.uploadProgress = 0.1
-            self.uploadStatusMessage = "Đang đóng gói dữ liệu TrueDepth v2..."
+            self.uploadStatusMessage = isRear ? "Đang đóng gói ảnh lâm sàng camera sau..." : "Đang đóng gói dữ liệu TrueDepth Face ID..."
         }
         
         // Build Manifest — every real per-frame value embedded INLINE
@@ -160,10 +172,10 @@ public final class BackendAPIClient: ObservableObject {
         
         let manifest = ScanPackageManifestDTO(
             schemaVersion: "2.0.0",
-            captureSource: "native_ios",
+            captureSource: isRear ? "native_ios_rear" : "native_ios",
             deviceModel: UIDevice.current.model,
             systemVersion: UIDevice.current.systemVersion,
-            hasTrueDepth: true,
+            hasTrueDepth: !isRear,
             patientId: patientId,
             sessionId: sessionId,
             capturedAt: ISO8601DateFormatter().string(from: Date()),
@@ -251,10 +263,16 @@ public final class BackendAPIClient: ObservableObject {
             
             // 1. Kiểm tra HTTP Status (200..299)
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
-                let errReason = parsedResponse?.error ?? parsedResponse?.details ?? "Lỗi máy chủ (\(httpResponse.statusCode))."
-                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errReason])
+                var errReason = parsedResponse?.error ?? parsedResponse?.details
+                if errReason == nil, let rawText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !rawText.isEmpty {
+                    if !rawText.hasPrefix("<") {
+                        errReason = rawText
+                    }
+                }
+                let finalReason = errReason ?? "Lỗi máy chủ (\(httpResponse.statusCode))."
+                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: finalReason])
                 DispatchQueue.main.async {
-                    self.uploadStatusMessage = errReason
+                    self.uploadStatusMessage = finalReason
                     completion(.failure(err))
                 }
                 return
@@ -296,7 +314,7 @@ public final class BackendAPIClient: ObservableObject {
                 return
             }
             
-            guard let studio = URL(string: "\(self.serverBaseURL)/patients/\(patientId)/studio") else {
+            guard let studio = URL(string: "\(self.activeServerURL)/patients/\(patientId)/studio") else {
                 let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Lỗi tạo đường dẫn 3D Studio."])
                 DispatchQueue.main.async {
                     self.uploadStatusMessage = err.localizedDescription

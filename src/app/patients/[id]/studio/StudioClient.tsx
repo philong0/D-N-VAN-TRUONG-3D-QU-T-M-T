@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
-import type { Canvas3DHandle } from "@/components/Canvas3D";
+import type { Canvas3DHandle, SkinToneConfig } from "@/components/Canvas3D";
 import ClinicalAdvisorPanel from "@/components/ClinicalAdvisorPanel";
 import ControlPanel3D from "@/components/ControlPanel3D";
 import SplitCompare from "@/components/SplitCompare";
@@ -64,6 +64,14 @@ export default function StudioClient({
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, startSaving] = useTransition();
+
+  // Bộ điều chỉnh tông màu da và ánh sáng thời gian thực (Mặc định sáng y khoa mịn đẹp)
+  const [skinTone, setSkinTone] = useState<SkinToneConfig>({
+    brightness: 1.18,
+    warmth: 4,
+    smoothness: 0.85,
+  });
+
   // Workspace chrome — purely presentational, never touches the mounted
   // SplitCompare/Canvas3D instances below (no remount on toggle), so camera
   // position and the fitted GNM/3DDFA identity are untouched by any of this.
@@ -338,6 +346,7 @@ export default function StudioClient({
             afterImageUrl={afterImageUrl}
             autoRotate={isAutoRotating}
             renderMode={renderMode}
+            skinTone={skinTone}
           />
         </div>
 
@@ -350,6 +359,8 @@ export default function StudioClient({
               selectedRegion={selectedRegion}
               onSelectRegion={setSelectedRegion}
               onChange={updateSlider}
+              skinTone={skinTone}
+              onSkinToneChange={setSkinTone}
             />
 
             <div className="flex flex-col gap-2 border-t border-zinc-700 pt-4">

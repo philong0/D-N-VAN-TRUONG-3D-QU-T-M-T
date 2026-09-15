@@ -216,11 +216,15 @@ export const FACE_SURFACE_POINT_COUNT = 478;
  * independently re-verified pixel-by-pixel here.
  */
 export const NOSE_VERTEX_GROUPS = {
-  tip: [1],
-  base: [2],
+  tip: [1, 4],
+  tipFalloff: [19, 94, 2],
+  base: [2, 97, 326],
   leftAla: [98],
+  leftAlaNeighbors: [21, 32, 49, 54, 55, 99, 142, 165, 193, 201, 203, 209, 217, 240],
   rightAla: [327],
-  bridge: [6],
+  rightAlaNeighbors: [251, 277, 285, 301, 326, 328, 358, 371, 423, 433, 440, 441],
+  bridge: [6, 197, 168],
+  bridgeFalloff: [8, 9, 151],
 } as const;
 
 // -----------------------------------------------------------------------------
@@ -809,15 +813,39 @@ export function applyNoseMorph(
 
   (position.array as Float32Array).set(basePositions);
 
+  // 1. Sống mũi (Bridge) - nâng theo trục Y và nhô Z với falloff
   const bridgeOffset = deltas.heightMm * MM_TO_SCENE_UNITS;
-  for (const idx of [...NOSE_VERTEX_GROUPS.bridge, ...NOSE_VERTEX_GROUPS.base]) {
-    position.setY(idx, position.getY(idx) + bridgeOffset);
-    position.setZ(idx, position.getZ(idx) + bridgeOffset * 0.6);
+  if (Math.abs(bridgeOffset) > 1e-5) {
+    for (const idx of NOSE_VERTEX_GROUPS.bridge) {
+      position.setY(idx, position.getY(idx) + bridgeOffset);
+      position.setZ(idx, position.getZ(idx) + bridgeOffset * 0.6);
+    }
+    for (const idx of [...NOSE_VERTEX_GROUPS.bridgeFalloff, ...NOSE_VERTEX_GROUPS.base]) {
+      position.setY(idx, position.getY(idx) + bridgeOffset * 0.45);
+      position.setZ(idx, position.getZ(idx) + bridgeOffset * 0.27);
+    }
   }
 
+  // 2. Đầu mũi & Cánh mũi (Tip & Ala) - nhô Z với gradient giảm chấn 1-ring neighbor
   const tipOffset = deltas.tipProjectionMm * MM_TO_SCENE_UNITS;
-  for (const idx of [...NOSE_VERTEX_GROUPS.tip, ...NOSE_VERTEX_GROUPS.leftAla, ...NOSE_VERTEX_GROUPS.rightAla]) {
-    position.setZ(idx, position.getZ(idx) + tipOffset);
+  if (Math.abs(tipOffset) > 1e-5) {
+    // Đỉnh đầu mũi chính
+    for (const idx of NOSE_VERTEX_GROUPS.tip) {
+      position.setZ(idx, position.getZ(idx) + tipOffset);
+      position.setY(idx, position.getY(idx) - tipOffset * 0.15); // Đường lượn nhẹ đầu mũi S-Line
+    }
+    // Vùng đệm lân cận đầu mũi
+    for (const idx of NOSE_VERTEX_GROUPS.tipFalloff) {
+      position.setZ(idx, position.getZ(idx) + tipOffset * 0.5);
+    }
+    // Cánh mũi chính (98 & 327)
+    for (const idx of [...NOSE_VERTEX_GROUPS.leftAla, ...NOSE_VERTEX_GROUPS.rightAla]) {
+      position.setZ(idx, position.getZ(idx) + tipOffset * 0.65);
+    }
+    // Vành cánh mũi 1-ring láng giềng (Falloff mượt, không giật tam giác)
+    for (const idx of [...NOSE_VERTEX_GROUPS.leftAlaNeighbors, ...NOSE_VERTEX_GROUPS.rightAlaNeighbors]) {
+      position.setZ(idx, position.getZ(idx) + tipOffset * 0.25);
+    }
   }
 
   position.needsUpdate = true;

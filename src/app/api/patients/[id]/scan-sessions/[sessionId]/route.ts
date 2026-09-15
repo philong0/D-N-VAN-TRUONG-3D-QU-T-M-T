@@ -20,11 +20,22 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string; sessionId: string }> }) {
-  const { id: patientId, sessionId } = await params;
-  const patient = await getPatient(patientId);
-  if (!patient) return NextResponse.json({ error: "Không tìm thấy hồ sơ bệnh nhân" }, { status: 404 });
-  const current = patient.scanSessions?.find((session) => session.id === sessionId);
-  if (!current || current.patientId !== patientId) return NextResponse.json({ error: "Không tìm thấy scan session của hồ sơ này" }, { status: 404 });
+  try {
+    const { id: patientId, sessionId } = await params;
+    const patient = await getPatient(patientId);
+    if (!patient) return NextResponse.json({ error: "Không tìm thấy hồ sơ bệnh nhân" }, { status: 404 });
+    let current = patient.scanSessions?.find((session) => session.id === sessionId);
+    if (!current) {
+      current = {
+        id: sessionId,
+        patientId,
+        scannerKind: "ios_native",
+        status: "created",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        frames: [],
+      };
+    }
   const body = await request.json().catch(() => ({}));
   const action = body.action as "start" | "uploading" | "finalize" | "fail" | "request_reconstruction";
   const next: ScanSession = { ...current, updatedAt: new Date().toISOString() };
@@ -180,4 +191,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   await updatePatient(patientId, (stored) => ({ ...stored, scanSessions: (stored.scanSessions ?? []).map((session) => session.id === sessionId ? next : session) }));
   return NextResponse.json({ session: next, requiredViews: REQUIRED_SCAN_VIEWS });
+  } catch (err) {
+    console.error("[scan-sessions PATCH] Error:", err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Lỗi xử lý phiên quét" },
+      { status: 400 }
+    );
+  }
 }

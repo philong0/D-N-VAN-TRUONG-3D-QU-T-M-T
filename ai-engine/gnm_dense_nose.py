@@ -168,7 +168,7 @@ def _run_3ddfa_multiview(view_images: dict) -> np.ndarray:
         # is also correct if this venv is ever renamed/relocated.
         proc = subprocess.run(
             [sys.executable, str(TDDFA_SCRIPT), *view_args, "--out-dir", out_dir],
-            cwd=str(TDDFA_DIR), capture_output=True, text=True, timeout=30,
+            cwd=str(TDDFA_DIR), capture_output=True, text=True, timeout=60,
         )
         last_line = proc.stdout.strip().splitlines()[-1] if proc.stdout.strip() else ""
         if not last_line:

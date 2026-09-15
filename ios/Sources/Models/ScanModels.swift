@@ -7,6 +7,20 @@ import Foundation
 import ARKit
 import simd
 
+public enum ScannerMode: String, CaseIterable, Identifiable {
+    case faceIdSelfScan = "face_id_self_scan"
+    case rearClinicalAssistant = "rear_clinical_assistant"
+    
+    public var id: String { rawValue }
+    
+    public var title: String {
+        switch self {
+        case .faceIdSelfScan: return "Tự Quét (Face ID)"
+        case .rearClinicalAssistant: return "Điều Dưỡng Quét (Camera Sau)"
+        }
+    }
+}
+
 public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case front = "front"
     case left45 = "left_45"
@@ -19,9 +33,9 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .front: return "1/5: Chính Diện (0°)"
-        case .left45: return "2/5: Nghiêng Trái (~40°)"
+        case .left45: return "2/5: Nghiêng Trái (~35°)"
         case .leftProfile: return "3/5: Trắc Diện Trái (~55°)"
-        case .right45: return "4/5: Nghiêng Phải (~40°)"
+        case .right45: return "4/5: Nghiêng Phải (~35°)"
         case .rightProfile: return "5/5: Trắc Diện Phải (~55°)"
         }
     }
@@ -29,34 +43,34 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     public var targetYawDeg: Float {
         switch self {
         case .front: return 0.0
-        case .left45: return -40.0
+        case .left45: return -35.0
         case .leftProfile: return -55.0
-        case .right45: return 40.0
+        case .right45: return 35.0
         case .rightProfile: return 55.0
         }
     }
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 18.0
-        case .left45, .right45: return 18.0
-        case .leftProfile, .rightProfile: return 22.0
+        case .front: return 22.0
+        case .left45, .right45: return 25.0
+        case .leftProfile, .rightProfile: return 30.0
         }
     }
 
     /// Comfortable clinical tolerances calibrated for real hand-held TrueDepth scanning.
-    public var pitchToleranceDeg: Float { 25.0 }
-    public var rollToleranceDeg: Float { 25.0 }
-    public var minDistanceMeters: Float { 0.20 }
-    public var maxDistanceMeters: Float { 0.70 }
-    public var stabilityWindowSeconds: Double { 0.30 }
-    public var holdDurationSeconds: Double { 0.35 }
-    public var maxYawStandardDeviationDeg: Float { 8.0 }
-    public var maxPitchStandardDeviationDeg: Float { 8.0 }
-    public var maxRollStandardDeviationDeg: Float { 8.0 }
-    public var maxAngularVelocityDegPerSecond: Float { 50.0 }
-    public var minimumStabilitySamples: Int { 3 }
-    public var captureCooldownSeconds: Double { 0.35 }
+    public var pitchToleranceDeg: Float { 35.0 }
+    public var rollToleranceDeg: Float { 35.0 }
+    public var minDistanceMeters: Float { 0.18 }
+    public var maxDistanceMeters: Float { 0.85 }
+    public var stabilityWindowSeconds: Double { 0.20 }
+    public var holdDurationSeconds: Double { 0.15 }
+    public var maxYawStandardDeviationDeg: Float { 15.0 }
+    public var maxPitchStandardDeviationDeg: Float { 15.0 }
+    public var maxRollStandardDeviationDeg: Float { 15.0 }
+    public var maxAngularVelocityDegPerSecond: Float { 80.0 }
+    public var minimumStabilitySamples: Int { 2 }
+    public var captureCooldownSeconds: Double { 0.25 }
     
     public var instruction: String {
         switch self {

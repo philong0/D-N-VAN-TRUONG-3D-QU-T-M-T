@@ -1,7 +1,7 @@
 "use client";
 
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import Canvas3D, { type Canvas3DHandle } from "@/components/Canvas3D";
+import Canvas3D, { type Canvas3DHandle, type SkinToneConfig } from "@/components/Canvas3D";
 import type { MorphGroup } from "@/lib/services-catalog";
 import type { MorphParams } from "@/lib/types";
 
@@ -15,7 +15,8 @@ interface SplitCompareProps {
   unlockedGroups: Set<MorphGroup>;
   afterImageUrl?: string | null;
   autoRotate?: boolean;
-  renderMode?: "full" | "identity-only";
+  renderMode?: "full" | "wireframe" | "landmarks" | "identity-only";
+  skinTone?: SkinToneConfig;
 }
 
 const SplitCompare = forwardRef<Canvas3DHandle, SplitCompareProps>(function SplitCompare(
@@ -25,6 +26,8 @@ const SplitCompare = forwardRef<Canvas3DHandle, SplitCompareProps>(function Spli
     profilePhotoUrl,
     patientId,
     morph,
+    renderMode,
+    skinTone,
   },
   ref
 ) {
@@ -48,6 +51,8 @@ const SplitCompare = forwardRef<Canvas3DHandle, SplitCompareProps>(function Spli
         profilePhotoUrl={profilePhotoUrl}
         params={morph}
         showComparison={true}
+        renderMode={renderMode}
+        skinTone={skinTone}
       />
     </div>
   );

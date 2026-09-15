@@ -82,6 +82,13 @@ def reconstruct_crisalix_face_mask(patient_id: str, photos_dir: Path, output_dir
     scale_factor = 63.0 / max(eye_dist, 1.0)
     pts *= scale_factor
 
+    # Natural anatomical bizygomatic-to-height ratio calibration (~0.76)
+    face_w = float(np.ptp(pts[:, 0]))
+    face_h = float(np.ptp(pts[:, 1]))
+    if face_h > 0 and (face_w / face_h) < 0.75:
+        width_expand = min(1.15, 0.76 / (face_w / face_h))
+        pts[:, 0] *= width_expand
+
     # Natural metric depth:
     pts[:, 2] = pts[:, 2] * 1.1
 

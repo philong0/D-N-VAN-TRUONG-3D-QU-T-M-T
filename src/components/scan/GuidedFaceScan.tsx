@@ -31,9 +31,22 @@ export const TARGET_ANGLES: Record<string, TargetAngleConfig> = {
   LEFT80: { id: "LEFT80", name: "TRẮC DIỆN TRÁI ~55°", filename: "left80_origin.jpg", targetYaw: -55, tolerance: 25, prompt: "Nghiêng sâu sang Trái, để lộ rõ gò má và sống mũi", retryPrompt: "Nghiêng thêm chút nữa sang trái" },
   RIGHT45: { id: "RIGHT45", name: "NGHIÊNG PHẢI 45°", filename: "right45_origin.jpg", targetYaw: 45, tolerance: 22, prompt: "Nghiêng mặt sang Phải 45 độ", retryPrompt: "Xoay nhẹ mặt sang phải" },
   RIGHT80: { id: "RIGHT80", name: "TRẮC DIỆN PHẢI ~55°", filename: "right80_origin.jpg", targetYaw: 55, tolerance: 25, prompt: "Nghiêng sâu sang Phải, để lộ rõ gò má và sống mũi", retryPrompt: "Nghiêng thêm chút nữa sang phải" },
+  // 2026-09-14 -- NEW checkpoint, added additively after the 5 existing
+  // ones (never changes their order/behavior). Real camera pose for this
+  // one cannot come from face landmarks (no normal face structure is
+  // visible looking up under the chin) -- it is capture-only here (no
+  // auto-angle-match branch added for "BELOW" in the per-tick logic below,
+  // so the timer/auto-capture path simply never fires for it; the existing
+  // manual "CHỤP GÓC NÀY NGAY" button is the only way to bank this frame).
+  // Real device-orientation-sensor + detected nostril/chin anchors are used
+  // server-side (see ai-engine/chin_underside_anchor.py) to place this
+  // photo on the 3D texture -- if that real evidence isn't available or
+  // doesn't reach confidence, the photo is still saved to the patient's
+  // record but simply dropped from the 3D texture bake, never guessed.
+  BELOW: { id: "BELOW", name: "DƯỚI CẰM (NGỬA LÊN)", filename: "below_origin.jpg", targetYaw: 0, tolerance: 999, prompt: "Ngửa mặt lên hoặc đưa điện thoại xuống thấp, hướng camera nhìn lên dưới cằm và lỗ mũi, rồi bấm nút CHỤP GÓC NÀY NGAY bên dưới", retryPrompt: "Chỉnh lại góc để camera thấy rõ dưới cằm, rồi bấm CHỤP GÓC NÀY NGAY" },
 };
 
-const ORDERED_TARGET_KEYS = ["FRONT", "LEFT45", "LEFT80", "RIGHT45", "RIGHT80"] as const;
+const ORDERED_TARGET_KEYS = ["FRONT", "LEFT45", "LEFT80", "RIGHT45", "RIGHT80", "BELOW"] as const;
 type TargetKey = (typeof ORDERED_TARGET_KEYS)[number] | "DONE";
 const MAX_BUFFER_FRAMES = 50;
 const RECONSTRUCTION_TARGET_COUNT = 10;
@@ -102,6 +115,16 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
   const [, setCameraCapabilities] = useState<CameraCapabilities | null>(null);
   const sensorOrientationRef = useRef<number>(0);
   const displayOrientationRef = useRef<number>(0);
+
+  // Cảm biến định hướng điện thoại thật (alpha/beta/gamma) — CHỈ dùng cho
+  // checkpoint "BELOW" mới (dưới cằm), để backend tính pose camera thật cho
+  // ảnh đó (không có mốc khuôn mặt để dùng như 5 góc còn lại — xem
+  // ai-engine/chin_underside_anchor.py). Không có sẵn/không được cấp quyền
+  // thì vẫn chụp ảnh bình thường, chỉ là backend sẽ không dán ảnh đó lên
+  // texture 3D (bỏ qua có cảnh báo, không đoán).
+  const deviceOrientationRef = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
+  const frontOrientationSnapshotRef = useRef<{ alpha: number; beta: number; gamma: number } | null>(null);
+  const frontCameraFacingSnapshotRef = useRef<"user" | "environment" | null>(null);
   const [noFaceRearWarning, setNoFaceRearWarning] = useState(false);
   const noFaceSinceRef = useRef<number | null>(null);
   const lastFaceCenterRef = useRef<{ x: number; y: number } | null>(null);
@@ -136,6 +159,36 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
   const lastSpokenTextRef = useRef<string>("");
   const lastSpokenTimeRef = useRef<number>(0);
   const audioCtxRef = useRef<AudioContext | null>(null);
+
+  // Lắng nghe cảm biến định hướng thiết bị thật (chỉ dùng cho checkpoint
+  // BELOW mới) — hoàn toàn tùy chọn: nếu trình duyệt không hỗ trợ hoặc
+  // người dùng từ chối quyền (Safari iOS yêu cầu xin quyền rõ ràng), scan
+  // vẫn hoạt động bình thường như trước, chỉ là ảnh "BELOW" sẽ không dán
+  // được lên texture 3D ở backend (bỏ qua có cảnh báo thay vì đoán).
+  useEffect(() => {
+    function handleOrientation(e: DeviceOrientationEvent) {
+      if (e.alpha == null || e.beta == null || e.gamma == null) return;
+      deviceOrientationRef.current = { alpha: e.alpha, beta: e.beta, gamma: e.gamma };
+    }
+    let cancelled = false;
+    async function setup() {
+      try {
+        const DOE = window.DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> } | undefined;
+        if (typeof DOE?.requestPermission === "function") {
+          const state = await DOE.requestPermission();
+          if (state !== "granted" || cancelled) return;
+        }
+        if (!cancelled) window.addEventListener("deviceorientation", handleOrientation);
+      } catch {
+        // Cảm biến là tùy chọn -- không chặn luồng quét chính.
+      }
+    }
+    setup();
+    return () => {
+      cancelled = true;
+      window.removeEventListener("deviceorientation", handleOrientation);
+    };
+  }, []);
 
   useEffect(() => {
     targetsStateRef.current = targetsState;
@@ -480,8 +533,13 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
           sensorOrientation: sensorOrientationRef.current,
           displayOrientation: displayOrientationRef.current,
           mirrorApplied: cameraFacing === "user",
+          deviceOrientation: deviceOrientationRef.current,
         },
       };
+      if (key === "FRONT") {
+        frontOrientationSnapshotRef.current = deviceOrientationRef.current;
+        frontCameraFacingSnapshotRef.current = cameraFacing;
+      }
     }, "image/jpeg", 0.95);
 
     const updated = { ...targetsStateRef.current, [key]: { ...targetsStateRef.current[key], captured: true } };
@@ -529,8 +587,13 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
           sensorOrientation: sensorOrientationRef.current,
           displayOrientation: displayOrientationRef.current,
           mirrorApplied: cameraFacing === "user",
+          deviceOrientation: deviceOrientationRef.current,
         },
       };
+      if (key === "FRONT") {
+        frontOrientationSnapshotRef.current = deviceOrientationRef.current;
+        frontCameraFacingSnapshotRef.current = cameraFacing;
+      }
     }, "image/jpeg", 0.95);
 
     const updated = { ...targetsStateRef.current, [key]: { ...targetsStateRef.current[key], captured: true } };
@@ -597,6 +660,42 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
         method: "POST",
         body: form,
       });
+
+      // 1b. Ảnh "BELOW" (dưới cằm) — upload riêng kèm dữ liệu cảm biến định
+      // hướng thật, để backend tự tính pose camera thật cho ảnh này (xem
+      // ai-engine/chin_underside_anchor.py). Không có endpoint này thì ảnh
+      // vẫn được lưu qua bước 1 ở trên như các ảnh khác, chỉ là không dán
+      // được lên texture 3D.
+      const belowEntry = originFramesRef.current.BELOW;
+      if (belowEntry) {
+        try {
+          const belowOrientation = belowEntry.metadata.deviceOrientation as { alpha: number; beta: number; gamma: number } | null | undefined;
+          const frontOrientation = frontOrientationSnapshotRef.current;
+          const orientationAvailable = Boolean(belowOrientation && frontOrientation);
+          const cameraFacingMatches =
+            frontCameraFacingSnapshotRef.current == null || belowEntry.metadata.cameraFacing == null
+              ? true
+              : frontCameraFacingSnapshotRef.current === belowEntry.metadata.cameraFacing;
+
+          const belowForm = new FormData();
+          belowForm.append("image", belowEntry.blob, "below.jpg");
+          belowForm.append(
+            "orientation",
+            JSON.stringify({
+              orientationAvailable,
+              cameraFacingMatches,
+              frontOrientation: frontOrientation ?? null,
+              belowOrientation: belowOrientation ?? null,
+            })
+          );
+          await fetch(`/api/patients/${patientId}/scan-sessions/${session.id}/below-frame`, {
+            method: "POST",
+            body: belowForm,
+          });
+        } catch (belowErr) {
+          console.warn("Below-chin frame upload error (non-fatal, other angles unaffected):", belowErr);
+        }
+      }
 
       // 2. Finalize session
       const finalizeRes = await fetch(`/api/patients/${patientId}/scan-sessions/${session.id}`, {
@@ -730,6 +829,7 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
         displayOrientation: displayOrientationRef.current,
         mirrorApplied: cameraFacing === "user",
         coordinateTransform,
+        deviceOrientation: deviceOrientationRef.current,
       };
       const frameMetadata = {
         faceDetected: true,
@@ -807,7 +907,12 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
             if (fctx) {
               fctx.drawImage(video, 0, 0, fullCanvas.width, fullCanvas.height);
               fullCanvas.toBlob((blob) => {
-                if (blob) originFramesRef.current[activeTargetKey] = { blob, metadata: frameMetadata };
+                if (!blob) return;
+                originFramesRef.current[activeTargetKey] = { blob, metadata: frameMetadata };
+                if (activeTargetKey === "FRONT") {
+                  frontOrientationSnapshotRef.current = deviceOrientationRef.current;
+                  frontCameraFacingSnapshotRef.current = cameraFacing;
+                }
               }, "image/jpeg", 0.95);
             }
 

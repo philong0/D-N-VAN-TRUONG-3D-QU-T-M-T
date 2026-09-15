@@ -211,12 +211,29 @@ def validate_render_back_fidelity(
     measured_views = len(valid_view_errors)
     required_measured_views = len(frames)
     is_native = reconstruction_metrics.get("has_native_arface", False) or reconstruction_metrics.get("has_native_depth", False)
-    
+
+    # D-nativegate — "native ARKit/TrueDepth geometry is ground truth" is
+    # only true PER VIEW that actually had real depth. Since depth was made
+    # optional per-view (see package/route.ts's 2026-09-10 fix), a native
+    # session can legitimately have some views registered from ARFaceGeometry
+    # alone, which is far less accurate. `anatomical_gate_failed` never
+    # catches this because `region_errors_mm` is never populated on this
+    # path (confirmed: always empty dict here), so it silently always passes.
+    # The per-view silhouette/reprojection check just above (`view_errors`)
+    # IS real and already measures exactly this failure (confirmed on a real
+    # broken scan: 0/5 views passed, IoU 0.36-0.60 vs the 0.80 bar, IDs
+    # scrambled in the baked texture) but was computed and then discarded.
+    # Require a real majority of measured views to actually pass it.
+    measured_status_views = [v for v in view_errors.values() if v.get("status") in ("pass", "warning")]
+    passing_view_count = sum(1 for v in measured_status_views if v.get("status") == "pass")
+    view_gate_failed = len(measured_status_views) > 0 and passing_view_count * 2 < len(measured_status_views)
+
     if is_native:
         # Native ARKit & TrueDepth geometry is directly measured metric ground truth
         reconstruction_status = "completed" if (
             mesh_vert_count >= 1000
             and not anatomical_gate_failed
+            and not view_gate_failed
         ) else "reconstruction_failed"
     else:
         # RGB-only estimation path

@@ -85,8 +85,17 @@ def render_shell_depth_buffers(shell_pos: np.ndarray, triangles: np.ndarray, vie
 
     depth_buffers = {}
     for slot, v in views_by_slot.items():
-        h, w = v["image"].shape[:2]
-        R, t, K = v["R"], v["t"], v["camera_matrix"]
+        orig_h, orig_w = v["image"].shape[:2]
+        R, t, orig_K = v["R"], v["t"], v["camera_matrix"]
+
+        scale = min(1.0, 800.0 / max(orig_w, orig_h))
+        w = int(round(orig_w * scale))
+        h = int(round(orig_h * scale))
+        K = orig_K.copy()
+        K[0, 0] *= scale
+        K[1, 1] *= scale
+        K[0, 2] *= scale
+        K[1, 2] *= scale
 
         scene = pyrender.Scene(bg_color=[0, 0, 0, 0])
         scene.add(shell_mesh)
@@ -96,13 +105,6 @@ def render_shell_depth_buffers(shell_pos: np.ndarray, triangles: np.ndarray, vie
         scene.add(pyrender.DirectionalLight(intensity=1.0), pose=pose)
 
         renderer = pyrender.OffscreenRenderer(viewport_width=w, viewport_height=h)
-        # NOTE: RenderFlags.DEPTH_ONLY returns an all-zero buffer on this
-        # pyrender/EGL(kms_swrast) backend — a reproducible bug in this
-        # specific backend combination, verified by brute-forcing camera
-        # rotation signs against known wall placements (both this module's
-        # own math AND the DEPTH_ONLY flag were tested independently before
-        # concluding it was the flag, not the camera math). Rendering
-        # color+depth and discarding color is the confirmed-working path.
         _color, depth = renderer.render(scene, flags=pyrender.RenderFlags.SKIP_CULL_FACES)
         renderer.delete()
 

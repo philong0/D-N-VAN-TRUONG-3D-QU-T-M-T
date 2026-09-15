@@ -15,6 +15,12 @@ export interface Canvas3DHandle {
   loadCustomModel: (file: File) => Promise<void>;
 }
 
+export interface SkinToneConfig {
+  brightness: number; // 0.8 to 1.35, default 1.05
+  warmth: number;     // -20 to +20, default 0
+  smoothness: number; // 0.5 to 1.0, default 0.82
+}
+
 interface Canvas3DProps {
   patientId?: string;
   frontPhotoUrl?: string | null;
@@ -25,6 +31,7 @@ interface Canvas3DProps {
   showComparison?: boolean;
   model3dUrl?: string | null;
   renderMode?: "full" | "wireframe" | "landmarks" | "identity-only";
+  skinTone?: SkinToneConfig;
 }
 
 // =========================================================================
@@ -63,6 +70,7 @@ function applySurgicalDeformationToMesh(mesh: THREE.Mesh, params: MorphParams) {
   }
 
   const faceHeight = maxY - minY || 180;
+  const mmScale = faceHeight < 2.0 ? 0.001 : 1.0;
   const frontZThreshold = maxZ - (maxZ - minZ) * 0.45; // Chỉ tác động các điểm phía trước mặt
 
   for (let i = 0; i < count; i++) {
@@ -77,15 +85,15 @@ function applySurgicalDeformationToMesh(mesh: THREE.Mesh, params: MorphParams) {
       // 1. NÂNG SỐNG MŨI (Nose Bridge: Y từ -0.05 đến 0.4, |X| < 0.22)
       if (ny >= -0.08 && ny <= 0.42 && Math.abs(nx) < 0.22) {
         const bridgeFactor = Math.exp(-32.0 * nx * nx) * Math.max(0, 1.0 - Math.abs(ny - 0.15) * 2.6);
-        oz += noseHeight * 1.0 * bridgeFactor;
+        oz += noseHeight * mmScale * bridgeFactor;
       }
 
       // 2. KÉO DÀI & NHÔ ĐẦU MŨI (Nose Tip: Y quanh -0.12, |X| < 0.2)
       const tipDist = Math.hypot(nx, ny - (-0.12));
       if (tipDist < 0.22) {
         const tipFactor = Math.exp(-28.0 * tipDist * tipDist);
-        oz += tipProj * 1.0 * tipFactor;
-        oy -= tipProj * 0.25 * tipFactor; // Giọt nước S-Line
+        oz += tipProj * mmScale * tipFactor;
+        oy -= tipProj * mmScale * 0.25 * tipFactor; // Giọt nước S-Line
       }
 
       // 3. THU GỌN CÁNH MŨI (Alar Narrowing: Y từ -0.22 đến -0.02, |X| từ 0.08 đến 0.26)
@@ -99,8 +107,8 @@ function applySurgicalDeformationToMesh(mesh: THREE.Mesh, params: MorphParams) {
       const chinDist = Math.hypot(nx, ny - (-0.72));
       if (chinDist < 0.36) {
         const chinFactor = Math.exp(-14.0 * chinDist * chinDist);
-        oz += chinPog * 1.0 * chinFactor;
-        oy += chinPog * 0.2 * chinFactor;
+        oz += chinPog * mmScale * chinFactor;
+        oy += chinPog * mmScale * 0.2 * chinFactor;
       }
 
       // Gọt hàm V-line 2 bên
@@ -132,6 +140,7 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     frontPhotoUrl,
     params,
     showComparison = true,
+    skinTone,
   },
   ref
 ) {
@@ -164,10 +173,10 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     const leftHeight = leftCanvasRef.current.clientHeight || 550;
 
     const leftScene = new THREE.Scene();
-    leftScene.background = new THREE.Color("#0c1018");
+    leftScene.background = new THREE.Color("#111622");
 
     const leftCamera = new THREE.PerspectiveCamera(38, leftWidth / leftHeight, 1, 1000);
-    leftCamera.position.set(0, 0, 220);
+    leftCamera.position.set(0, 0, 320);
 
     const leftRenderer = new THREE.WebGLRenderer({
       canvas: leftCanvasRef.current,
@@ -175,15 +184,16 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       preserveDrawingBuffer: true,
     });
     leftRenderer.outputColorSpace = THREE.SRGBColorSpace;
-    leftRenderer.toneMapping = THREE.NoToneMapping;
+    leftRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+    leftRenderer.toneMappingExposure = 1.18;
     leftRenderer.setSize(leftWidth, leftHeight, false);
     leftRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const leftControls = new OrbitControls(leftCamera, leftRenderer.domElement);
     leftControls.enableDamping = true;
     leftControls.dampingFactor = 0.06;
-    leftControls.minDistance = 80;
-    leftControls.maxDistance = 450;
+    leftControls.minDistance = 100;
+    leftControls.maxDistance = 600;
     // Cho phép xoay 360 độ tự do quanh khuôn mặt
     leftControls.minPolarAngle = Math.PI / 2 - 0.65;
     leftControls.maxPolarAngle = Math.PI / 2 + 0.65;
@@ -192,6 +202,19 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
 
     const leftGroup = new THREE.Group();
     leftScene.add(leftGroup);
+
+    // Luminous clinical studio lighting: bright ambient + hemisphere bounce + multi-angle key & soft under-fill
+    const leftAmbient = new THREE.AmbientLight(0xffffff, 1.05);
+    leftScene.add(leftAmbient);
+    const leftHemi = new THREE.HemisphereLight(0xfff7ee, 0x1c2436, 0.50);
+    leftScene.add(leftHemi);
+    const leftKeyLight = new THREE.DirectionalLight(0xffffff, 0.48);
+    leftKeyLight.position.set(0.35, 0.25, 1);
+    leftCamera.add(leftKeyLight);
+    const leftFillLight = new THREE.DirectionalLight(0xffffff, 0.32);
+    leftFillLight.position.set(-0.35, -0.15, 1);
+    leftCamera.add(leftFillLight);
+    leftScene.add(leftCamera);
 
     leftSceneRef.current = {
       scene: leftScene,
@@ -209,7 +232,7 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       const rightHeight = rightCanvasRef.current.clientHeight || 550;
 
       const rightScene = new THREE.Scene();
-      rightScene.background = new THREE.Color("#0c1018");
+      rightScene.background = new THREE.Color("#111622");
 
       const rightCamera = new THREE.PerspectiveCamera(38, rightWidth / rightHeight, 1, 1000);
       rightCamera.position.copy(leftCamera.position);
@@ -220,15 +243,16 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
         preserveDrawingBuffer: true,
       });
       rightRenderer.outputColorSpace = THREE.SRGBColorSpace;
-      rightRenderer.toneMapping = THREE.NoToneMapping;
+      rightRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      rightRenderer.toneMappingExposure = 1.18;
       rightRenderer.setSize(rightWidth, rightHeight, false);
       rightRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
       const rightControls = new OrbitControls(rightCamera, rightRenderer.domElement);
       rightControls.enableDamping = true;
       rightControls.dampingFactor = 0.06;
-      rightControls.minDistance = 80;
-      rightControls.maxDistance = 450;
+      rightControls.minDistance = 100;
+      rightControls.maxDistance = 600;
       rightControls.minPolarAngle = Math.PI / 2 - 0.65;
       rightControls.maxPolarAngle = Math.PI / 2 + 0.65;
       rightControls.enablePan = false;
@@ -236,6 +260,19 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
 
       const rightGroup = new THREE.Group();
       rightScene.add(rightGroup);
+
+      // Luminous clinical studio lighting for right viewport
+      const rightAmbient = new THREE.AmbientLight(0xffffff, 1.05);
+      rightScene.add(rightAmbient);
+      const rightHemi = new THREE.HemisphereLight(0xfff7ee, 0x1c2436, 0.50);
+      rightScene.add(rightHemi);
+      const rightKeyLight = new THREE.DirectionalLight(0xffffff, 0.48);
+      rightKeyLight.position.set(0.35, 0.25, 1);
+      rightCamera.add(rightKeyLight);
+      const rightFillLight = new THREE.DirectionalLight(0xffffff, 0.32);
+      rightFillLight.position.set(-0.35, -0.15, 1);
+      rightCamera.add(rightFillLight);
+      rightScene.add(rightCamera);
 
       rightSceneObj = {
         scene: rightScene,
@@ -295,12 +332,21 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
       bbox.getSize(size);
 
       const maxDim = Math.max(size.x, size.y, size.z) || 1;
-      const targetScale = 185 / maxDim;
+      const targetScale = 165 / maxDim;
 
-      modelLeft.scale.set(targetScale, targetScale, targetScale);
-      modelRight.scale.set(targetScale, targetScale, targetScale);
-      modelLeft.position.set(-center.x * targetScale, -center.y * targetScale, -center.z * targetScale);
-      modelRight.position.set(-center.x * targetScale, -center.y * targetScale, -center.z * targetScale);
+      // Anatomical facial proportion normalization:
+      // Normal human bizygomatic-to-facial-height ratio is ~0.74 - 0.78.
+      // If a model is excessively narrow/squeezed (e.g. ratio < 0.75 from portrait crop), gently restore width.
+      const rawRatio = size.y > 0 ? (size.x / size.y) : 0.75;
+      const widthMultiplier = rawRatio < 0.75 ? Math.min(1.18, 0.76 / Math.max(0.55, rawRatio)) : 1.05;
+      const scaleX = targetScale * widthMultiplier;
+      const scaleY = targetScale;
+      const scaleZ = targetScale;
+
+      modelLeft.scale.set(scaleX, scaleY, scaleZ);
+      modelRight.scale.set(scaleX, scaleY, scaleZ);
+      modelLeft.position.set(-center.x * scaleX, -center.y * scaleY, -center.z * scaleZ);
+      modelRight.position.set(-center.x * scaleX, -center.y * scaleY, -center.z * scaleZ);
 
       let leftMesh: THREE.Mesh | null = null;
       let rightMesh: THREE.Mesh | null = null;
@@ -310,14 +356,27 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
           const mesh = child as THREE.Mesh;
           if (isLeft && !leftMesh) leftMesh = mesh;
           if (!isLeft && !rightMesh) rightMesh = mesh;
+          if (mesh.geometry) {
+            mesh.geometry.computeVertexNormals();
+          }
           if (mesh.material) {
             const oldMat = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
             const map = (oldMat as THREE.MeshStandardMaterial).map;
             if (map) {
               map.colorSpace = THREE.SRGBColorSpace;
+              map.anisotropy = Math.min(leftRenderer.capabilities.getMaxAnisotropy(), 16);
+              map.minFilter = THREE.LinearMipmapLinearFilter;
+              map.magFilter = THREE.LinearFilter;
+              map.generateMipmaps = true;
               map.needsUpdate = true;
             }
-            mesh.material = new THREE.MeshBasicMaterial({ map, side: THREE.DoubleSide });
+            // Ultra-crisp photorealistic Asian skin PBR shader with natural soft clinical matte finish
+            mesh.material = new THREE.MeshStandardMaterial({
+              map,
+              side: THREE.DoubleSide,
+              roughness: 0.84,
+              metalness: 0.0,
+            });
             oldMat.dispose();
           }
         }
@@ -449,6 +508,46 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     }
   }, [params]);
 
+  // Reactive real-time Skin Tone & Lighting adjustment (Khử bóng nhờn + chỉnh tông da y khoa trực tiếp)
+  useEffect(() => {
+    const tone = skinTone ?? { brightness: 1.05, warmth: 0, smoothness: 0.82 };
+
+    const exposure = Math.max(0.85, Math.min(1.40, tone.brightness));
+    if (leftSceneRef.current) {
+      leftSceneRef.current.renderer.toneMappingExposure = exposure;
+    }
+    if (rightSceneRef.current) {
+      rightSceneRef.current.renderer.toneMappingExposure = exposure;
+    }
+
+    let r = 1.0, g = 1.0, b = 1.0;
+    if (tone.warmth > 0) {
+      // Warm / Pink tone: subtly enhances warm rosy tones on skin
+      r = 1.0 + (tone.warmth / 20) * 0.04;
+      g = 1.0 - (tone.warmth / 20) * 0.012;
+      b = 1.0 - (tone.warmth / 20) * 0.035;
+    } else if (tone.warmth < 0) {
+      // Cool / Clinical porcelain tone: enhances bright neutral clinical clarity
+      r = 1.0 + (tone.warmth / 20) * 0.015;
+      g = 1.0 + (tone.warmth / 20) * 0.008;
+      b = 1.0 - (tone.warmth / 20) * 0.03;
+    }
+    const tintColor = new THREE.Color(r, g, b);
+
+    const updateMeshTone = (mesh: THREE.Mesh | null) => {
+      if (!mesh || !mesh.material) return;
+      const mat = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material) as THREE.MeshStandardMaterial;
+      if (mat && mat.isMeshStandardMaterial) {
+        mat.color.copy(tintColor);
+        mat.roughness = Math.max(0.60, Math.min(0.95, tone.smoothness));
+        mat.needsUpdate = true;
+      }
+    };
+
+    updateMeshTone(leftSceneRef.current?.headMesh ?? null);
+    updateMeshTone(rightSceneRef.current?.headMesh ?? null);
+  }, [skinTone]);
+
   useImperativeHandle(ref, () => ({
     captureSnapshot: () => {
       if (rightCanvasRef.current) {
@@ -458,30 +557,30 @@ export const Canvas3D = forwardRef<Canvas3DHandle, Canvas3DProps>(function Canva
     },
     resetCamera: () => {
       if (leftSceneRef.current) {
-        leftSceneRef.current.camera.position.set(0, 0, 260);
+        leftSceneRef.current.camera.position.set(0, 0, 320);
         leftSceneRef.current.controls.target.set(0, 0, 0);
         leftSceneRef.current.controls.update();
       }
       if (rightSceneRef.current) {
-        rightSceneRef.current.camera.position.set(0, 0, 260);
+        rightSceneRef.current.camera.position.set(0, 0, 320);
         rightSceneRef.current.controls.target.set(0, 0, 0);
         rightSceneRef.current.controls.update();
       }
     },
     resetView: () => {
       if (leftSceneRef.current) {
-        leftSceneRef.current.camera.position.set(0, 0, 260);
+        leftSceneRef.current.camera.position.set(0, 0, 320);
         leftSceneRef.current.controls.target.set(0, 0, 0);
         leftSceneRef.current.controls.update();
       }
       if (rightSceneRef.current) {
-        rightSceneRef.current.camera.position.set(0, 0, 260);
+        rightSceneRef.current.camera.position.set(0, 0, 320);
         rightSceneRef.current.controls.target.set(0, 0, 0);
         rightSceneRef.current.controls.update();
       }
     },
     goToAngle: (azimuthDeg: number, polarDeg?: number) => {
-      const radius = 260;
+      const radius = 320;
       const azRad = (azimuthDeg * Math.PI) / 180;
       const polRad = polarDeg !== undefined ? (polarDeg * Math.PI) / 180 : Math.PI / 2;
       const x = radius * Math.sin(polRad) * Math.sin(azRad);

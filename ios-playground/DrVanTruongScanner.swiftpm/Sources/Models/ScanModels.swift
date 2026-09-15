@@ -7,6 +7,20 @@ import Foundation
 import ARKit
 import simd
 
+public enum ScannerMode: String, CaseIterable, Identifiable {
+    case faceIdSelfScan = "face_id_self_scan"
+    case rearClinicalAssistant = "rear_clinical_assistant"
+    
+    public var id: String { rawValue }
+    
+    public var title: String {
+        switch self {
+        case .faceIdSelfScan: return "Tự Quét (Face ID)"
+        case .rearClinicalAssistant: return "Điều Dưỡng Quét (Camera Sau)"
+        }
+    }
+}
+
 public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case front = "front"
     case left45 = "left_45"
@@ -19,52 +33,52 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .front: return "1/5: Chính Diện (0°)"
-        case .left45: return "2/5: Nghiêng Trái (45°)"
-        case .leftProfile: return "3/5: Trắc Diện Trái (80°)"
-        case .right45: return "4/5: Nghiêng Phải (45°)"
-        case .rightProfile: return "5/5: Trắc Diện Phải (80°)"
+        case .left45: return "2/5: Nghiêng Trái (~35°)"
+        case .leftProfile: return "3/5: Trắc Diện Trái (~55°)"
+        case .right45: return "4/5: Nghiêng Phải (~35°)"
+        case .rightProfile: return "5/5: Trắc Diện Phải (~55°)"
         }
     }
     
     public var targetYawDeg: Float {
         switch self {
         case .front: return 0.0
-        case .left45: return -45.0
-        case .leftProfile: return -80.0
-        case .right45: return 45.0
-        case .rightProfile: return 80.0
+        case .left45: return -35.0
+        case .leftProfile: return -55.0
+        case .right45: return 35.0
+        case .rightProfile: return 55.0
         }
     }
     
     public var yawToleranceDeg: Float {
         switch self {
-        case .front: return 14.0
-        case .left45, .right45: return 14.0
-        case .leftProfile, .rightProfile: return 15.0
+        case .front: return 22.0
+        case .left45, .right45: return 25.0
+        case .leftProfile, .rightProfile: return 30.0
         }
     }
 
     /// Comfortable clinical tolerances calibrated for real hand-held TrueDepth scanning.
-    public var pitchToleranceDeg: Float { 20.0 }
-    public var rollToleranceDeg: Float { 20.0 }
-    public var minDistanceMeters: Float { 0.22 }
-    public var maxDistanceMeters: Float { 0.65 }
-    public var stabilityWindowSeconds: Double { 0.40 }
-    public var holdDurationSeconds: Double { 0.45 }
-    public var maxYawStandardDeviationDeg: Float { 6.0 }
-    public var maxPitchStandardDeviationDeg: Float { 6.0 }
-    public var maxRollStandardDeviationDeg: Float { 6.0 }
-    public var maxAngularVelocityDegPerSecond: Float { 40.0 }
-    public var minimumStabilitySamples: Int { 4 }
-    public var captureCooldownSeconds: Double { 0.50 }
+    public var pitchToleranceDeg: Float { 35.0 }
+    public var rollToleranceDeg: Float { 35.0 }
+    public var minDistanceMeters: Float { 0.18 }
+    public var maxDistanceMeters: Float { 0.85 }
+    public var stabilityWindowSeconds: Double { 0.20 }
+    public var holdDurationSeconds: Double { 0.15 }
+    public var maxYawStandardDeviationDeg: Float { 15.0 }
+    public var maxPitchStandardDeviationDeg: Float { 15.0 }
+    public var maxRollStandardDeviationDeg: Float { 15.0 }
+    public var maxAngularVelocityDegPerSecond: Float { 80.0 }
+    public var minimumStabilitySamples: Int { 2 }
+    public var captureCooldownSeconds: Double { 0.25 }
     
     public var instruction: String {
         switch self {
-        case .front: return "Nhìn thẳng trực tiếp vào camera (0°)"
-        case .left45: return "Từ từ xoay mặt sang TRÁI một góc 45°"
-        case .leftProfile: return "Quay hẳn mặt sang TRÁI (góc ngang 80°)"
-        case .right45: return "Từ từ xoay mặt sang PHẢI một góc 45°"
-        case .rightProfile: return "Quay hẳn mặt sang PHẢI (góc ngang 80°)"
+        case .front: return "Nhìn thẳng vào camera (0°)"
+        case .left45: return "Nghiêng nhẹ mặt sang TRÁI (35°-45°)"
+        case .leftProfile: return "Nghiêng sang TRÁI để lộ sống mũi (~55°)"
+        case .right45: return "Nghiêng nhẹ mặt sang PHẢI (35°-45°)"
+        case .rightProfile: return "Nghiêng sang PHẢI để lộ sống mũi (~55°)"
         }
     }
 }
@@ -82,19 +96,29 @@ public struct CameraRelativeFacePose {
     public init(faceToCamera transform: simd_float4x4) {
         self.transform = transform
         
-        // Head forward vector in camera space (column 2)
+        // Raw head vectors in ARKit camera sensor coordinates
         let fwdX = transform.columns.2.x
         let fwdY = transform.columns.2.y
         let fwdZ = transform.columns.2.z
         
-        // Head up vector in camera space (column 1)
         let upX = transform.columns.1.x
         let upY = transform.columns.1.y
         
-        // When facing camera directly: fwdX ~ 0, fwdY ~ 0, fwdZ ~ -1
-        let yaw = atan2(fwdX, -fwdZ) * 180.0 / .pi
-        let pitch = atan2(fwdY, sqrt(fwdX * fwdX + fwdZ * fwdZ)) * 180.0 / .pi
-        let roll = atan2(upX, upY) * 180.0 / .pi
+        // In iPhone Portrait orientation (device held upright):
+        // Screen Right (+X) = Sensor +Y
+        // Screen Up (+Y) = Sensor -X
+        // Screen Towards User (+Z) = Sensor +Z
+        let screenFwdX = fwdY
+        let screenFwdY = -fwdX
+        let screenFwdZ = fwdZ
+        
+        let screenUpX = upY
+        let screenUpY = -upX
+        
+        // When facing camera directly: screenFwd ~ [0, 0, 1], screenUp ~ [0, 1] -> Yaw=0°, Pitch=0°, Roll=0°
+        let yaw = atan2(screenFwdX, screenFwdZ) * 180.0 / .pi
+        let pitch = atan2(screenFwdY, sqrt(screenFwdX * screenFwdX + screenFwdZ * screenFwdZ)) * 180.0 / .pi
+        let roll = atan2(screenUpX, screenUpY) * 180.0 / .pi
         
         self.yawDeg = yaw
         self.pitchDeg = pitch

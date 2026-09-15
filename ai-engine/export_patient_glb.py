@@ -43,9 +43,8 @@ def export_glb_from_fitted(
     else:
         pil_image = Image.open(io.BytesIO(face_hd_png_bytes)).convert("RGB")
 
-    # Invert UV V-coordinate if required for glTF standard (glTF expects origin at top-left)
+    # Direct UV alignment with standard Three.js coordinate convention
     uvs_gltf = uvs.copy()
-    uvs_gltf[:, 1] = 1.0 - uvs_gltf[:, 1]
 
     # Create trimesh texture material
     material = SimpleMaterial(

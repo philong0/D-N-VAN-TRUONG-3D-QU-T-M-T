@@ -21,12 +21,20 @@ const extensionByMime: Record<string, string> = { "image/jpeg": "jpg", "image/pn
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string; sessionId: string }> }) {
   const { id: patientId, sessionId } = await params;
   const patient = await getPatient(patientId);
-  const current = patient?.scanSessions?.find((session) => session.id === sessionId);
-  if (!patient || !current || current.patientId !== patientId) {
-    return NextResponse.json({ error: "Scan session không hợp lệ cho hồ sơ này" }, { status: 404 });
+  if (!patient) {
+    return NextResponse.json({ error: "Không tìm thấy hồ sơ bệnh nhân" }, { status: 404 });
   }
-  if (current.status !== "uploading" && current.status !== "capturing") {
-    return NextResponse.json({ error: "Session chưa ở trạng thái nhận frame" }, { status: 409 });
+  let current = patient.scanSessions?.find((session) => session.id === sessionId);
+  if (!current) {
+    current = {
+      id: sessionId,
+      patientId,
+      scannerKind: "web_camera",
+      status: "uploading",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      frames: [],
+    };
   }
 
   const formData = await request.formData();

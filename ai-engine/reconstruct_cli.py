@@ -213,7 +213,7 @@ def _run_reconstruction(reconstructor: PatientNativeReconstructor, patient_id: s
     else:
         unwrapped_verts, unwrapped_faces, uvs_2d = unwrap_mesh_uv_xatlas(vertices, faces)
         _, texture_png_bytes = bake_visibility_aware_texture(
-            unwrapped_verts, unwrapped_faces, uvs_2d, frames, tex_size=1024
+            unwrapped_verts, unwrapped_faces, uvs_2d, frames, tex_size=2048
         )
 
     # 4. Save raw arrays & assets
@@ -224,9 +224,12 @@ def _run_reconstruction(reconstructor: PatientNativeReconstructor, patient_id: s
     with open(out_dir / "landmarks.json", "w") as f:
         json.dump(landmarks, f, indent=2)
 
-    # 5. Export binary glTF (baseline.glb)
+    # 5. Export binary glTF (baseline.glb) and OBJ (baseline.obj)
     glb_path = out_dir / "baseline.glb"
     export_patient_glb(unwrapped_verts, unwrapped_faces, uvs_2d, texture_png_bytes, str(glb_path))
+    import trimesh
+    obj_path = out_dir / "baseline.obj"
+    trimesh.Trimesh(vertices=unwrapped_verts, faces=unwrapped_faces, process=False).export(obj_path)
 
     # 6. Execute Render-Back Verification Gate
     report_path = out_dir / "reconstruction_report.json"

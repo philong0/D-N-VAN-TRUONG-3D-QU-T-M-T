@@ -53,17 +53,22 @@ export async function saveProfilePreviewImages(
   for (const img of images) {
     const ext = path.extname(img.fileName) || ".jpg";
     const destFileName = `${img.role}${ext}`;
-    await copyFile(path.join(srcDir, img.fileName), path.join(outDir, destFileName));
-    saved[img.role] = {
-      fileName: destFileName,
-      yaw: img.yaw,
-      pitch: img.pitch,
-      roll: img.roll,
-      qualityScore: img.qualityScore,
-      timestamp: img.timestamp,
-      sourceFrameId: img.sourceFrameId,
-      savedAt,
-    };
+    const srcPath = path.join(srcDir, img.fileName);
+    try {
+      await copyFile(srcPath, path.join(outDir, destFileName));
+      saved[img.role] = {
+        fileName: destFileName,
+        yaw: img.yaw,
+        pitch: img.pitch,
+        roll: img.roll,
+        qualityScore: img.qualityScore,
+        timestamp: img.timestamp,
+        sourceFrameId: img.sourceFrameId,
+        savedAt,
+      };
+    } catch (copyErr) {
+      console.warn(`[profile-preview-service] Skipped frame ${img.fileName}:`, copyErr);
+    }
   }
 
   return { images: saved, missingRoles, totalAcceptedFrames: candidates.length };

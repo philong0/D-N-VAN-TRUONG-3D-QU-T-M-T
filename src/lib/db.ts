@@ -32,10 +32,6 @@ const DEFAULT_PATIENTS: Patient[] = [
 ];
 
 async function readAll(): Promise<Patient[]> {
-  if (memoryPatients && memoryPatients.length > 0) {
-    return memoryPatients;
-  }
-
   await ensureDir(DATA_DIR);
   try {
     const raw = await readFile(PATIENTS_FILE, "utf-8");
@@ -48,7 +44,9 @@ async function readAll(): Promise<Patient[]> {
       memoryPatients = JSON.parse(rawBundled) as Patient[];
       return memoryPatients;
     } catch {
-      memoryPatients = [...DEFAULT_PATIENTS];
+      if (!memoryPatients || memoryPatients.length === 0) {
+        memoryPatients = [...DEFAULT_PATIENTS];
+      }
       return memoryPatients;
     }
   }

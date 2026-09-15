@@ -38,23 +38,135 @@ from gnm_profile_silhouette import apply_profile_silhouette_deformation
 from patient_texture_baker import export_patient_glb
 
 SLOT_ALIASES = {
-    # 5-slot scan-session naming -> the 4-slot angleN convention this
-    # pipeline's own is_profile_view/silhouette-mask slot dispatch expects.
+    # 5-slot scan-session naming -> canonical angle slots
     "front": "angle1",
     "left_45": "angle2",
     "left_profile": "angle3",
     "right_45": "angle4",
-    "right_profile": "angle3b",  # not a real slot in this pipeline; loaded but treated as an extra oblique-like view below
+    "right_profile": "angle5",
 }
+
+
+def smooth_mesh_surface(positions: np.ndarray, triangles: np.ndarray) -> np.ndarray:
+    """Boundary-loop relaxation only: eliminates jagged sawtooth steps along
+    the hairline/neck cut edge, WITHOUT touching interior surface detail.
+
+    2026-09-14 fix -- this function used to also run a whole-mesh interior
+    Laplacian fairing pass (`iterations`/`factor` args, unvalidated: no
+    before/after measurement exists anywhere in this codebase, unlike every
+    other numeric constant in the reconstruction pipeline, e.g.
+    gnm_dense_nose.py's own swept W=15->200 table). It ran unconditionally,
+    on every patient, immediately AFTER `enrich_with_dense_nose()` and
+    `apply_width_correction()` -- i.e. right after the two modules
+    specifically written to ADD real nose-bridge/tip and cheek/temple
+    surface detail back in (see PROJECT_DIAGNOSIS.md's landmark-sparsity
+    root cause). A uniform neighbor-averaging pass is structurally exactly
+    what un-does that: it has no way to distinguish "real fitted detail worth
+    keeping" from "noise worth smoothing," so it silently flattened some of
+    the very detail those upstream fixes just added -- the user explicitly
+    requires geometry to come from the real fitted photos, not from an
+    unmeasured post-hoc smoothing guess. Removed the interior pass; kept only
+    the boundary-loop relaxation below, which is scoped to the mesh's own cut
+    edge (hairline/neck) and never touches face-interior vertices at all, so
+    it cannot affect nose/cheek/chin surface detail either way.
+    """
+    from collections import defaultdict
+
+    edge_count = defaultdict(int)
+
+    for tri in triangles:
+        i0, i1, i2 = int(tri[0]), int(tri[1]), int(tri[2])
+        edges = [(min(i0, i1), max(i0, i1)), (min(i1, i2), max(i1, i2)), (min(i2, i0), max(i2, i0))]
+        for e in edges:
+            edge_count[e] += 1
+
+    # Find boundary loop edges & vertices
+    boundary_edges = [e for e, count in edge_count.items() if count == 1]
+    b_adj = defaultdict(set)
+    for u, v in boundary_edges:
+        b_adj[u].add(v)
+        b_adj[v].add(u)
+    b_verts = list(b_adj.keys())
+
+    smoothed = positions.copy()
+
+    # Boundary loop smoothing: eliminates jagged sawtooth steps along hairline and neck cut edge only
+    for _ in range(6):
+        b_delta = np.zeros_like(smoothed)
+        for v in b_verts:
+            nbrs = list(b_adj[v])
+            if len(nbrs) >= 2:
+                b_delta[v] = 0.45 * (smoothed[nbrs].mean(axis=0) - smoothed[v])
+        smoothed += b_delta
+
+    return smoothed
+
+
+def level_facial_symmetry(shell_positions: np.ndarray, shell_vids: np.ndarray) -> np.ndarray:
+    """Anatomical horizontal leveling for interpupillary line and oral commissures.
+    Guarantees true clinical horizontal symmetry regardless of patient head tilt during capture."""
+    gnm = np.load(Path(__file__).parent.parent / "public" / "models" / "gnm" / "gnm_head_v3.npz", allow_pickle=True)
+    vgroups = gnm["vertex_groups"]
+    gnames = [str(n) for n in gnm["vertex_group_names"]]
+    tpl_pos = gnm["template_vertex_positions"]
+
+    leveled = shell_positions.copy()
+
+    # 1. Interpupillary Line Leveling (rigid rotation around Z-axis)
+    eyes_mask = (vgroups[gnames.index("eyes")] > 0.5)[shell_vids]
+    left_eye = eyes_mask & (tpl_pos[shell_vids, 0] < -0.015)
+    right_eye = eyes_mask & (tpl_pos[shell_vids, 0] > 0.015)
+
+    if left_eye.any() and right_eye.any():
+        c_left = leveled[left_eye].mean(axis=0)
+        c_right = leveled[right_eye].mean(axis=0)
+        eye_mid = (c_left + c_right) / 2.0
+        # Roll angle: roll = arctan2(dy, dx)
+        roll = np.arctan2(c_right[1] - c_left[1], c_right[0] - c_left[0])
+        cos_r, sin_r = np.cos(-roll), np.sin(-roll)
+        R_z = np.array([[cos_r, -sin_r, 0.0], [sin_r, cos_r, 0.0], [0.0, 0.0, 1.0]], dtype=np.float64)
+        leveled = (leveled - eye_mid) @ R_z.T + eye_mid
+
+    # 2. Oral Commissure Symmetry Leveling
+    shell_pos = tpl_pos[shell_vids]
+    d_left = np.sum((shell_pos - [-0.025, 0.231, 0.119]) ** 2, axis=1)
+    s_left = int(np.argmin(d_left))
+    d_right = np.sum((shell_pos - [0.026, 0.230, 0.118]) ** 2, axis=1)
+    s_right = int(np.argmin(d_right))
+
+    p_ml = leveled[s_left]
+    p_mr = leveled[s_right]
+    mid_x_m = (p_ml[0] + p_mr[0]) / 2.0
+    dx_m = p_ml[0] - p_mr[0]
+    dy_m = p_ml[1] - p_mr[1]
+    dz_m = p_ml[2] - p_mr[2]
+
+    if abs(dx_m) > 1e-4 and abs(dy_m) > 1e-5:
+        slope_y = dy_m / dx_m
+        slope_z = dz_m / dx_m
+        mouth_mask = (
+            (np.abs(leveled[:, 0] - mid_x_m) < 0.038)
+            & (leveled[:, 1] >= 0.210)
+            & (leveled[:, 1] <= 0.255)
+            & (leveled[:, 2] > 0.088)
+        )
+        if mouth_mask.any():
+            dist_x = np.abs(leveled[mouth_mask, 0] - mid_x_m) / 0.026
+            dist_y = np.abs(leveled[mouth_mask, 1] - 0.233) / 0.022
+            w_x = np.clip(1.0 - np.maximum(0.0, dist_x - 1.0) / 0.55, 0.0, 1.0)
+            w_x = w_x * w_x * (3.0 - 2.0 * w_x)
+            w_y = np.clip(1.0 - dist_y**2, 0.0, 1.0)
+            w_m = w_x * w_y
+            leveled[mouth_mask, 1] -= slope_y * (leveled[mouth_mask, 0] - mid_x_m) * w_m
+            leveled[mouth_mask, 2] -= slope_z * (leveled[mouth_mask, 0] - mid_x_m) * w_m
+
+    return leveled
 
 
 def reconstruct_patient_gnm(patient_id: str, photos_dir: Path, output_dir: Path) -> dict:
     """CLI/standalone entry: load images from a flat photos directory
-    (angle1-4 or the 5-slot scan naming, aliased via SLOT_ALIASES), then
-    delegate to `reconstruct_gnm_from_images` — the shared core also used
-    by reconstruct_cli.py's live new-patient-scan path (see D-gnmprimary
-    there) so both entry points run the exact same pipeline, not two
-    near-copies that can drift apart."""
+    (angle1-5 or the 5-slot scan naming, aliased via SLOT_ALIASES), then
+    delegate to `reconstruct_gnm_from_images`."""
     images = {}
     for f in sorted(photos_dir.glob("*")):
         if f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
@@ -64,18 +176,63 @@ def reconstruct_patient_gnm(patient_id: str, photos_dir: Path, output_dir: Path)
         img = cv2.imread(str(f))
         if img is None:
             continue
-        # Only ever keep ONE image per canonical angle1-4 slot (first match
-        # wins) -- this pipeline's own multiview solver is a fixed 4-view
-        # contract; right_profile has no free slot in it (angle3 is already
-        # taken by left_profile) so it's intentionally not fed in here.
-        if slot in ("angle1", "angle2", "angle3", "angle4") and slot not in images:
+        if slot in ("angle1", "angle2", "angle3", "angle4", "angle5") and slot not in images:
             images[slot] = img
 
+    if len(images) < 4:
+        # Fallback to search in parent or dedicated photos folders
+        candidate_dirs = [
+            photos_dir / "frames",
+            photos_dir.parent / "photos",
+            photos_dir.parent.parent / "photos",
+            Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
+            Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos"),
+        ]
+        for cdir in candidate_dirs:
+            if cdir.exists() and cdir != photos_dir:
+                for f in sorted(cdir.glob("*")):
+                    if f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                        continue
+                    raw_slot = f.stem
+                    slot = SLOT_ALIASES.get(raw_slot, raw_slot)
+                    if slot in ("angle1", "angle2", "angle3", "angle4", "angle5") and slot not in images:
+                        im = cv2.imread(str(f))
+                        if im is not None:
+                            images[slot] = im
+                            print(f"Fallback loaded {slot} from {f}", flush=True)
+
+    # 2026-09-14 -- optional "below" (chin-underside) checkpoint, added
+    # ADDITIVELY alongside angle1-5 above (never replaces/changes any of
+    # that existing loading logic). This photo cannot go through the same
+    # SLOT_ALIASES/angle1-5 path: it needs its own real-device-orientation
+    # sidecar JSON, not just an image file, and it is intentionally never
+    # added to `images` (which feeds fit_multiview / 3D geometry) -- see
+    # chin_underside_anchor.py's own docstring for why this view is
+    # texture-only. Looked up the same way as the angle1-5 fallback search
+    # above (own dir first, then the same candidate dirs).
+    below_photo_path = None
+    below_orientation_path = None
+    for cdir in [photos_dir, photos_dir / "frames", photos_dir.parent / "photos", photos_dir.parent.parent / "photos",
+                 Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
+                 Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos")]:
+        candidate_img = cdir / "below.jpg"
+        candidate_json = cdir / "below_orientation.json"
+        if candidate_img.exists() and candidate_json.exists():
+            below_photo_path = candidate_img
+            below_orientation_path = candidate_json
+            break
+
     print(f"Loaded slots: {list(images.keys())} from {photos_dir}", flush=True)
-    return reconstruct_gnm_from_images(patient_id, images, output_dir)
+    return reconstruct_gnm_from_images(
+        patient_id, images, output_dir,
+        below_photo_path=below_photo_path, below_orientation_path=below_orientation_path,
+    )
 
 
-def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path) -> dict:
+def reconstruct_gnm_from_images(
+    patient_id: str, images: dict, output_dir: Path,
+    below_photo_path: Path | None = None, below_orientation_path: Path | None = None,
+) -> dict:
     """Core pipeline: `images` is {angle1..angle4: BGR ndarray} (already
     loaded/aliased by the caller). Runs the real identity-fit + Face Shell
     bake and exports baseline.glb. Returns {"ok": False, "error": ...} on
@@ -89,38 +246,44 @@ def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path)
         return {"ok": False, "error": "no-usable-photo"}
 
     view_inputs, view_slots, view_images, view_landmarks, warnings = [], [], [], [], []
-    for slot, image_bgr in images.items():
-        is_profile = slot == "angle3"
+    for raw_slot, image_bgr in images.items():
         h, w = image_bgr.shape[:2]
-        result = detect_pose(image_bgr, is_profile_view=is_profile)
-        if not result["has_face"]:
-            warnings.append(f"{slot}: no face detected (PIPNet) - dropped")
+        # Measure true yaw angle first
+        raw_res = detect_pose(image_bgr, is_profile_view=False)
+        if not raw_res["has_face"]:
+            warnings.append(f"{raw_slot}: no face detected (PIPNet) - dropped")
             continue
+
+        yaw_deg = float(raw_res.get("yaw", 0.0))
+        yaw_abs = abs(yaw_deg)
+
+        # Automatic anatomical slot classification based on real head yaw
+        if raw_slot in ("angle1", "angle2", "angle3", "angle4", "angle5"):
+            canon_slot = raw_slot
+        else:
+            if yaw_abs <= 12.0:
+                canon_slot = "angle1"
+            elif yaw_deg < -12.0:
+                canon_slot = "angle3" if yaw_deg <= -55.0 else "angle2"
+            else:
+                canon_slot = "angle5" if yaw_deg >= 55.0 else "angle4"
+
+        is_profile = canon_slot in ("angle3", "angle5") and yaw_abs >= 65.0
+        if is_profile:
+            result = detect_pose(image_bgr, is_profile_view=True)
+        else:
+            result = raw_res
+
         camera_matrix = np.array([[w, 0, w / 2], [0, w, h / 2], [0, 0, 1]], dtype=np.float64)
         view_inputs.append(ViewInput(result["landmarks_98"], camera_matrix, is_profile, (h, w)))
-        view_slots.append(slot)
+        view_slots.append(canon_slot)
         view_images.append(image_bgr)
         view_landmarks.append(result["landmarks_98"])
 
     if len(view_inputs) == 0:
         return {"ok": False, "error": "no-face-detected-in-any-photo", "warnings": warnings}
 
-    # Anatomical slot correction: ensure angle2 is genuine left (yaw < 0) and angle4 is genuine right (yaw > 0)
-    # If client passed mirrored / inverted slot tags, correct them automatically:
-    slot_to_idx = {s: i for i, s in enumerate(view_slots)}
-    if "angle2" in slot_to_idx and "angle4" in slot_to_idx:
-        i2, i4 = slot_to_idx["angle2"], slot_to_idx["angle4"]
-        # In PIPNet: yaw < 0 is patient facing left, yaw > 0 is patient facing right
-        res2 = detect_pose(view_images[i2], is_profile_view=False)
-        res4 = detect_pose(view_images[i4], is_profile_view=False)
-        y2 = float(res2.get("yaw", 0.0))
-        y4 = float(res4.get("yaw", 0.0))
-        if y2 > 10.0 and y4 < -10.0:
-            # Inverted slots! Swap them cleanly
-            view_slots[i2], view_slots[i4] = "angle4", "angle2"
-            print(f"[Anatomical Slot Correction] Swapped angle2 (yaw={y2:.1f}°) and angle4 (yaw={y4:.1f}°)", flush=True)
-
-    print(f"Views used for fit: {view_slots}", flush=True)
+    print(f"Views used for fit (anatomically assigned): {view_slots}", flush=True)
     fitted_positions, per_view_pose, fit_warnings = fit_multiview(view_inputs)
     warnings.extend(fit_warnings)
     if fitted_positions is None:
@@ -161,13 +324,11 @@ def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path)
 
     from gnm_correspondence import VERTEX_INDICES as _GNM_VIDX, WEIGHTS as _GNM_W, WFLW_INDICES as _GNM_WFLW, point_mask as _gnm_point_mask
 
-    view_landmarks_by_slot = dict(zip(view_slots, view_landmarks))
     bake_views = []
-    for slot, image_bgr in zip(view_slots, view_images):
+    for slot, image_bgr, lms_98 in zip(view_slots, view_images, view_landmarks):
         h, w = image_bgr.shape[:2]
         K = np.array([[w, 0, w / 2], [0, w, h / 2], [0, 0, 1]], dtype=np.float64)
-        lms_98 = view_landmarks_by_slot[slot]
-        is_profile = (slot == "angle3")
+        is_profile = slot in ("angle3", "angle5")
         mask = _gnm_point_mask(is_profile)
         kept_wflw = [idx for idx, keep in zip(_GNM_WFLW, mask) if keep]
         points_2d = np.array([lms_98[i] for i in kept_wflw], dtype=np.float64)
@@ -185,6 +346,62 @@ def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path)
         person_mask = compute_person_silhouette_mask(lms_98, (h, w), slot=slot)
         bake_views.append({"image": image_bgr, "R": R, "t": t, "camera_matrix": K, "person_mask": person_mask, "landmarks_98": lms_98, "slot": slot})
 
+    # 2026-09-14 -- optional "below" (chin-underside) view. Deliberately
+    # posed WITHOUT detect_pose()/solvePnP-on-98-landmarks (that path needs
+    # a normal frontal/profile face structure, which a true underside-of-
+    # chin photo does not have) and NEVER added to `view_inputs`/
+    # fit_multiview above -- it can only ever affect texture, never the 3D
+    # geometry. See chin_underside_anchor.py's own docstring for the full
+    # real-evidence chain (sensor rotation + detected nostril/chin anchors +
+    # closed-form translation solve) and its explicit "drop rather than
+    # guess" contract: every failure branch below appends a warning and
+    # simply does not add this view, exactly like the EPnP-failure "continue"
+    # a few lines above for the normal views.
+    if below_photo_path is not None and below_orientation_path is not None:
+        try:
+            from chin_underside_anchor import detect_nostril_chin_anchors_2d, solve_translation_given_rotation, compose_below_rotation
+
+            below_img = cv2.imread(str(below_photo_path))
+            with open(below_orientation_path, "r") as f:
+                below_orient = json.load(f)
+
+            front_idx = view_slots.index("angle1") if "angle1" in view_slots else None
+            R_below = None
+            if not below_orient.get("orientationAvailable"):
+                warnings.append("below: no real device-orientation reading available for this capture - dropped (never guessed)")
+            elif not below_orient.get("cameraFacingMatches", True):
+                warnings.append("below: camera was flipped (front/rear) between the front and below checkpoints - relative sensor rotation would be invalid, dropped rather than guessed")
+            elif front_idx is None:
+                warnings.append("below: no real solved pose for the front view to anchor against - dropped")
+            else:
+                R_front_head_frame, _, _ = per_view_pose[front_idx]
+                R_below = compose_below_rotation(
+                    below_orient["frontOrientation"], below_orient["belowOrientation"], R_front_head_frame,
+                )
+
+            if below_img is None:
+                warnings.append("below: image file unreadable - dropped")
+            elif R_below is None:
+                pass  # already warned above
+            else:
+                anchors = detect_nostril_chin_anchors_2d(below_img)
+                if anchors is None:
+                    warnings.append("below: nostril/chin anchor detection did not reach confidence threshold - dropped")
+                else:
+                    hb, wb = below_img.shape[:2]
+                    K_below = np.array([[wb, 0, wb / 2], [0, wb, hb / 2], [0, 0, 1]], dtype=np.float64)
+                    t_below = solve_translation_given_rotation(anchors, R_below, K_below)
+                    if t_below is None:
+                        warnings.append("below: translation solve failed or was geometrically inconsistent - dropped")
+                    else:
+                        bake_views.append({
+                            "image": below_img, "R": R_below, "t": t_below, "camera_matrix": K_below,
+                            "person_mask": None, "landmarks_98": None, "slot": "below",
+                        })
+                        print(f"[below] chin-underside view posed and added (anchor confidence={anchors['confidence']:.2f})", flush=True)
+        except Exception as e:
+            warnings.append(f"below: unexpected error ({e}) - dropped (never guessed a fallback pose)")
+
     if not bake_views:
         return {"ok": False, "error": "no-valid-pose-for-any-view", "warnings": warnings}
 
@@ -195,9 +412,18 @@ def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path)
     )
 
     shell_positions = blended_positions[shell_vids].astype(np.float64)
+    shell_positions = smooth_mesh_surface(shell_positions, shell_triangles)
+    shell_positions = level_facial_symmetry(shell_positions, shell_vids)
 
     glb_path = output_dir / "baseline.glb"
     export_patient_glb(shell_positions, shell_triangles.astype(np.int64), shell_uvs.astype(np.float64), face_hd_png_bytes, str(glb_path))
+
+    try:
+        import trimesh
+        obj_path = output_dir / "baseline.obj"
+        trimesh.Trimesh(vertices=shell_positions, faces=shell_triangles, process=False).export(str(obj_path))
+    except Exception as e:
+        print(f"[Warning] Failed to export baseline.obj: {e}", flush=True)
 
     with open(output_dir / "face_HD.png", "wb") as f:
         f.write(face_hd_png_bytes)
@@ -227,8 +453,9 @@ def reconstruct_gnm_from_images(patient_id: str, images: dict, output_dir: Path)
     with open(output_dir / "baseline.json", "w") as f:
         json.dump(baseline_meta, f, indent=2)
 
-    print(json.dumps(baseline_meta, indent=2))
-    return {"ok": True, "baselineGlbPath": str(glb_path), "baselineMeta": baseline_meta}
+    output_result = {"ok": True, "baselineGlbPath": str(glb_path), "baselineMeta": baseline_meta}
+    print(json.dumps(output_result, indent=2))
+    return output_result
 
 
 def main():

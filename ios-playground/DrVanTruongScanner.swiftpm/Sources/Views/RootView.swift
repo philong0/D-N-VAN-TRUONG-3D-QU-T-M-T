@@ -76,10 +76,7 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    // Stable deployed Web Studio endpoint. The settings sheet still lets a
-    // clinic override this with its own HTTPS domain, but a fresh install
-    // must never open into a blank, unconfigured WKWebView.
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://polls-sympathy-audio-bunch.trycloudflare.com"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "http://149.118.63.240:3000"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 

@@ -93,75 +93,43 @@ def get_face_shell_topology():
     # fallback territory), and angle3's own dominant-texel share specifically
     # dropped ~43.7% (176k->99k texels) -- a real, measured, non-trivial
     # redistribution, not hidden here.
-    # Ear-to-Ear Open Facial Mask with full hairline, temples, cheeks, ears, nose, lips, chin:
-    valid_skin = skin_ext & (tpl_pos[:, 2] >= -0.035) & (tpl_pos[:, 1] >= 0.160) & (tpl_pos[:, 1] <= 0.380)
-    shell_mask = valid_skin | hockey | ears | eye_sockets
-
-    shell_vids = np.where(shell_mask)[0].astype(np.int32)
-    vmap = {old: new for new, old in enumerate(shell_vids)}
+    # Crisalix Clinical Facial Mask with natural smooth anatomical curvature:
+    # Natural rounded hairline arch (Y <= 0.372 dome) and curved submental/neck contour (Y >= 0.158)
+    hairline_limit = 0.372 - 0.025 * ((tpl_pos[:, 0] / 0.085) ** 2)
+    neck_limit = 0.158 + 0.022 * ((tpl_pos[:, 0] / 0.085) ** 2)
+    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.025) & (np.abs(tpl_pos[:, 0]) <= 0.086)
+    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | eye_sockets
 
     tri_inside = shell_mask[all_triangles[:, 0]] & shell_mask[all_triangles[:, 1]] & shell_mask[all_triangles[:, 2]]
     shell_triangles = all_triangles[tri_inside]
-    remapped_triangles = np.vectorize(vmap.get)(shell_triangles).astype(np.int32)
+    all_tri_uvs = gnm["triangle_uvs"]
+    shell_tri_uvs = all_tri_uvs[tri_inside]
 
+    shell_vids_list = []
+    shell_uvs_list = []
+    vert_map = {}
+    remapped_tris = []
+
+    for t_idx in range(len(shell_triangles)):
+        tri_remap = []
+        for k in range(3):
+            orig_vid = shell_triangles[t_idx, k]
+            uv = shell_tri_uvs[t_idx, k]
+            key = (orig_vid, round(float(uv[0]), 5), round(float(uv[1]), 5))
+            if key not in vert_map:
+                idx = len(shell_vids_list)
+                vert_map[key] = idx
+                shell_vids_list.append(orig_vid)
+                shell_uvs_list.append(uv)
+            tri_remap.append(vert_map[key])
+        remapped_tris.append(tri_remap)
+
+    shell_vids = np.array(shell_vids_list, dtype=np.int32)
+    shell_uvs = np.array(shell_uvs_list, dtype=np.float32)
+    remapped_triangles = np.array(remapped_tris, dtype=np.int32)
     shell_pos = tpl_pos[shell_vids]
 
-    cx, cy, cz = 0.0, float((shell_pos[:, 1].max() + shell_pos[:, 1].min()) / 2.0), 0.01
-    dx = shell_pos[:, 0] - cx
-    dz = shell_pos[:, 2] - cz
-    radius = np.sqrt(dx ** 2 + dz ** 2)
-    theta_raw = np.arctan2(dx, dz)
-
-    n_shell = len(shell_vids)
-    adjacency: list[list[int]] = [[] for _ in range(n_shell)]
-    for tri in remapped_triangles:
-        va, vb, vc = int(tri[0]), int(tri[1]), int(tri[2])
-        adjacency[va] += (vb, vc)
-        adjacency[vb] += (va, vc)
-        adjacency[vc] += (va, vb)
-
-    theta_unwrap = np.full(n_shell, np.nan)
-    visited = np.zeros(n_shell, dtype=bool)
-    remaining = set(range(n_shell))
-    while remaining:
-        remaining_arr = np.array(sorted(remaining))
-        seed = int(remaining_arr[np.argmax(radius[remaining_arr])])
-        theta_unwrap[seed] = theta_raw[seed]
-        visited[seed] = True
-        remaining.discard(seed)
-        queue = deque([seed])
-        while queue:
-            cur = queue.popleft()
-            for nbr in adjacency[cur]:
-                if visited[nbr]:
-                    continue
-                delta = theta_raw[nbr] - theta_raw[cur]
-                delta = (delta + np.pi) % (2 * np.pi) - np.pi
-                theta_unwrap[nbr] = theta_unwrap[cur] + delta
-                visited[nbr] = True
-                remaining.discard(nbr)
-                queue.append(nbr)
-
-    smooth_mask = radius < 0.05
-    adjacency_sets = [list(set(nbrs)) for nbrs in adjacency]
-    theta_smooth = theta_unwrap.copy()
-    for _ in range(7):
-        theta_next = theta_smooth.copy()
-        for i in np.where(smooth_mask)[0]:
-            nbrs = adjacency_sets[i]
-            if not nbrs:
-                continue
-            theta_next[i] = 0.5 * theta_smooth[i] + 0.5 * float(np.mean([theta_smooth[j] for j in nbrs]))
-        theta_smooth = theta_next
-
-    theta_min, theta_max = float(theta_smooth.min()), float(theta_smooth.max())
-    y_min, y_max = float(shell_pos[:, 1].min()), float(shell_pos[:, 1].max())
-
-    u = 0.04 + 0.92 * (theta_smooth - theta_min) / (theta_max - theta_min)
-    v = 0.04 + 0.92 * (shell_pos[:, 1] - y_min) / (y_max - y_min)
-    uvs = np.column_stack([u, v]).astype(np.float32)
-
-    _shell_cache = (shell_vids, remapped_triangles, uvs, shell_pos.astype(np.float32))
+    _shell_cache = (shell_vids, remapped_triangles, shell_uvs, shell_pos.astype(np.float32))
     return _shell_cache
 
 
@@ -406,11 +374,28 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     pt_weights = np.zeros((n_views, n_pts), dtype=np.float32)
     pt_sampled_colors = np.zeros((n_views, n_pts, 3), dtype=np.float32)
 
-    # Same geometric eye-region box already used a few lines below (per-view
-    # loop) to protect real eye pixels from the background-rejection filter
-    # — computed once here (point-only, does not depend on `k`) and reused
-    # by the anti-ghosting fix after the loop, below.
-    is_eye_zone = (np.abs(pts_pos[:, 0]) < 0.055) & (pts_pos[:, 1] > 0.275) & (pts_pos[:, 1] < 0.335)
+    is_eye_zone = (np.abs(pts_pos[:, 0]) < 0.055) & (pts_pos[:, 1] > 0.270) & (pts_pos[:, 1] < 0.340)
+    is_nostril_zone = (np.abs(pts_pos[:, 0]) < 0.028) & (pts_pos[:, 1] >= 0.220) & (pts_pos[:, 1] <= 0.275) & (pts_pos[:, 2] > 0.100)
+    is_under_nose_tip = (np.abs(pts_pos[:, 0]) < 0.020) & (pts_pos[:, 1] >= 0.230) & (pts_pos[:, 1] <= 0.275) & (pts_pos[:, 2] > 0.100)
+    is_ear_zone = (np.abs(pts_pos[:, 0]) > 0.050) & (pts_pos[:, 1] > 0.18) & (pts_pos[:, 1] < 0.32)
+    # 2026-09-14 -- new "below" (chin-underside) checkpoint support: this
+    # view's camera looks up from under the chin, so its own real photo
+    # pixels are only geometrically valid for the underside/nostril patch
+    # it actually saw -- everywhere else on the mesh, its pixels would be an
+    # extreme, unusable grazing-angle sample. Reuses is_nostril_zone/
+    # is_under_nose_tip above (already-defined zones, previously unused by
+    # any weight branch) plus this new chin-underside box.
+    is_chin_underside_zone = (np.abs(pts_pos[:, 0]) < 0.060) & (pts_pos[:, 1] >= 0.140) & (pts_pos[:, 1] <= 0.215)
+
+    # Sample baseline warm skin tone from philtrum/cheek for natural shadow blending
+    front_img = views[frontal_idx]["image"]
+    h_f, w_f = front_img.shape[:2]
+    philtrum_pos = np.array([[0.0, 0.205, 0.095]])
+    Xc_p = (views[frontal_idx]["R"] @ philtrum_pos.T).T + views[frontal_idx]["t"][None, :]
+    K_f = views[frontal_idx]["camera_matrix"]
+    px_p = int(np.clip(K_f[0, 0] * Xc_p[0, 0] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[0, 2], 0, w_f - 1))
+    py_p = int(np.clip(K_f[1, 1] * Xc_p[0, 1] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[1, 2], 0, h_f - 1))
+    base_skin_bgr = front_img[max(0, py_p - 10):py_p + 10, max(0, px_p - 10):px_p + 10].mean(axis=(0, 1)).astype(np.float32)
 
     for k, v in enumerate(views):
         R, t, K = v["R"], v["t"], v["camera_matrix"]
@@ -424,7 +409,6 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
         ray_dist = np.linalg.norm(ray, axis=1, keepdims=True)
         ray_dir = ray / np.clip(ray_dist, 1e-6, None)
         cos_angle = np.sum(pts_normal * ray_dir, axis=1)
-        facing_weight = np.clip(cos_angle, 0.0, 1.0) ** 2.0
 
         Xc = (R @ pts_pos.T).T + t[None, :]
         z = Xc[:, 2]
@@ -432,19 +416,44 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
         cx_c, cy_c = K[0, 2], K[1, 2]
         px = fx * Xc[:, 0] / np.clip(z, 1e-6, None) + cx_c
         py = fy * Xc[:, 1] / np.clip(z, 1e-6, None) + cy_c
-        py_int = np.clip(py.astype(int), 0, ih - 1)
-        px_int = np.clip(px.astype(int), 0, iw - 1)
 
-        if k == frontal_idx:
-            # Frontal anchor: clean projection across anterior face; smoothly drops off before reaching side-ears
-            valid = (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (cos_angle > 0.22)
-            facing_weight = np.clip((cos_angle - 0.22) / 0.78, 0.0, 1.0) ** 1.8
+        is_frontal = (k == frontal_idx)
+        in_bounds = (z > 0.05) & (px >= 2) & (px < iw - 3) & (py >= 2) & (py < ih - 3)
+
+        if is_frontal:
+            # Frontal photo covers the central facial shell with full natural fidelity
+            min_cos = 0.05
+            facing_weight = _smoothstep(0.02, 0.45, np.maximum(cos_angle, 0.0))
+        elif slot == "below":
+            # 2026-09-14 -- chin-underside checkpoint: camera looks up at a
+            # steep angle no other view uses, so its own facing geometry is
+            # naturally different (surfaces it actually saw face DOWN toward
+            # it, not forward toward a frontal/45deg camera) -- a relaxed
+            # min_cos here only decides IF this view contributes at all; the
+            # hard zone restriction right below (is_chin_underside_zone |
+            # is_nostril_zone | is_under_nose_tip) is what actually keeps it
+            # out of every other facial region regardless of this threshold.
+            min_cos = -0.10
+            facing_weight = _smoothstep(0.02, 0.50, np.maximum(cos_angle, 0.0))
         else:
-            valid = (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (cos_angle > 0.15)
-            valid &= pyrender_occlusion.visible(pts_pos, slot, depth_buffers)
-            if person_mask is not None:
-                valid &= person_mask[py_int, px_int]
-            facing_weight = np.clip((cos_angle - 0.15) / 0.85, 0.0, 1.0) ** 2.0
+            # Side views cover lateral cheeks, ears, temples, and jawline
+            min_cos = np.where(is_ear_zone, -0.20, 0.05)
+            facing_weight = _smoothstep(0.02, 0.50, np.maximum(cos_angle, 0.0))
+
+        valid = in_bounds & (cos_angle > min_cos)
+        if slot == "below":
+            valid &= (is_chin_underside_zone | is_nostril_zone | is_under_nose_tip)
+
+        # Smooth feathering from person mask edge (never a hard binary rectangular cut)
+        mask_weight = np.ones(n_pts, dtype=np.float32)
+        if person_mask is not None:
+            mask_u8 = person_mask.astype(np.uint8) * 255
+            dist_map = cv2.distanceTransform(mask_u8, cv2.DIST_L2, 5)
+            py_int = np.clip(py.astype(int), 0, ih - 1)
+            px_int = np.clip(px.astype(int), 0, iw - 1)
+            dists = dist_map[py_int, px_int]
+            mask_weight = np.clip(dists / 16.0, 0.0, 1.0)
+            valid &= (dists > 1.0)
 
         img_f = img.astype(np.float32)
         pxc = np.clip(px, 0, iw - 1)
@@ -461,124 +470,92 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
         c11 = img_f[y1, x1]
         sampled = (1.0 - wy) * ((1.0 - wx) * c00 + wx * c01) + wy * ((1.0 - wx) * c10 + wx * c11)
 
-        # Background chrominance rejection filter (eliminates bright white/gray curtain, wall, or shirt bleed):
-        b_ch, g_ch, r_ch = sampled[:, 0], sampled[:, 1], sampled[:, 2]
-        max_c = np.maximum(np.maximum(r_ch, g_ch), b_ch) / 255.0
-        min_c = np.minimum(np.minimum(r_ch, g_ch), b_ch) / 255.0
-        sat = (max_c - min_c) / np.maximum(max_c, 1e-6)
-        val = max_c
-        is_bg = ((sat < 0.18) & (val > 0.50)) | ((val > 0.55) & (np.abs(r_ch - b_ch) < 16))
-        
-        # Exclude eye socket / sclera region from background rejection so real eye pixels are preserved
-        is_eye_zone = (np.abs(pts_pos[:, 0]) < 0.055) & (pts_pos[:, 1] > 0.275) & (pts_pos[:, 1] < 0.335)
-        is_bg &= ~is_eye_zone
-        
-        valid &= ~is_bg
+        # Robust studio backdrop / wall rejection (rejects desaturated white/grey background wall pixels, never real skin)
+        samp_u8 = np.clip(sampled, 0, 255).astype(np.uint8)
+        hsv_samp = cv2.cvtColor(samp_u8[None, :, :], cv2.COLOR_BGR2HSV)[0]
+        lab_samp = cv2.cvtColor(samp_u8[None, :, :], cv2.COLOR_BGR2LAB)[0]
 
-        # Nostril black void protection: clamp minimum luminance in nostril cavity so it doesn't create a dark hole
-        is_nostril = (np.abs(pts_pos[:, 0]) < 0.025) & (pts_pos[:, 1] > 0.245) & (pts_pos[:, 1] < 0.275)
-        if is_nostril.any():
-            sub_lum = 0.299 * sampled[:, 2] + 0.587 * sampled[:, 1] + 0.114 * sampled[:, 0]
-            too_dark = is_nostril & (sub_lum < 42.0)
-            if too_dark.any():
-                sampled[too_dark] = np.maximum(sampled[too_dark], np.array([55.0, 50.0, 65.0], dtype=np.float32))
+        is_samp_wall = (
+            ((hsv_samp[:, 1] < 36) & (lab_samp[:, 0] > 115) & (lab_samp[:, 1] < 134)) |
+            (lab_samp[:, 0] > 230)
+        )
+        if is_frontal:
+            is_samp_wall &= (~is_eye_zone)
+        valid &= (~is_samp_wall)
 
-        pt_weights[k] = facing_weight * valid.astype(np.float32)
+        pt_weights[k] = facing_weight * mask_weight * valid.astype(np.float32)
         pt_sampled_colors[k] = sampled
 
-    raw_pt_weights = pt_weights.copy()
 
-    # Harmonize exposure & white balance of lateral/oblique views against angle1 anchor
-    GAIN_OVERLAP_FACING_MIN = 0.05
-    GAIN_MIN_OVERLAP_POINTS = 20
+    # LAB color transfer harmonization: match each oblique view's skin tone/brightness to frontal photo
     for k in range(n_views):
         if k == frontal_idx:
             continue
-        overlap = (raw_pt_weights[frontal_idx] > GAIN_OVERLAP_FACING_MIN) & (raw_pt_weights[k] > GAIN_OVERLAP_FACING_MIN)
-        n_overlap = int(overlap.sum())
-        if n_overlap >= GAIN_MIN_OVERLAP_POINTS:
-            anchor_mean = pt_sampled_colors[frontal_idx][overlap].astype(np.float64).mean(axis=0)
-            view_mean = pt_sampled_colors[k][overlap].astype(np.float64).mean(axis=0)
-            anchor_std = np.maximum(pt_sampled_colors[frontal_idx][overlap].astype(np.float64).std(axis=0), 8.0)
-            view_std = np.maximum(pt_sampled_colors[k][overlap].astype(np.float64).std(axis=0), 8.0)
-            std_scale = np.clip(anchor_std / view_std, 0.85, 1.15)
-            # Smoothly adjust color balance to eliminate any cheek tone mismatch
-            adjusted_k = anchor_mean + (pt_sampled_colors[k].astype(np.float64) - view_mean) * std_scale
-            pt_sampled_colors[k] = np.clip(adjusted_k, 0, 255).astype(np.float32)
+        overlap = (pt_weights[frontal_idx] > 0.15) & (pt_weights[k] > 0.15)
+        if overlap.sum() >= 40:
+            f_bgr = pt_sampled_colors[frontal_idx][overlap]
+            v_bgr = pt_sampled_colors[k][overlap]
+            f_lab = cv2.cvtColor(f_bgr.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+            v_lab = cv2.cvtColor(v_bgr.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+            m_f, s_f = f_lab.mean(axis=0), f_lab.std(axis=0) + 1e-4
+            m_v, s_v = v_lab.mean(axis=0), v_lab.std(axis=0) + 1e-4
 
-    # 1. Frontal Core Hard Lock:
-    # Eyes (full width), nose, philtrum, lips, chin, and inner cheeks are 100% pristine angle1 photo pixels
-    is_central_face = (np.abs(pts_pos[:, 0]) < 0.055) & (pts_pos[:, 1] > 0.19) & (pts_pos[:, 1] < 0.35)
-    frontal_active = (pt_weights[frontal_idx] > 0.0001).astype(np.float32)
-    
-    # Smooth wide cheek transition from X = 0.055 to 0.095
-    frontal_ramp = _smoothstep(0.095, 0.055, np.abs(pts_pos[:, 0])) * frontal_active
-    frontal_lock = np.maximum(frontal_ramp, is_central_face.astype(np.float32) * frontal_active)
+            all_v_lab = cv2.cvtColor(np.clip(pt_sampled_colors[k], 0, 255).reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
+            scale_std = np.clip(s_f / s_v, 0.75, 1.35)
+            matched_lab = (all_v_lab - m_v) * scale_std + m_f
+            matched_lab = np.clip(matched_lab, 0, 255).astype(np.uint8)
+            pt_sampled_colors[k] = cv2.cvtColor(matched_lab.reshape(-1, 1, 3), cv2.COLOR_LAB2BGR).reshape(-1, 3).astype(np.float32)
 
-    for k in range(n_views):
-        target = 1.0 if k == frontal_idx else 0.0
-        pt_weights[k] = frontal_lock * target + (1.0 - frontal_lock) * pt_weights[k]
+    # Smooth anatomical hemisphere priority
+    # Center face takes frontal photo with priority
+    center_boost = _smoothstep(0.060, 0.020, np.abs(pts_pos[:, 0]))
+    pt_weights[frontal_idx] *= (1.0 + 1.5 * center_boost)
 
-    # 2026-09-07 fix — real-device complaint: "lỗi vùng mắt khá nghiêm
-    # trọng" (serious eye-region defect), visible as smeared/doubled eyes in
-    # the actual patient render. Root cause found by tracing this exact
-    # function (not guessed): `frontal_lock` above already forces
-    # single-source (frontal-only) sampling for eyes/nose/lips WHENEVER the
-    # frontal photo has real coverage there (`frontal_active`) — but
-    # wherever the frontal photo's own eye-region coverage is weak or
-    # rejected for that one point (a blink, a specular highlight off the
-    # eye, a borderline facing-angle near the eye corner — all real,
-    # ordinary photo conditions, not a bug in this file), `frontal_active`
-    # is 0 there and the code falls through to the normal smooth multi-view
-    # blend used for skin — which, unlike skin, visibly ghosts on the eye's
-    # small, high-contrast, specular surface even from a slight cross-photo
-    # misalignment (documented root cause of the whole-face version of this
-    # same defect, see this function's own module docstring on the "Direct
-    # Single-Layer Projective Blending" step). Fix: within `is_eye_zone`
-    # specifically, wherever frontal_lock did NOT already win, force
-    # winner-take-all among whatever views DO have weight there (single
-    # sharp photo, never a blend) instead of falling through to a smooth
-    # multi-view average -- eliminates eye ghosting unconditionally, not
-    # just when the frontal photo happens to cover it.
-    eye_not_locked = is_eye_zone & (frontal_lock < 0.999)
-    if eye_not_locked.any():
-        eye_idx = np.where(eye_not_locked)[0]
-        winner = np.argmax(pt_weights[:, eye_idx], axis=0)
-        winner_weight = pt_weights[winner, eye_idx]
-        for k in range(n_views):
-            is_winner = (winner == k) & (winner_weight > 1e-6)
-            cols = eye_idx[~is_winner]
-            pt_weights[k, cols] = 0.0
-
-    # 2. Strict Hemisphere Partitioning & Smooth Lateral Boost:
-    # angle2 (left view) only contributes to patient left (X >= -0.01)
-    # angle4 (right view) only contributes to patient right (X <= 0.01)
-    # angle3 (profile view) only contributes to patient lateral contour
-    lateral_ramp = _smoothstep(0.055, 0.095, np.abs(pts_pos[:, 0]))
     for k, v in enumerate(views):
         slot = v.get("slot", "")
-        if slot == "angle2":
-            # Patient left side: hard falloff to zero across midline into right side
-            hemi_gate = _smoothstep(-0.01, 0.02, pts_pos[:, 0])
-            pt_weights[k] = pt_weights[k] * hemi_gate * (1.0 + 2.0 * lateral_ramp)
-        elif slot == "angle4":
-            # Patient right side: hard falloff to zero across midline into left side
-            hemi_gate = _smoothstep(0.01, -0.02, pts_pos[:, 0])
-            pt_weights[k] = pt_weights[k] * hemi_gate * (1.0 + 2.0 * lateral_ramp)
-        elif slot == "angle3":
-            # Profile view: active strictly on left lateral contour
-            hemi_gate = _smoothstep(0.0, 0.03, pts_pos[:, 0])
-            pt_weights[k] = pt_weights[k] * hemi_gate * (1.0 + 2.0 * lateral_ramp)
+        # GNM coordinate convention: pts_pos[:, 0] < 0 is Patient Left, pts_pos[:, 0] > 0 is Patient Right
+        if slot in ("angle2", "left_45"):
+            gate = _smoothstep(0.015, -0.035, pts_pos[:, 0])
+            pt_weights[k] *= gate
+        elif slot in ("angle4", "right_45"):
+            gate = _smoothstep(-0.015, 0.035, pts_pos[:, 0])
+            pt_weights[k] *= gate
+        elif slot in ("angle3", "left_profile"):
+            gate = _smoothstep(-0.010, -0.050, pts_pos[:, 0])
+            pt_weights[k] *= gate
+        elif slot in ("angle5", "angle3b", "right_profile"):
+            gate = _smoothstep(0.010, 0.050, pts_pos[:, 0])
+            pt_weights[k] *= gate
 
-    # Normalize weights across views
+    # Normalize weights with smooth exponent for seamless transition
     total_w = np.sum(pt_weights, axis=0, keepdims=True)
-    has_photo = total_w[0] > 1e-4
-    norm_weights = np.zeros_like(pt_weights)
-    for k in range(n_views):
-        norm_weights[k] = np.where(has_photo, pt_weights[k] / np.clip(total_w[0], 1e-6, None), 0.0)
+    has_photo = total_w[0] > 1e-5
 
-    # Single-Layer Projective Direct Blending
-    blended_pts_color = np.sum(norm_weights[:, :, None] * pt_sampled_colors, axis=0)
+    # 2026-09-14 fix -- restore multi-band Laplacian pyramid blending
+    # (multiband_blend_views, defined above in this file) into the actual
+    # blend step. It had been replaced by a flat per-point weighted average
+    # (`sum(norm_weights * pt_sampled_colors)`), which double-exposes any
+    # texel two cameras both see -- e.g. the cheek strip visible in both the
+    # frontal and a 45deg photo -- into a soft ghost/blur, the exact defect
+    # multiband's own docstring says it exists to prevent (see that
+    # function's "winner-take-all" comment). This CLI's own `--multiband`
+    # flag already defaults to True below, i.e. the code already assumed
+    # this was active; it just was never wired into this function's blend.
+    # Scatter each view's per-point weight/color back onto the full 2K texel
+    # grid so multiband_blend_views (which blends 2D images, not point
+    # lists) can run, then gather the result back at the same points.
+    view_imgs = []
+    view_masks = []
+    for k in range(n_views):
+        img_grid = np.zeros((tex_size, tex_size, 3), dtype=np.float32)
+        mask_grid = np.zeros((tex_size, tex_size), dtype=np.float32)
+        img_grid.reshape(-1, 3)[valid_lin_idx] = pt_sampled_colors[k]
+        mask_grid.reshape(-1)[valid_lin_idx] = pt_weights[k]
+        view_imgs.append(img_grid)
+        view_masks.append(mask_grid)
+
+    blended_grid = multiband_blend_views(view_imgs, view_masks, levels=4)
+    blended_pts_color = blended_grid.reshape(-1, 3)[valid_lin_idx]
 
     # Render into 2K texture canvas
     tex_canvas = np.zeros((tex_size, tex_size, 3), dtype=np.uint8)
@@ -594,41 +571,34 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     tex_canvas = flat_tex.reshape(tex_size, tex_size, 3)
     valid_mask = flat_val.reshape(tex_size, tex_size)
 
-    # Seamless Multi-Scale Skin Tone Harmonization & Diffusion:
+    # Seamless Natural Skin Boundary Diffusion:
     shell_mask_u8 = texel_valid.astype(np.uint8) * 255
     unobserved = ((valid_mask == 0) & (shell_mask_u8 > 0)).astype(np.uint8) * 255
 
-    # Compute genuine central facial skin tone (cheeks, forehead, nose bridge)
-    skin_sample_mask = (valid_mask > 0) & (np.abs(texel_pos[:, :, 0]) < 0.06) & (texel_pos[:, :, 1] > 0.22) & (texel_pos[:, :, 1] < 0.33)
-    if skin_sample_mask.any():
-        ref_skin_tone = tex_canvas[skin_sample_mask].astype(np.float32).mean(axis=0)
-    else:
-        ref_skin_tone = np.array([160.0, 175.0, 205.0], dtype=np.float32)
-
     if unobserved.any():
-        # 1. Inpaint unobserved boundary regions smoothly
-        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=25, flags=cv2.INPAINT_TELEA)
-        
-        # 2. Smoothly blend unobserved outer neck/periphery towards ambient skin tone to prevent dark stubble dragging
-        dist_out = cv2.distanceTransform(unobserved, cv2.DIST_L2, 5)
-        outer_fade = np.clip(dist_out / 40.0, 0.0, 0.6)[:, :, None]
-        inpainted_smooth = ((1.0 - outer_fade) * inpainted_base.astype(np.float32) + outer_fade * ref_skin_tone).astype(np.uint8)
-
-        # 3. Wide continuous cosine transition at valid/unobserved boundary (30px wide, zero hard steps)
-        dist_in = cv2.distanceTransform(valid_mask, cv2.DIST_L2, 5)
-        alpha = np.clip(dist_in / 18.0, 0.0, 1.0)[:, :, None]
-        alpha_smooth = 0.5 * (1.0 - np.cos(np.pi * alpha)) # smooth cosine ease
-        final_texture = (alpha_smooth * tex_canvas.astype(np.float32) + (1.0 - alpha_smooth) * inpainted_smooth.astype(np.float32)).astype(np.uint8)
+        # Telea inpainting diffuses the authentic skin colors and gradients directly from the observed border
+        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
+        # Check if any deep peripheral texels remain unreached
+        unfilled = (unobserved > 0) & (inpainted_base.sum(axis=-1) == 0)
+        if unfilled.any():
+            valid_texels = tex_canvas[valid_mask > 0]
+            med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
+            inpainted_base[unfilled] = med_skin.astype(np.uint8)
+            inpainted_base = cv2.inpaint(inpainted_base, unfilled.astype(np.uint8) * 255, inpaintRadius=10, flags=cv2.INPAINT_TELEA)
+        final_texture = inpainted_base.copy()
+        final_texture[valid_mask > 0] = tex_canvas[valid_mask > 0]
     else:
         final_texture = tex_canvas.copy()
 
     # Mild edge dilation for UV boundary seam elimination
-    invalid_padding = (shell_mask_u8 == 0).astype(np.uint8)
-    if invalid_padding.any():
-        final_texture = cv2.inpaint(final_texture, invalid_padding, inpaintRadius=8, flags=cv2.INPAINT_TELEA)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7))
+    dilated_mask = cv2.dilate(shell_mask_u8, kernel, iterations=4)
+    edge_padding = ((dilated_mask > 0) & (shell_mask_u8 == 0)).astype(np.uint8) * 255
+    if edge_padding.any():
+        final_texture = cv2.inpaint(final_texture, edge_padding, inpaintRadius=8, flags=cv2.INPAINT_TELEA)
 
     ok, png_bytes = cv2.imencode(".png", final_texture, [cv2.IMWRITE_PNG_COMPRESSION, 4])
-    print(f"Face Shell unified HD texture ready ({len(png_bytes)/1024/1024:.2f} MB, single-layer photorealistic).", flush=True)
+    print(f"Face Shell unified HD texture ready ({len(png_bytes)/1024/1024:.2f} MB, seamless photorealistic).", flush=True)
 
     coverage_stats = {
         "shellTexelCount": int(texel_valid.sum()),

@@ -215,42 +215,17 @@ def compute_person_silhouette_mask(landmarks_98, image_shape: tuple[int, int], s
 
     pts = np.vstack([pts[:12], neck_arc, pts[21:]]).astype(np.float32)
 
-    brow_left_x = min(lm98[33, 0], lm98[0, 0]) - face_height * HORIZONTAL_FORESHORTEN_MARGIN
-    brow_right_x = max(lm98[46, 0], lm98[32, 0]) + face_height * HORIZONTAL_FORESHORTEN_MARGIN
-    forehead_top_y = max(0.0, brow_top_y - face_height * 0.40)
+    brow_left_x = min(lm98[33, 0], lm98[0, 0]) - face_height * 0.16
+    brow_right_x = max(lm98[46, 0], lm98[32, 0]) + face_height * 0.16
+    forehead_top_y = max(0.0, brow_top_y - face_height * 0.35)
 
-    arch_xs = np.linspace(brow_left_x, brow_right_x, 7)
-    arch_ys = forehead_top_y + (arch_xs - (brow_left_x + brow_right_x) / 2.0) ** 2 / ((brow_right_x - brow_left_x) ** 2 + 1e-6) * (face_height * 0.1)
+    arch_xs = np.linspace(brow_left_x, brow_right_x, 9)
+    # Natural convex cranial dome reaching hairline
+    arch_dome_curve = (arch_xs - (brow_left_x + brow_right_x) / 2.0) ** 2 / (((brow_right_x - brow_left_x) / 2.0) ** 2 + 1e-6)
+    arch_ys = forehead_top_y + arch_dome_curve * (face_height * 0.06)
     arch_pts = np.column_stack([arch_xs, arch_ys])
 
-    # 2026-08-27 -- BUG A fix: the 2-point chord above (`_curved_side`) only
-    # ever had the contour's temple point (pts[32]/pts[0]) and the arch's
-    # own corner as endpoints -- proven (real trace, patient 257d9bfe,
-    # angle3, source pixel (390,251)) to cut straight through open
-    # background (a wall-mounted clinic logo) between brow height and the
-    # arch, because a real head visibly narrows (curves inward) from the
-    # temple contour up past the brow toward the hairline, which a 2-point
-    # chord cannot represent. Fix: route through the SAME eyebrow-tail
-    # landmark (`lm98[46]`/`lm98[33]`) already used just above to compute
-    # brow_left_x/brow_right_x -- a real, already-detected, already-relied-
-    # upon point anatomically between the temple and the forehead, not a
-    # new landmark. `_SIDE_X_EASE_POW=2.0` slow-starts ONLY the brow->arch
-    # leg's X (quadratic instead of linear) so the boundary stays close to
-    # the brow's own (narrower) X for most of that leg and only reaches the
-    # arch's outer width right at the very top -- the contour->brow leg
-    # (the original, already-validated case this whole polygon was first
-    # built to fix, see this function's own docstring) is untouched
-    # (unchanged t**0.5-eased Y, linear X), so a view where the brow point
-    # sits close to the arch (no real inward curve to represent) degrades
-    # to ~the original chord automatically, not a hand-tuned special case.
-    _SIDE_X_EASE_POW = 2.0
-    # n=20 (was 6 on the old 2-point chord): cv2.fillPoly only draws STRAIGHT
-    # lines between consecutive vertices -- verified directly that n=6 left
-    # the target background pixel still inside the polygon (the 2 vertices
-    # bracketing it were still far enough apart that the straight segment
-    # between them passed outside the intended quadratic curve); n=12+
-    # converges to a stable mask (tested 12/20/40, <0.5% area difference
-    # between them) -- 20 kept for margin, still a trivial fillPoly cost.
+    _SIDE_X_EASE_POW = 1.5
     _SIDE_N_POINTS = 20
 
     def _curved_side_via_brow(contour_pt: np.ndarray, brow_pt: np.ndarray, arch_pt: np.ndarray, n: int = _SIDE_N_POINTS) -> np.ndarray:
@@ -258,14 +233,16 @@ def compute_person_silhouette_mask(landmarks_98, image_shape: tuple[int, int], s
         n2 = n - n1
         t1 = np.linspace(0.0, 1.0, n1, endpoint=False)
         xs1 = contour_pt[0] + (brow_pt[0] - contour_pt[0]) * t1
-        ys1 = contour_pt[1] + (brow_pt[1] - contour_pt[1]) * (t1 ** 0.5)
+        ys1 = contour_pt[1] + (brow_pt[1] - contour_pt[1]) * t1
         t2 = np.linspace(0.0, 1.0, n2)
         xs2 = brow_pt[0] + (arch_pt[0] - brow_pt[0]) * (t2 ** _SIDE_X_EASE_POW)
-        ys2 = brow_pt[1] + (arch_pt[1] - brow_pt[1]) * (t2 ** 0.5)
+        ys2 = brow_pt[1] + (arch_pt[1] - brow_pt[1]) * t2
         return np.column_stack([np.concatenate([xs1, xs2]), np.concatenate([ys1, ys2])])
 
-    side_right = _curved_side_via_brow(pts[-1], lm98[46], arch_pts[-1])
-    side_left = _curved_side_via_brow(pts[0], lm98[33], arch_pts[0])[::-1]
+    temple_r = np.array([lm98[46, 0] + face_height * 0.10, lm98[46, 1]], dtype=np.float32)
+    temple_l = np.array([lm98[33, 0] - face_height * 0.10, lm98[33, 1]], dtype=np.float32)
+    side_right = _curved_side_via_brow(pts[-1], temple_r, arch_pts[-1])
+    side_left = _curved_side_via_brow(pts[0], temple_l, arch_pts[0])[::-1]
     polygon = np.vstack([pts, side_right, arch_pts[::-1], side_left]).astype(np.float32)
 
     center = lm98.mean(axis=0)
@@ -274,6 +251,7 @@ def compute_person_silhouette_mask(landmarks_98, image_shape: tuple[int, int], s
     mask = np.zeros((h, w), dtype=np.uint8)
     cv2.fillPoly(mask, [dilated.astype(np.int32)], 1)
     return mask.astype(bool)
+
 
 
 def compute_vertex_normals(vertices: np.ndarray, triangles: np.ndarray) -> np.ndarray:

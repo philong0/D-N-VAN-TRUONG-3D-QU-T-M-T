@@ -15,18 +15,25 @@ public struct PatientSummaryDTO: Codable, Identifiable {
 
 public final class BackendAPIClient: ObservableObject {
 
-    // 2026-09-05 fix — this used to be a hardcoded dead tunnel URL
-    // (expo-correct-quote-seal.trycloudflare.com) with no relation at all
-    // to whatever the user configured in RootView's own Settings sheet
     public var activeServerURL: String {
-        let stored = UserDefaults.standard.string(forKey: "clinicServerURL")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let stored = stored, !stored.isEmpty {
-            return stored
+        var url = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if url.isEmpty {
+            url = "http://149.118.63.240:3000"
         }
-        return "https://polls-sympathy-audio-bunch.trycloudflare.com"
+        if !url.hasPrefix("http://") && !url.hasPrefix("https://") {
+            url = "http://" + url
+        }
+        if url.hasSuffix("/") {
+            url = String(url.dropLast())
+        }
+        return url
     }
 
-    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "https://polls-sympathy-audio-bunch.trycloudflare.com"
+    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "http://149.118.63.240:3000" {
+        didSet {
+            UserDefaults.standard.set(serverBaseURL, forKey: "clinicServerURL")
+        }
+    }
     @Published public var isUploading: Bool = false
     @Published public var uploadProgress: Float = 0.0
     @Published public var uploadStatusMessage: String = ""
@@ -124,6 +131,7 @@ public final class BackendAPIClient: ObservableObject {
         patientId: String,
         sessionId: String,
         frames: [ScanAngleStep: CapturedFramePackage],
+        scannerMode: ScannerMode = .faceIdSelfScan,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
         guard let url = URL(string: "\(activeServerURL)/api/patients/\(patientId)/scan-sessions/\(sessionId)/package") else {
@@ -131,10 +139,11 @@ public final class BackendAPIClient: ObservableObject {
             return
         }
         
+        let isRear = scannerMode == .rearClinicalAssistant
         DispatchQueue.main.async {
             self.isUploading = true
             self.uploadProgress = 0.1
-            self.uploadStatusMessage = "Đang đóng gói dữ liệu TrueDepth v2..."
+            self.uploadStatusMessage = isRear ? "Đang đóng gói ảnh lâm sàng camera sau..." : "Đang đóng gói dữ liệu TrueDepth Face ID..."
         }
         
         // Build Manifest — every real per-frame value embedded INLINE
@@ -163,10 +172,10 @@ public final class BackendAPIClient: ObservableObject {
         
         let manifest = ScanPackageManifestDTO(
             schemaVersion: "2.0.0",
-            captureSource: "native_ios",
+            captureSource: isRear ? "native_ios_rear" : "native_ios",
             deviceModel: UIDevice.current.model,
             systemVersion: UIDevice.current.systemVersion,
-            hasTrueDepth: true,
+            hasTrueDepth: !isRear,
             patientId: patientId,
             sessionId: sessionId,
             capturedAt: ISO8601DateFormatter().string(from: Date()),
@@ -254,10 +263,16 @@ public final class BackendAPIClient: ObservableObject {
             
             // 1. Kiểm tra HTTP Status (200..299)
             if httpResponse.statusCode < 200 || httpResponse.statusCode >= 300 {
-                let errReason = parsedResponse?.error ?? parsedResponse?.details ?? "Lỗi máy chủ (\(httpResponse.statusCode))."
-                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: errReason])
+                var errReason = parsedResponse?.error ?? parsedResponse?.details
+                if errReason == nil, let rawText = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines), !rawText.isEmpty {
+                    if !rawText.hasPrefix("<") {
+                        errReason = rawText
+                    }
+                }
+                let finalReason = errReason ?? "Lỗi máy chủ (\(httpResponse.statusCode))."
+                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: finalReason])
                 DispatchQueue.main.async {
-                    self.uploadStatusMessage = errReason
+                    self.uploadStatusMessage = finalReason
                     completion(.failure(err))
                 }
                 return
