@@ -250,30 +250,25 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
 
-        let elapsed = sweepStartTime != nil ? (frame.timestamp - sweepStartTime!) : 0.0
-
-        // Điều kiện TỰ ĐỘNG HOÀN TẤT & NHẢY VÀO TẠO 3D (100% rảnh tay, không cần bấm nút):
-        // 1. Đã ghi nhận đủ 4 góc lâm sàng cốt lõi (Chính diện + Ngửa cằm + Nghiêng trái + Nghiêng phải) VÀ có ít nhất 18 nấc xanh
-        // 2. Hoặc vòng tròn quét đã đạt >= 26 nấc xanh
-        // 3. Hoặc sau 5 giây quét có đủ 3 góc cơ bản và >= 16 nấc
-        let hasAllCoreAngles = hasFront && hasBasal && hasLeft && hasRight && faceIdFilledCount >= 18
-        let isRingCompleted = faceIdFilledCount >= 26
-        let isTimedSweepDone = elapsed >= 5.0 && hasFront && (hasLeft || hasRight) && faceIdFilledCount >= 16
+        // Điều kiện TỰ ĐỘNG HOÀN TẤT & NHẢY VÀO TẠO 3D:
+        // CHỈ TỰ ĐỘNG KHI NGƯỜI DÙNG QUÉT XONG TOÀN BỘ VÒNG TRÒN (>= 34/36 nấc xanh)!
+        // KHÔNG BAO GIỜ ngắt sớm giữa chừng khi người dùng chưa quét xong vòng tròn!
+        let isRingCompleted = faceIdFilledCount >= 34
         
-        if hasAllCoreAngles || isRingCompleted || isTimedSweepDone {
+        if isRingCompleted {
             completeFaceIdSweep()
         } else if !hasBasal {
-            guidanceFeedback = "Hơi ngửa nhẹ cằm (20°-25°) để mở nấc ngửa vòm mũi"
+            guidanceFeedback = "Hơi ngửa cằm lên (20°-25°) để phủ nấc ngửa cằm & đáy mũi (\(faceIdFilledCount)/36)"
         } else if !hasLeft {
-            guidanceFeedback = "Nghiêng mặt sang TRÁI (35°-45°) để mở nấc bên trái"
+            guidanceFeedback = "Nghiêng mặt sang TRÁI (35°-45°) để phủ các nấc bên trái (\(faceIdFilledCount)/36)"
         } else if !hasRight {
-            guidanceFeedback = "Nghiêng mặt sang PHẢI (35°-45°) để mở nấc bên phải"
+            guidanceFeedback = "Nghiêng mặt sang PHẢI (35°-45°) để phủ các nấc bên phải (\(faceIdFilledCount)/36)"
         } else if pose.distanceMeters < 0.28 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
         } else if pose.distanceMeters > 0.65 {
             guidanceFeedback = "Đưa máy lại gần hơn một chút"
         } else {
-            guidanceFeedback = "Xoay chậm đầu theo vòng tròn để phủ kín các nấc còn lại (\(faceIdFilledCount)/36)."
+            guidanceFeedback = "Tiếp tục xoay nhẹ đầu theo vòng tròn để phủ kín các nấc còn lại (\(faceIdFilledCount)/36)."
         }
     }
 
@@ -297,22 +292,22 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         var targetSlot: String?
         var correspondingStep: ScanAngleStep = .front
         
-        if abs(yaw) <= 12 && abs(pitch) <= 12 && clinicalPhotos["front"] == nil {
+        if abs(yaw) <= 15 && abs(pitch) <= 15 && clinicalPhotos["front"] == nil {
             targetSlot = "front"
             correspondingStep = .front
-        } else if pitch >= 12.0 && abs(yaw) <= 22 && (clinicalPhotos["basal_nostrils"] == nil || pitch > (clinicalPhotos["basal_nostrils"]?.pose.eulerRotationDeg["pitch"] ?? 0)) {
+        } else if pitch >= 10.0 && abs(yaw) <= 25 && (clinicalPhotos["basal_nostrils"] == nil || pitch > (clinicalPhotos["basal_nostrils"]?.pose.eulerRotationDeg["pitch"] ?? 0)) {
             targetSlot = "basal_nostrils"
             correspondingStep = .basalNostrils
-        } else if yaw <= -38.0 && clinicalPhotos["left_profile"] == nil {
+        } else if yaw <= -35.0 && clinicalPhotos["left_profile"] == nil {
             targetSlot = "left_profile"
             correspondingStep = .leftProfile
-        } else if yaw <= -22.0 && yaw >= -38.0 && clinicalPhotos["left_45"] == nil {
+        } else if yaw <= -18.0 && yaw >= -35.0 && clinicalPhotos["left_45"] == nil {
             targetSlot = "left_45"
             correspondingStep = .left45
-        } else if yaw >= 38.0 && clinicalPhotos["right_profile"] == nil {
+        } else if yaw >= 35.0 && clinicalPhotos["right_profile"] == nil {
             targetSlot = "right_profile"
             correspondingStep = .rightProfile
-        } else if yaw >= 22.0 && yaw <= 38.0 && clinicalPhotos["right_45"] == nil {
+        } else if yaw >= 18.0 && yaw <= 35.0 && clinicalPhotos["right_45"] == nil {
             targetSlot = "right_45"
             correspondingStep = .right45
         }
