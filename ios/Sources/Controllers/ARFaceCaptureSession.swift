@@ -155,12 +155,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
 
+        let yaw = pose.yawDeg
+        let pitch = pose.pitchDeg
+
         // 1. Kiểm tra vị trí khuôn mặt trong khung căn chỉnh ban đầu
         let isCentered = abs(yaw) <= 18 && abs(pitch) <= 20 && pose.distanceMeters >= 0.30 && pose.distanceMeters <= 0.60
         isFaceInFramingRect = isCentered
 
         // 2. Polar coordinate binning for 36 ticks (10° each)
-        let coneRadius = sqrt(yaw * yaw + pitch * pitch)
+        let coneRadius = sqrt(Double(yaw * yaw + pitch * pitch))
 
         if coneRadius >= 4.0 {
             let rad = atan2(pitch, yaw)
