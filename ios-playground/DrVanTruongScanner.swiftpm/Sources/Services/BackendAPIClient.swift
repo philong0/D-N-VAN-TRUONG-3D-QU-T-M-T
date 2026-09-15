@@ -224,66 +224,49 @@ public final class BackendAPIClient: ObservableObject {
         request.timeoutInterval = 480
         
         DispatchQueue.main.async {
-            self.uploadProgress = 0.10
+            self.uploadProgress = 0.20
             let initialMsg = isRear ? "Đang gửi dữ liệu ảnh lâm sàng 48MP lên máy chủ..." : "Đang gửi dữ liệu TrueDepth Face ID lên máy chủ..."
             self.uploadStatusMessage = initialMsg
-            self.onProgressUpdate?(0.10, initialMsg)
+            self.onProgressUpdate?(0.20, initialMsg)
         }
         
-        let delegate = StreamUploadSessionDelegate(
-            onProgress: { [weak self] byteFraction in
-                let mappedProgress = Float(0.10 + (byteFraction * 0.25)) // 10% -> 35% trong lúc upload byte
-                let percentInt = Int(byteFraction * 100)
-                let msg = isRear ? "Đang tải ảnh 48MP lên máy chủ (\(percentInt)%)..." : "Đang tải dữ liệu TrueDepth lên máy chủ (\(percentInt)%)..."
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            if let error = error {
                 DispatchQueue.main.async {
-                    self?.uploadProgress = mappedProgress
-                    self?.uploadStatusMessage = msg
-                    self?.onProgressUpdate?(mappedProgress, msg)
+                    self.isUploading = false
+                    self.uploadStatusMessage = "Lỗi kết nối: \(error.localizedDescription)"
+                    self.onProgressUpdate?(self.uploadProgress, "Lỗi kết nối: \(error.localizedDescription)")
+                    completion(.failure(error))
                 }
-            },
-            onComplete: { [weak self] data, response, error in
-                guard let self = self else { return }
-                if let error = error {
-                    DispatchQueue.main.async {
-                        self.isUploading = false
-                        self.uploadStatusMessage = "Lỗi kết nối: \(error.localizedDescription)"
-                        self.onProgressUpdate?(self.uploadProgress, "Lỗi kết nối: \(error.localizedDescription)")
-                        completion(.failure(error))
-                    }
-                    return
-                }
-                
-                guard let httpResponse = response as? HTTPURLResponse else {
-                    let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Phản hồi không hợp lệ từ máy chủ."])
-                    DispatchQueue.main.async {
-                        self.uploadStatusMessage = err.localizedDescription
-                        completion(.failure(err))
-                    }
-                    return
-                }
-                
-                guard let data = data else {
-                    let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Máy chủ không trả về dữ liệu (HTTP \(httpResponse.statusCode))."])
-                    DispatchQueue.main.async {
-                        self.uploadStatusMessage = err.localizedDescription
-                        completion(.failure(err))
-                    }
-                    return
-                }
-                
-                self.handleUploadResponse(
-                    data: data,
-                    httpResponse: httpResponse,
-                    patientId: patientId,
-                    sessionId: sessionId,
-                    completion: completion
-                )
+                return
             }
-        )
-        
-        let session = URLSession(configuration: .default, delegate: delegate, delegateQueue: nil)
-        let task = session.dataTask(with: request)
-        task.resume()
+            
+            guard let httpResponse = response as? HTTPURLResponse else {
+                let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Phản hồi không hợp lệ từ máy chủ."])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = err.localizedDescription
+                    completion(.failure(err))
+                }
+                return
+            }
+            
+            guard let data = data else {
+                let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Máy chủ không trả về dữ liệu (HTTP \(httpResponse.statusCode))."])
+                DispatchQueue.main.async {
+                    self.uploadStatusMessage = err.localizedDescription
+                    completion(.failure(err))
+                }
+                return
+            }
+            
+            self.handleUploadResponse(
+                data: data,
+                httpResponse: httpResponse,
+                patientId: patientId,
+                sessionId: sessionId,
+                completion: completion
+            )
+        }.resume()
     }
 
     private func handleUploadResponse(
@@ -479,46 +462,3 @@ public final class BackendAPIClient: ObservableObject {
         uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: stringKeyed, scannerMode: scannerMode, completion: completion)
     }
 }
-
-// MARK: - StreamUploadSessionDelegate for byte-level upload progress tracking
-private final class StreamUploadSessionDelegate: NSObject, URLSessionTaskDelegate, URLSessionDataDelegate {
-    private let onProgress: (Float) -> Void
-    private let onComplete: (Data?, URLResponse?, Error?) -> Void
-    private var receivedData = Data()
-    private var response: URLResponse?
-
-    init(
-        onProgress: @escaping (Float) -> Void,
-        onComplete: @escaping (Data?, URLResponse?, Error?) -> Void
-    ) {
-        self.onProgress = onProgress
-        self.onComplete = onComplete
-    }
-
-    func urlSession(
-        _ session: URLSession,
-        task: URLSessionTask,
-        didSendBodyData bytesSent: Int64,
-        totalBytesSent: Int64,
-        totalBytesExpectedToSend: Int64
-    ) {
-        guard totalBytesExpectedToSend > 0 else { return }
-        let fraction = Float(totalBytesSent) / Float(totalBytesExpectedToSend)
-        let clamped = min(1.0, max(0.0, fraction))
-        onProgress(clamped)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
-        self.response = response
-        completionHandler(.allow)
-    }
-
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        receivedData.append(data)
-    }
-
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        onComplete(receivedData.isEmpty ? nil : receivedData, response, error)
-    }
-}
-
