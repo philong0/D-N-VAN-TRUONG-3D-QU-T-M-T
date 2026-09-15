@@ -24,7 +24,7 @@ struct ARSCNViewContainer: UIViewRepresentable {
 struct FaceIDRadialRing: View {
     let ticks: [Bool]
     let totalTicks: Int = 36
-    let radius: CGFloat = 145
+    let radius: CGFloat = 148
     let tickLength: CGFloat = 16
     
     var body: some View {
@@ -34,9 +34,9 @@ struct FaceIDRadialRing: View {
                 let angle = Double(index) * (360.0 / Double(totalTicks))
                 
                 Capsule()
-                    .fill(isFilled ? Color(red: 0.0, green: 0.95, blue: 0.6) : Color.white.opacity(0.3))
+                    .fill(isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color.white.opacity(0.28))
                     .frame(width: isFilled ? 3.5 : 2.5, height: isFilled ? tickLength + 4 : tickLength)
-                    .shadow(color: isFilled ? Color(red: 0.0, green: 0.95, blue: 0.6).opacity(0.8) : Color.clear, radius: isFilled ? 4 : 0)
+                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.8) : Color.clear, radius: isFilled ? 4 : 0)
                     .offset(y: -radius)
                     .rotationEffect(.degrees(angle))
                     .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isFilled)
@@ -55,7 +55,6 @@ struct ClinicalReticleBrackets: View {
                 .stroke(isAligned ? Color.cyan : Color.white.opacity(0.4), style: StrokeStyle(lineWidth: 2, dash: [24, 12]))
                 .frame(width: 250, height: 330)
             
-            // Central focus crosshair
             Image(systemName: "plus")
                 .font(.title3)
                 .foregroundColor(isAligned ? .cyan : .white.opacity(0.5))
@@ -74,14 +73,14 @@ public struct ARFaceScannerView: View {
     
     public var body: some View {
         ZStack {
-            // 1. AR Camera Viewport (Runs TrueDepth front OR rear ARWorldTracking)
-            ARSCNViewContainer(session: captureSession.arSession)
-                .edgesIgnoringSafeArea(.all)
+            Color.black.edgesIgnoringSafeArea(.all)
             
-            // 2. Clinical HUD & Guidance Overlay
-            VStack {
-                // Top Header: Close, Mode Toggle, Step Status
-                VStack(spacing: 10) {
+            if captureSession.scannerMode == .faceIdSelfScan {
+                // ==========================================
+                // MODE 1: CHUẨN 100% APPLE FACE ID SELF-SCAN
+                // ==========================================
+                VStack(spacing: 20) {
+                    // Top Bar: Close & Mode Switcher
                     HStack {
                         Button {
                             captureSession.onScanCancelled?()
@@ -89,12 +88,12 @@ public struct ARFaceScannerView: View {
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.title2)
-                                .foregroundColor(.white.opacity(0.85))
+                                .foregroundColor(.white.opacity(0.75))
                         }
                         
                         Spacer()
                         
-                        // Dual Mode Segmented Switcher
+                        // Mode Switcher Pill
                         HStack(spacing: 4) {
                             Button {
                                 captureSession.setScannerMode(.faceIdSelfScan)
@@ -106,8 +105,8 @@ public struct ARFaceScannerView: View {
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(captureSession.scannerMode == .faceIdSelfScan ? Color(red: 0.0, green: 0.8, blue: 0.5) : Color.clear)
-                                .foregroundColor(.white)
+                                .background(Color(red: 0.19, green: 0.82, blue: 0.35))
+                                .foregroundColor(.black)
                                 .cornerRadius(12)
                             }
                             
@@ -116,293 +115,289 @@ public struct ARFaceScannerView: View {
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: "camera.viewfinder")
-                                    Text("Điều Dưỡng (Camera Sau)")
+                                    Text("Điều Dưỡng")
                                         .font(.system(size: 11, weight: .bold))
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 6)
-                                .background(captureSession.scannerMode == .rearClinicalAssistant ? Color.blue : Color.clear)
+                                .background(Color.white.opacity(0.1))
                                 .foregroundColor(.white)
                                 .cornerRadius(12)
                             }
                         }
                         .padding(3)
-                        .background(Color.white.opacity(0.15))
-                        .cornerRadius(14)
+                        .background(Color.white.opacity(0.12))
+                        .cornerRadius(15)
                         
                         Spacer()
                         
-                        Text("\(captureSession.capturedFrames.count)/5")
-                            .font(.system(size: 14, weight: .black))
-                            .foregroundColor(captureSession.scannerMode == .faceIdSelfScan ? Color(red: 0.0, green: 0.95, blue: 0.6) : Color.cyan)
+                        // Empty placeholder for symmetry
+                        Color.clear.frame(width: 32, height: 32)
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 45)
                     
-                    // 5 Progress segments (Visual Angle Feedback)
-                    HStack(spacing: 6) {
-                        ForEach(ScanAngleStep.allCases) { step in
-                            VStack(spacing: 2) {
-                                RoundedRectangle(cornerRadius: 3)
-                                    .fill(captureSession.capturedFrames[step] != nil ? Color.green : (step == captureSession.currentStep ? (captureSession.scannerMode == .faceIdSelfScan ? Color.yellow : Color.cyan) : Color.gray.opacity(0.4)))
-                                    .frame(height: 5)
-                                
-                                Text(step.title.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? "")
-                                    .font(.system(size: 8, weight: .medium))
-                                    .foregroundColor(.white.opacity(0.7))
-                                    .lineLimit(1)
-                            }
-                        }
-                    }
-                    .padding(.horizontal)
-                }
-                .padding(.vertical, 10)
-                .background(Color.black.opacity(0.82))
-                .cornerRadius(16)
-                .padding(.horizontal)
-                .padding(.top, 40)
-                
-                Spacer()
-                
-                // Center Scanner Interface (Mode 1: Face ID Radial Sweep vs Mode 2: Rear Clinical Reticle)
-                if captureSession.scannerMode == .faceIdSelfScan {
-                    // MODE 1: FACE ID 36-TICK SWEEP
-                    ZStack {
-                        // 36-tick Apple Face ID radial sweep ring
-                        FaceIDRadialRing(ticks: captureSession.faceIdTicks)
-                        
-                        // Inner Guide Oval
-                        Ellipse()
-                            .stroke(captureSession.isPoseAligned ? Color(red: 0.0, green: 0.95, blue: 0.6) : Color.white.opacity(0.45), lineWidth: captureSession.isPoseAligned ? 3 : 1.5)
-                            .frame(width: 220, height: 290)
-                        
-                        // Center crosshair / direction marker
-                        Image(systemName: "plus")
-                            .font(.title3)
-                            .foregroundColor(captureSession.isPoseAligned ? Color(red: 0.0, green: 0.95, blue: 0.6) : Color.white.opacity(0.35))
-                        
-                        // Live nan quạt progress count in center badge
-                        VStack(spacing: 2) {
-                            Spacer()
-                            Text("\(captureSession.faceIdFilledCount)/36")
-                                .font(.system(size: 13, weight: .heavy))
-                                .foregroundColor(Color(red: 0.0, green: 0.95, blue: 0.6))
-                                .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
-                                .background(Color.black.opacity(0.7))
-                                .cornerRadius(12)
-                                .padding(.bottom, 20)
-                        }
-                        .frame(width: 220, height: 290)
-                    }
-                } else {
-                    // MODE 2: REAR CAMERA CLINICAL ASSISTANT
-                    ZStack {
-                        ClinicalReticleBrackets(isAligned: captureSession.isPoseAligned)
-                        
-                        VStack {
-                            Text(captureSession.currentStep.title)
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.blue.opacity(0.85))
-                                .cornerRadius(12)
-                                .padding(.top, 16)
-                            Spacer()
-                        }
-                        .frame(width: 250, height: 330)
-                    }
-                }
-                
-                Spacer()
-                
-                // Bottom Feedback & Capture Controls
-                VStack(spacing: 12) {
-                    // Guidance Pill
-                    VStack(spacing: 4) {
-                        Text(captureSession.guidanceFeedback)
-                            .font(.system(size: 14, weight: .black))
-                            .foregroundColor(captureSession.isPoseAligned ? (captureSession.scannerMode == .faceIdSelfScan ? Color(red: 0.0, green: 0.95, blue: 0.6) : .cyan) : .yellow)
+                    // Main Instruction Text (Apple Face ID Style)
+                    VStack(spacing: 6) {
+                        Text(captureSession.isTracking ? "Xoay nhẹ đầu theo vòng tròn" : "Đưa khuôn mặt vào vòng tròn")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundColor(.white)
                             .multilineTextAlignment(.center)
                         
-                        if captureSession.scannerMode == .faceIdSelfScan {
-                            Text("Xoay nhẹ đầu theo vòng tròn để phủ kín 36 nan quạt Face ID")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.75))
-                        } else {
-                            Text(captureSession.currentStep.instruction)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(.white.opacity(0.75))
+                        Text(captureSession.isTracking ? "Nghiêng đầu nhẹ mọi góc để phủ kín 36 nan quạt" : "Nhìn thẳng vào màn hình để bắt đầu")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white.opacity(0.65))
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal)
+                    
+                    Spacer()
+                    
+                    // Central Circular Face ID Viewport
+                    ZStack {
+                        // 1. Live Camera Feed Masked by Circle (Diameter 270pt)
+                        ARSCNViewContainer(session: captureSession.arSession)
+                            .frame(width: 270, height: 270)
+                            .clipShape(Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(captureSession.isTracking ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.6) : Color.white.opacity(0.2), lineWidth: 2)
+                            )
+                            .shadow(color: captureSession.isTracking ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.25) : Color.clear, radius: 16)
+                        
+                        // 2. 36-Tick Radial Nan Quạt around the Circle
+                        FaceIDRadialRing(ticks: captureSession.faceIdTicks)
+                        
+                        // Subtle center guide crosshair
+                        if !captureSession.isTracking {
+                            Image(systemName: "face.dashed")
+                                .font(.system(size: 60))
+                                .foregroundColor(.white.opacity(0.35))
                         }
                     }
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 9)
-                    .background(Color.black.opacity(0.85))
-                    .cornerRadius(18)
                     
-                    // Live Telemetry (Yaw, Distance, Pitch)
-                    if captureSession.scannerMode == .faceIdSelfScan {
-                        HStack(spacing: 16) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "gyroscope")
-                                    .font(.caption2)
-                                Text(String(format: "Yaw %.0f°", captureSession.currentYawDeg))
-                                    .font(.caption)
-                                    .bold()
-                            }
-                            .foregroundColor(.white)
-                            
-                            HStack(spacing: 4) {
-                                Image(systemName: "arrow.up.and.down")
-                                    .font(.caption2)
-                                Text(String(format: "Pitch %.0f°", captureSession.currentPitchDeg))
-                                    .font(.caption)
-                                    .bold()
-                            }
-                            .foregroundColor(.white)
-                            
-                            HStack(spacing: 4) {
-                                Image(systemName: "ruler.fill")
-                                    .font(.caption2)
-                                Text(String(format: "%.2fm", captureSession.currentDistanceMeters))
-                                    .font(.caption)
-                                    .bold()
-                            }
-                            .foregroundColor(.white)
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(10)
-                    }
+                    Spacer()
                     
-                    // Bottom Buttons: Retake, Shutter/Trigger, Reset
-                    HStack(spacing: 18) {
-                        // Retake Previous Step Button
-                        if captureSession.capturedFrames.count > 0 {
-                            Button {
-                                captureSession.retakePreviousStep()
-                            } label: {
-                                Image(systemName: "arrow.uturn.backward.circle.fill")
-                                    .font(.system(size: 36))
-                                    .foregroundColor(.orange)
-                            }
-                            .accessibilityLabel("Chụp lại góc trước")
+                    // Bottom Progress & Live Tick Counter
+                    VStack(spacing: 12) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(Color(red: 0.19, green: 0.82, blue: 0.35))
+                            Text("Đã quét: \(captureSession.faceIdFilledCount)/36 tia (\(Int(Double(captureSession.faceIdFilledCount) / 36.0 * 100))%)")
+                                .font(.system(size: 15, weight: .bold))
+                                .foregroundColor(.white)
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(20)
                         
-                        // Big Shutter / Manual Capture Button
-                        Button(action: {
-                            if captureSession.capturedFrames.count >= 5 {
-                                captureSession.triggerPackageUpload { _ in }
-                            } else {
-                                do {
-                                    try captureSession.captureCurrentStep()
-                                } catch {
-                                    captureSession.guidanceFeedback = error.localizedDescription
-                                }
-                            }
-                        }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: captureSession.capturedFrames.count >= 5 ? "arrow.up.circle.fill" : (captureSession.scannerMode == .faceIdSelfScan ? "faceid" : "camera.fill"))
-                                    .font(.title3)
-                                Text(captureSession.isUploading ? "ĐANG TẢI LÊN..." : (captureSession.capturedFrames.count >= 5 ? "GỬI TẢI LÊN (5/5)" : (captureSession.scannerMode == .faceIdSelfScan ? "CHỤP GÓC (\(captureSession.capturedFrames.count)/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")))
-                                    .font(.system(size: 14, weight: .black))
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 14)
-                            .background(captureSession.capturedFrames.count >= 5 ? Color.orange : (captureSession.scannerMode == .faceIdSelfScan ? Color(red: 0.0, green: 0.7, blue: 0.45) : Color.blue))
-                            .cornerRadius(28)
-                            .shadow(color: Color.black.opacity(0.5), radius: 6, x: 0, y: 3)
-                        }
-                        .disabled(captureSession.isUploading)
-                        
-                        // Reset Scan Button
                         Button {
                             captureSession.resetScan()
                         } label: {
-                            Image(systemName: "arrow.clockwise.circle.fill")
-                                .font(.system(size: 36))
-                                .foregroundColor(.white.opacity(0.85))
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.clockwise")
+                                Text("Quét lại vòng tròn")
+                            }
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.white.opacity(0.6))
                         }
-                        .accessibilityLabel("Quét lại từ đầu")
                     }
-                    .padding(.bottom, 25)
+                    .padding(.bottom, 35)
+                }
+            } else {
+                // ==========================================
+                // MODE 2: ĐIỀU DƯỠNG QUÉT (CAMERA SAU 48MP)
+                // ==========================================
+                ZStack {
+                    ARSCNViewContainer(session: captureSession.arSession)
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    VStack {
+                        // Top Bar: Close, Mode Toggle, 5-Step Bar
+                        VStack(spacing: 10) {
+                            HStack {
+                                Button {
+                                    captureSession.onScanCancelled?()
+                                    isCompleted = true
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.title2)
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                                
+                                Spacer()
+                                
+                                HStack(spacing: 4) {
+                                    Button {
+                                        captureSession.setScannerMode(.faceIdSelfScan)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "faceid")
+                                            Text("Tự Quét")
+                                                .font(.system(size: 11, weight: .bold))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.white.opacity(0.1))
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+                                    
+                                    Button {
+                                        captureSession.setScannerMode(.rearClinicalAssistant)
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Image(systemName: "camera.viewfinder")
+                                            Text("Điều Dưỡng (Camera Sau)")
+                                                .font(.system(size: 11, weight: .bold))
+                                        }
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(12)
+                                    }
+                                }
+                                .padding(3)
+                                .background(Color.white.opacity(0.15))
+                                .cornerRadius(15)
+                                
+                                Spacer()
+                                
+                                Text("\(captureSession.capturedFrames.count)/5")
+                                    .font(.system(size: 14, weight: .black))
+                                    .foregroundColor(.cyan)
+                            }
+                            .padding(.horizontal)
+                            
+                            // 5 Clinical angle progress bars
+                            HStack(spacing: 6) {
+                                ForEach(ScanAngleStep.allCases) { step in
+                                    VStack(spacing: 2) {
+                                        RoundedRectangle(cornerRadius: 3)
+                                            .fill(captureSession.capturedFrames[step] != nil ? Color.green : (step == captureSession.currentStep ? Color.cyan : Color.gray.opacity(0.4)))
+                                            .frame(height: 5)
+                                        
+                                        Text(step.title.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? "")
+                                            .font(.system(size: 8, weight: .medium))
+                                            .foregroundColor(.white.opacity(0.8))
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal)
+                        }
+                        .padding(.vertical, 10)
+                        .background(Color.black.opacity(0.82))
+                        .cornerRadius(16)
+                        .padding(.horizontal)
+                        .padding(.top, 40)
+                        
+                        Spacer()
+                        
+                        // Clinical Reticle Framing
+                        ZStack {
+                            ClinicalReticleBrackets(isAligned: captureSession.isPoseAligned)
+                            
+                            VStack {
+                                Text(captureSession.currentStep.title)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.blue.opacity(0.85))
+                                    .cornerRadius(12)
+                                    .padding(.top, 16)
+                                Spacer()
+                            }
+                            .frame(width: 250, height: 330)
+                        }
+                        
+                        Spacer()
+                        
+                        // Bottom Controls: Instruction & Shutter
+                        VStack(spacing: 12) {
+                            Text(captureSession.guidanceFeedback)
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundColor(captureSession.isPoseAligned ? .cyan : .yellow)
+                                .padding(.horizontal, 18)
+                                .padding(.vertical, 8)
+                                .background(Color.black.opacity(0.8))
+                                .cornerRadius(16)
+                            
+                            HStack(spacing: 20) {
+                                if captureSession.capturedFrames.count > 0 {
+                                    Button {
+                                        captureSession.retakePreviousStep()
+                                    } label: {
+                                        Image(systemName: "arrow.uturn.backward.circle.fill")
+                                            .font(.system(size: 38))
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                
+                                Button(action: {
+                                    if captureSession.capturedFrames.count >= 5 {
+                                        captureSession.triggerPackageUpload { _ in }
+                                    } else {
+                                        try? captureSession.captureCurrentStep()
+                                    }
+                                }) {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: captureSession.capturedFrames.count >= 5 ? "arrow.up.circle.fill" : "camera.fill")
+                                            .font(.title3)
+                                        Text(captureSession.capturedFrames.count >= 5 ? "GỬI TẢI LÊN (5/5)" : "BẤM CHỤP (\(captureSession.capturedFrames.count)/5)")
+                                            .font(.system(size: 14, weight: .black))
+                                    }
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 14)
+                                    .background(captureSession.capturedFrames.count >= 5 ? Color.orange : Color.blue)
+                                    .cornerRadius(28)
+                                    .shadow(radius: 6)
+                                }
+                                
+                                Button {
+                                    captureSession.resetScan()
+                                } label: {
+                                    Image(systemName: "arrow.clockwise.circle.fill")
+                                        .font(.system(size: 38))
+                                        .foregroundColor(.white.opacity(0.85))
+                                }
+                            }
+                            .padding(.bottom, 25)
+                        }
+                    }
                 }
             }
             
-            // 3. Uploading & 3D Reconstruction Overlay
+            // 3. Uploading & AI 3D Reconstruction Overlay
             if captureSession.isUploading {
                 ZStack {
-                    Color.black.opacity(0.88).edgesIgnoringSafeArea(.all)
+                    Color.black.opacity(0.9).edgesIgnoringSafeArea(.all)
                     VStack(spacing: 20) {
                         ProgressView()
                             .scaleEffect(1.8)
-                            .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.0, green: 0.95, blue: 0.6)))
+                            .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.19, green: 0.82, blue: 0.35)))
                         
-                        Text(captureSession.scannerMode == .rearClinicalAssistant ? "ĐANG TẢI GÓI ẢNH LÂM SÀNG 48MP" : "ĐANG TẢI DỮ LIỆU TRUEDEPTH FACE ID")
+                        Text("ĐANG DỰNG MÔ HÌNH 3D FULL-HEAD")
                             .font(.headline)
                             .bold()
                             .foregroundColor(.white)
                         
-                        Text("Dữ liệu đang được gửi tới AI Engine để dựng hình 3D chuẩn xác thực khuôn mặt (tai, mắt, tóc, da)...")
+                        Text("Dữ liệu đang được gửi tới AI Engine để tạo mô hình 3D thực tế (tai, tóc, mắt, sống mũi)...")
                             .font(.footnote)
                             .foregroundColor(.white.opacity(0.8))
                             .multilineTextAlignment(.center)
                             .padding(.horizontal, 32)
                     }
                     .padding(28)
-                    .background(Color.black.opacity(0.92))
-                    .cornerRadius(24)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 24)
-                            .stroke(Color(red: 0.0, green: 0.95, blue: 0.6).opacity(0.5), lineWidth: 1.5)
-                    )
-                }
-            }
-            
-            // 4. Quality Gate / Upload Error Overlay
-            if let errorMsg = captureSession.lastErrorMessage {
-                ZStack {
-                    Color.black.opacity(0.85).edgesIgnoringSafeArea(.all)
-                    VStack(spacing: 16) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 44))
-                            .foregroundColor(.yellow)
-                        
-                        Text("Thông Báo Quét")
-                            .font(.title3)
-                            .bold()
-                            .foregroundColor(.white)
-                        
-                        Text(errorMsg)
-                            .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.9))
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 20)
-                        
-                        Button(action: {
-                            captureSession.resetScan()
-                        }) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "arrow.clockwise")
-                                Text("Quét Lại Ngay")
-                                    .bold()
-                            }
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 28)
-                            .padding(.vertical, 14)
-                            .background(Color.blue)
-                            .cornerRadius(24)
-                        }
-                        .padding(.top, 8)
-                    }
-                    .padding(28)
                     .background(Color.black.opacity(0.95))
                     .cornerRadius(24)
                     .overlay(
                         RoundedRectangle(cornerRadius: 24)
-                            .stroke(Color.yellow.opacity(0.5), lineWidth: 1.5)
+                            .stroke(Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.5), lineWidth: 1.5)
                     )
                 }
             }
