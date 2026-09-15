@@ -181,81 +181,34 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 2. Hybrid Progressive Arc Binning (Hỗ trợ cả xoay ngang thuần túy lẫn xoay tròn hình nón)
+        // 2. Single-Bin Latching (Mỗi góc vật lý chỉ sáng đúng 1 nấc thật - Không quét dồn)
         // Hệ tọa độ đồng hồ 36 nấc Face ID:
-        // - 12h (bin 0): Trực diện / Hơi nhìn lên
-        // - 3h (bin 9): Nghiêng phải 45°
-        // - 6h (bin 18): Cúi nhẹ
-        // - 9h (bin 27): Nghiêng trái 45°
-        var binsToActivate: [Int] = []
-
-        // A. Cung bên phải: Khi xoay mặt sang phải (yaw > 3°), sáng dần từ 12h sang 3h (bin 1..12)
-        if yaw >= 3.0 {
-            let maxRightBin = min(12, Int((Double(yaw) / 45.0 * 9.0).rounded()))
-            if maxRightBin >= 1 {
-                for b in 1...maxRightBin {
-                    binsToActivate.append(b)
-                }
-            }
-        }
-
-        // B. Cung bên trái: Khi xoay mặt sang trái (yaw < -3°), sáng dần từ 12h sang 9h (bin 35..24)
-        if yaw <= -3.0 {
-            let steps = min(12, Int((Double(abs(yaw)) / 45.0 * 9.0).rounded()))
-            if steps >= 1 {
-                for s in 1...steps {
-                    binsToActivate.append((36 - s) % 36)
-                }
-            }
-        }
-
-        // C. Cung đỉnh: Khi ngửa đầu (pitch >= 4°), bộc lộ vòm trán & đáy mũi
-        if pitch >= 4.0 {
-            binsToActivate.append(0)
-            if pitch >= 10.0 {
-                binsToActivate.append(35)
-                binsToActivate.append(1)
-            }
-            if pitch >= 18.0 {
-                binsToActivate.append(34)
-                binsToActivate.append(2)
-            }
-        }
-
-        // D. Cung đáy: Khi cúi nhẹ (pitch <= -4°)
-        if pitch <= -4.0 {
-            binsToActivate.append(18)
-            if pitch <= -10.0 {
-                binsToActivate.append(17)
-                binsToActivate.append(19)
-            }
-        }
-
-        // E. Polar clock angle: Khi xoay đầu hình nón 360° chuẩn Apple demo
+        // - 12h (bin 0): Trực diện / Hơi nhìn lên (pitch > 0, yaw = 0)
+        // - 3h (bin 9): Nghiêng phải 45° (yaw > 0, pitch = 0)
+        // - 6h (bin 18): Cúi nhẹ (pitch < 0, yaw = 0)
+        // - 9h (bin 27): Nghiêng trái 45° (yaw < 0, pitch = 0)
         let coneRadius = sqrt(Double(yaw * yaw + pitch * pitch))
-        if coneRadius >= 5.0 {
-            // Đồng hồ chuẩn: 12h (yaw=0, pitch>0), 3h (yaw>0, pitch=0), 6h (yaw=0, pitch<0), 9h (yaw<0, pitch=0)
+        var currentBin: Int? = nil
+
+        if coneRadius >= 4.0 {
+            // Xác định chính xác góc phương vị tức thời theo mặt phẳng đồng hồ (yaw, pitch)
             let clockRad = atan2(Double(yaw), Double(pitch))
             var clockDeg = clockRad * 180.0 / .pi
             if clockDeg < 0 { clockDeg += 360.0 }
-            let polarBin = Int((clockDeg / 10.0).rounded()) % 36
-            binsToActivate.append(polarBin)
+            let bin = Int((clockDeg / 10.0).rounded()) % 36
+            currentBin = bin
         } else if isCentered {
-            binsToActivate.append(0)
+            currentBin = 0
         }
 
-        var anyNewTick = false
-        for b in binsToActivate where b >= 0 && b < 36 {
+        if let b = currentBin, b >= 0 && b < 36 {
             if !faceIdTicks[b] {
                 faceIdTicks[b] = true
-                anyNewTick = true
+                faceIdFilledCount = faceIdTicks.filter { $0 }.count
+                UISelectionFeedbackGenerator().selectionChanged()
+                // Ghi nhận duy nhất 1 frame đo đạc THẬT tại góc này
                 captureSweepTick(bin: b, frame: frame, faceAnchor: faceAnchor, pose: pose)
             }
-        }
-
-        if anyNewTick {
-            faceIdFilledCount = faceIdTicks.filter { $0 }.count
-            UISelectionFeedbackGenerator().selectionChanged()
         }
 
         // 3. Background banking tự động chọn 6 góc ảnh hồ sơ lâm sàng chuẩn y khoa
@@ -268,15 +221,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
         let hasBasal = clinicalPhotos["basal_nostrils"] != nil
 
-        // Safe Exit Gate: Hoàn tất khi có đủ ảnh Chính diện + Trái + Phải, có dữ liệu sweep (>= 8 nấc hoặc >= 6 frame) và thời gian >= 2.2s
-        let isReadyToComplete = hasFront && hasLeft && hasRight && (faceIdFilledCount >= 8 || sweepFrames.count >= 6) && elapsed >= 2.2
+        // Hoàn tất khi: Vòng tròn đã đầy đủ màu xanh (>= 22 nấc thật hoặc >= 16 nấc sau 5s xoay) VÀ có đủ ảnh lâm sàng
+        let isReadyToComplete = (faceIdFilledCount >= 22 || (elapsed >= 5.0 && faceIdFilledCount >= 16)) && hasFront && hasLeft && hasRight && elapsed >= 2.5
         if isReadyToComplete {
             completeFaceIdSweep()
         } else if pose.distanceMeters < 0.30 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
         } else if pose.distanceMeters > 0.65 {
             guidanceFeedback = "Đưa máy lại gần hơn một chút"
-        } else if !hasBasal && (hasLeft || hasRight) {
+        } else if !hasBasal && faceIdFilledCount >= 8 {
             guidanceFeedback = "Hơi ngửa nhẹ cằm để quét vòm mũi & lỗ mũi"
         } else {
             guidanceFeedback = "Di chuyển chậm đầu của bạn để hoàn thành vòng tròn."
