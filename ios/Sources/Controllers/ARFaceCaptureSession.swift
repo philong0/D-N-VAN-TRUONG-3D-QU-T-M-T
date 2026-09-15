@@ -213,29 +213,60 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     private func checkAndBankAngles(frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
         guard !isBankingInProgress else { return }
         let now = frame.timestamp
-        guard now - lastBankedTimestamp >= 0.15 else { return }
+        guard now - lastBankedTimestamp >= 0.12 else { return }
 
         let yaw = pose.yawDeg
         let pitch = pose.pitchDeg
+        let hasValidDepth = frame.capturedDepthData != nil
 
         var targetToBank: ScanAngleStep?
-        if abs(yaw) <= 12 && abs(pitch) <= 15 && capturedFrames[.front] == nil {
-            targetToBank = .front
-        } else if yaw <= -18 && yaw >= -45 && capturedFrames[.left45] == nil {
-            targetToBank = .left45
-        } else if yaw <= -40 && capturedFrames[.leftProfile] == nil {
-            targetToBank = .leftProfile
-        } else if yaw >= 18 && yaw <= 45 && capturedFrames[.right45] == nil {
-            targetToBank = .right45
-        } else if yaw >= 40 && capturedFrames[.rightProfile] == nil {
-            targetToBank = .rightProfile
+        var isBetterAngle = false
+
+        // 1. Góc Chính diện (.front): yaw [-10°, 10°], pitch [-12°, 12°]
+        if abs(yaw) <= 10 && abs(pitch) <= 12 {
+            if capturedFrames[.front] == nil || (hasValidDepth && capturedFrames[.front]?.depthData == nil) {
+                targetToBank = .front
+                isBetterAngle = true
+            }
+        }
+        // 2. Góc Nghiêng Trái 45° (.left45): yaw [-20°, -40°]
+        else if yaw <= -20 && yaw >= -40 {
+            if capturedFrames[.left45] == nil || (hasValidDepth && capturedFrames[.left45]?.depthData == nil) {
+                targetToBank = .left45
+                isBetterAngle = true
+            }
+        }
+        // 3. Góc Nghiêng Trái Sâu Profile (~55°-60°) (.leftProfile): yaw <= -42°
+        else if yaw <= -42 {
+            let existingYaw = capturedFrames[.leftProfile]?.pose.eulerRotationDeg["yaw"] ?? 0
+            // Ưu tiên góc quay sâu hơn tiến gần tới -55°/-60°
+            if capturedFrames[.leftProfile] == nil || yaw < existingYaw || (hasValidDepth && capturedFrames[.leftProfile]?.depthData == nil) {
+                targetToBank = .leftProfile
+                isBetterAngle = true
+            }
+        }
+        // 4. Góc Nghiêng Phải 45° (.right45): yaw [20°, 40°]
+        else if yaw >= 20 && yaw <= 40 {
+            if capturedFrames[.right45] == nil || (hasValidDepth && capturedFrames[.right45]?.depthData == nil) {
+                targetToBank = .right45
+                isBetterAngle = true
+            }
+        }
+        // 5. Góc Nghiêng Phải Sâu Profile (~55°-60°) (.rightProfile): yaw >= 42°
+        else if yaw >= 42 {
+            let existingYaw = capturedFrames[.rightProfile]?.pose.eulerRotationDeg["yaw"] ?? 0
+            // Ưu tiên góc quay sâu hơn tiến gần tới 55°/60°
+            if capturedFrames[.rightProfile] == nil || yaw > existingYaw || (hasValidDepth && capturedFrames[.rightProfile]?.depthData == nil) {
+                targetToBank = .rightProfile
+                isBetterAngle = true
+            }
         }
 
-        guard let step = targetToBank else { return }
+        guard let step = targetToBank, isBetterAngle else { return }
         isBankingInProgress = true
         lastBankedTimestamp = now
 
-        // Process heavy compression on background queue
+        // Xử lý nén ảnh và trích xuất TrueDepth trên background queue
         processingQueue.async { [weak self] in
             guard let self = self else { return }
             defer {
