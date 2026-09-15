@@ -59,6 +59,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     private let processingQueue = DispatchQueue(label: "com.drvantruong.scanner.processingQueue", qos: .userInitiated)
     private var isBankingInProgress = false
     private var lastBankedTimestamp: TimeInterval = 0
+    private var activeApiClient: BackendAPIClient?
 
     public override init() {
         super.init()
@@ -638,6 +639,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         }
 
         let apiClient = BackendAPIClient()
+        self.activeApiClient = apiClient
         apiClient.onProgressUpdate = { [weak self] progress, message in
             DispatchQueue.main.async {
                 self?.uploadProgress = progress
@@ -649,6 +651,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         apiClient.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: allFramesToUpload, scannerMode: scannerMode) { [weak self] result in
             DispatchQueue.main.async {
                 self?.isUploading = false
+                self?.activeApiClient = nil
                 switch result {
                 case .success(let studioURL):
                     self?.guidanceFeedback = "✓ Tải lên thành công! Đang mở 3D Studio..."

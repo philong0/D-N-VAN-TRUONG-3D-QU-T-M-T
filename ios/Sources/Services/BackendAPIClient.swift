@@ -224,18 +224,17 @@ public final class BackendAPIClient: ObservableObject {
         request.timeoutInterval = 480
         
         DispatchQueue.main.async {
-            self.uploadProgress = 0.3
-            self.uploadStatusMessage = "Đang tải dữ liệu TrueDepth / ARKit & Dựng 3D..."
+            self.uploadProgress = 0.20
+            self.uploadStatusMessage = "Đang tải dữ liệu TrueDepth lên máy chủ..."
+            self.onProgressUpdate?(0.20, "Đang tải dữ liệu TrueDepth lên máy chủ...")
         }
         
         URLSession.shared.dataTask(with: request) { data, response, error in
-            DispatchQueue.main.async {
-                self.isUploading = false
-            }
-            
             if let error = error {
                 DispatchQueue.main.async {
+                    self.isUploading = false
                     self.uploadStatusMessage = "Lỗi kết nối: \(error.localizedDescription)"
+                    self.onProgressUpdate?(self.uploadProgress, "Lỗi kết nối: \(error.localizedDescription)")
                     completion(.failure(error))
                 }
                 return
@@ -357,30 +356,36 @@ public final class BackendAPIClient: ObservableObject {
                 return
             }
             
+            // Xử lý gián đoạn mạng tạm thời: không fail ngay mà thử lại sau 2s
+            if let error = error {
+                print("[BackendAPIClient] Poll warning: \(error.localizedDescription), retrying...")
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                    self?.pollReconstructionReady(patientId: patientId, sessionId: sessionId, startTime: startTime, completion: completion)
+                }
+                return
+            }
+            
+            // Tính toán % tiến trình tăng liên tục từ 35% -> 95% trong 55s
+            let smoothProgress = min(0.95, Float(0.35 + (elapsed / 55.0) * 0.58))
+            
             // Cập nhật thông điệp và tiến trình theo thời gian thực để người dùng thấy rõ AI đang làm việc
             DispatchQueue.main.async {
                 self.isUploading = true
-                let prog: Float
                 let msg: String
                 if elapsed < 8 {
-                    prog = 0.45
                     msg = "AI Engine đang tiếp nhận & đối chiếu các góc quét TrueDepth..."
                 } else if elapsed < 20 {
-                    prog = 0.60
                     msg = "Đang dựng cấu trúc nhân trắc GNM Full-Head (tai, cằm, mũi)..."
                 } else if elapsed < 35 {
-                    prog = 0.75
                     msg = "Đang tinh chỉnh độ dày mô mềm & tính đối xứng lâm sàng..."
                 } else if elapsed < 55 {
-                    prog = 0.88
                     msg = "Đang hoàn thiện vân da bề mặt Ultra-HD (PBR Shader)..."
                 } else {
-                    prog = 0.94
                     msg = "Đang hoàn tất đóng gói mô hình 3D..."
                 }
-                self.uploadProgress = prog
+                self.uploadProgress = smoothProgress
                 self.uploadStatusMessage = msg
-                self.onProgressUpdate?(prog, msg)
+                self.onProgressUpdate?(smoothProgress, msg)
             }
             
             if let data = data,
@@ -422,8 +427,8 @@ public final class BackendAPIClient: ObservableObject {
             }
             
             // Tiếp tục poll sau 2.0 giây
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
-                self.pollReconstructionReady(patientId: patientId, sessionId: sessionId, startTime: startTime, completion: completion)
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) { [weak self] in
+                self?.pollReconstructionReady(patientId: patientId, sessionId: sessionId, startTime: startTime, completion: completion)
             }
         }.resume()
     }
