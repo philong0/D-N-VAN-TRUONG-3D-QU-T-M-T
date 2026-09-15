@@ -179,36 +179,43 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         // 2. Continuous on-the-fly background banking without blocking main thread
         checkAndBankAngles(frame: frame, faceAnchor: faceAnchor, pose: pose)
 
-        // 3. User feedback message
-        if faceIdFilledCount >= 22 {
-            guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT FACE ID"
+        // 3. Ultra-sensitive dynamic clinical guidance
+        if faceIdFilledCount >= 24 {
+            guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT FACE ID!"
             completeFaceIdSweep()
-        } else if faceIdFilledCount > 0 {
-            guidanceFeedback = "Xoay nhẹ đầu theo vòng tròn"
-            turnGuidance = "\(faceIdFilledCount)/36 tia"
+        } else if pose.distanceMeters < 0.32 {
+            guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
+        } else if capturedFrames[.leftProfile] == nil && yaw > -20 {
+            guidanceFeedback = "Xoay nhẹ đầu sang TRÁI (~60°) để lấy sống mũi"
+        } else if capturedFrames[.rightProfile] == nil && yaw < 20 {
+            guidanceFeedback = "Xoay nhẹ đầu sang PHẢI (~60°) để lấy sống mũi"
+        } else if pitch < 8 && capturedFrames[.front] != nil {
+            guidanceFeedback = "Hơi ngửa nhẹ cằm để quét vòm mũi"
         } else {
-            guidanceFeedback = "Xoay nhẹ đầu theo vòng tròn để quét"
+            guidanceFeedback = "Xoay đều đầu theo vòng tròn để phủ kín 36 tia"
         }
     }
 
     private func checkAndBankAngles(frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
         guard !isBankingInProgress else { return }
         let now = frame.timestamp
-        guard now - lastBankedTimestamp >= 0.15 else { return }
+        guard now - lastBankedTimestamp >= 0.12 else { return }
 
         let yaw = pose.yawDeg
         let pitch = pose.pitchDeg
 
         var targetToBank: ScanAngleStep?
-        if abs(yaw) <= 12 && abs(pitch) <= 15 && capturedFrames[.front] == nil {
+        if abs(yaw) <= 15 && abs(pitch) <= 18 && capturedFrames[.front] == nil {
             targetToBank = .front
         } else if yaw <= -18 && yaw >= -48 && capturedFrames[.left45] == nil {
             targetToBank = .left45
-        } else if yaw <= -38 && capturedFrames[.leftProfile] == nil {
+        } else if yaw <= -42 && capturedFrames[.leftProfile] == nil {
+            // Reaching ~55° to 60° left profile
             targetToBank = .leftProfile
         } else if yaw >= 18 && yaw <= 48 && capturedFrames[.right45] == nil {
             targetToBank = .right45
-        } else if yaw >= 38 && capturedFrames[.rightProfile] == nil {
+        } else if yaw >= 42 && capturedFrames[.rightProfile] == nil {
+            // Reaching ~55° to 60° right profile
             targetToBank = .rightProfile
         }
 
