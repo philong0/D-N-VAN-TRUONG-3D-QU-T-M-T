@@ -428,6 +428,28 @@ public struct ARFaceScannerView: View {
                                         .cornerRadius(28)
                                 }
                             } else {
+                                // Nếu đã quét được nhiều nấc (>= 18 nấc) -> Cho phép bấm DỰNG 3D NGAY
+                                if captureSession.faceIdFilledCount >= 18 {
+                                    Button {
+                                        captureSession.ensureClinicalPhotosFromSweep()
+                                        captureSession.completeFaceIdSweep()
+                                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                                    } label: {
+                                        HStack(spacing: 8) {
+                                            Image(systemName: "checkmark.circle.fill")
+                                                .font(.headline)
+                                            Text("DỰNG MÔ HÌNH 3D NGAY (\(captureSession.faceIdFilledCount)/36 nấc)")
+                                                .font(.system(size: 16, weight: .black))
+                                        }
+                                        .foregroundColor(.white)
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 16)
+                                        .background(Color(red: 0.12, green: 0.72, blue: 0.32))
+                                        .cornerRadius(28)
+                                        .shadow(color: Color(red: 0.12, green: 0.72, blue: 0.32).opacity(0.4), radius: 8, y: 4)
+                                    }
+                                }
+
                                 // Nút Bắt đầu lại
                                 Button {
                                     if enrollmentPhase == 1 {
@@ -437,10 +459,10 @@ public struct ARFaceScannerView: View {
                                     }
                                 } label: {
                                     Text("Bắt đầu lại")
-                                        .font(.system(size: 16, weight: .semibold))
-                                        .foregroundColor(.black)
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundColor(.black.opacity(0.75))
                                         .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 15)
+                                        .padding(.vertical, 13)
                                         .background(Color(white: 0.94))
                                         .cornerRadius(28)
                                 }

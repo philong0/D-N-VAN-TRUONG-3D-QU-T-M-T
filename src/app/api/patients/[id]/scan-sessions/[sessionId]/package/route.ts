@@ -395,16 +395,30 @@ export async function POST(
     await fs.mkdir(photosDir, { recursive: true });
     const framesDir = path.join(process.cwd(), ".data", "patients", patientId, "scans", sessionId, "frames");
 
+    // Đúng 4 ảnh hồ sơ theo yêu cầu: 0° (front), 45° (left_45), 60° profile
+    // (left_profile), và đáy mũi ngửa lên (basal_nostrils). Trước đây
+    // basal_nostrils không có trong bảng này nên bị âm thầm loại bỏ, còn
+    // angle4 lại bị right_45/right_profile giành mất.
     const frameMappings: Record<string, PhotoAngle> = {
       front: "angle1",
       left_45: "angle2",
       left_profile: "angle3",
-      right_45: "angle4",
-      right_profile: "angle4",
+      basal_nostrils: "angle4",
     };
 
     const framePhotoEntries: Partial<Record<PhotoAngle, { fileName: string; angle: PhotoAngle; uploadedAt: string; width: number; height: number }>> = {};
     for (const frame of savedFrames) {
+      // 1. Luôn sao chép các ảnh chụp lâm sàng có tên (front, left_45, basal_nostrils...) vào photosDir
+      try {
+        await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, frame.fileName));
+        if (!frame.view.startsWith("sweep_")) {
+          await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, `${frame.view}.jpg`));
+        }
+      } catch (copyErr) {
+        console.warn("Failed to copy frame to photos dir:", copyErr);
+      }
+
+      // 2. Gán vào các slot góc ảnh chuẩn nếu khớp mapping
       const slotKey = frameMappings[frame.view];
       if (!slotKey || framePhotoEntries[slotKey]) continue;
       let width = 1080;
@@ -426,14 +440,6 @@ export async function POST(
         width,
         height,
       };
-      try {
-        await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, frame.fileName));
-        if (!frame.view.startsWith("sweep_")) {
-          await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, `${frame.view}.jpg`));
-        }
-      } catch (copyErr) {
-        console.warn("Failed to copy frame to photos dir:", copyErr);
-      }
     }
 
     await updatePatient(patientId, (stored) => ({

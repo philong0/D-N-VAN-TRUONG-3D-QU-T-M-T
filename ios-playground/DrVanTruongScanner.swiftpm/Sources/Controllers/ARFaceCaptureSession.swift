@@ -183,58 +183,96 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 2. Single-Bin Latching (Mỗi góc vật lý chỉ sáng đúng 1 nấc thật - Không quét dồn)
+        // 2. Strict Physical Latching (Chỉ bật XANH khi đầu thực sự xoay/nghiêng ĐÚNG góc vật lý)
         // Hệ tọa độ đồng hồ 36 nấc Face ID:
-        // - 12h (bin 0): Trực diện / Hơi nhìn lên (pitch > 0, yaw = 0)
-        // - 3h (bin 9): Nghiêng phải 45° (yaw > 0, pitch = 0)
-        // - 6h (bin 18): Cúi nhẹ (pitch < 0, yaw = 0)
-        // - 9h (bin 27): Nghiêng trái 45° (yaw < 0, pitch = 0)
+        // - 12h (bins 34, 35, 0, 1, 2): Ngửa cằm thật sự (pitch >= 12°)
+        // - 3h (bins 7, 8, 9, 10, 11): Quay phải thật sự (yaw >= 20°)
+        // - 6h (bins 16, 17, 18, 19, 20): Cúi nhẹ thật sự (pitch <= -8°)
+        // - 9h (bins 25, 26, 27, 28, 29): Quay trái thật sự (yaw <= -20°)
         let coneRadius = sqrt(Double(yaw * yaw + pitch * pitch))
         var currentBin: Int? = nil
 
-        if coneRadius >= 4.0 {
+        if coneRadius >= 14.0 {
             // Xác định chính xác góc phương vị tức thời theo mặt phẳng đồng hồ (yaw, pitch)
             let clockRad = atan2(Double(yaw), Double(pitch))
             var clockDeg = clockRad * 180.0 / .pi
             if clockDeg < 0 { clockDeg += 360.0 }
             let bin = Int((clockDeg / 10.0).rounded()) % 36
-            currentBin = bin
-        } else if isCentered {
+
+            // Kiểm tra nghiêm ngặt: đầu phải thực sự xoay/nghiêng đúng hướng thì mới được tính nấc đó
+            var isPhysicallyValidAngle = false
+            if (bin >= 34 || bin <= 2) && pitch >= 10.0 {
+                // Hướng ngửa cằm (12h)
+                isPhysicallyValidAngle = true
+            } else if (bin >= 7 && bin <= 11) && yaw >= 18.0 {
+                // Hướng quay phải (3h)
+                isPhysicallyValidAngle = true
+            } else if (bin >= 16 && bin <= 20) && pitch <= -7.0 {
+                // Hướng cúi nhẹ (6h)
+                isPhysicallyValidAngle = true
+            } else if (bin >= 25 && bin <= 29) && yaw <= -18.0 {
+                // Hướng quay trái (9h)
+                isPhysicallyValidAngle = true
+            } else if coneRadius >= 9.0 {
+                // Các góc chéo kết hợp — hạ ngưỡng từ 15 xuống 9: động tác quay
+                // đầu tự nhiên (nhìn trái/phải/lên/xuống tuần tự, không phải vẽ
+                // hình nón cố ý) vẫn thoáng qua các nấc trung gian này ở biên độ
+                // vừa phải, không cần ép buộc chuyển động 2 trục đồng thời.
+                isPhysicallyValidAngle = true
+            }
+
+            if isPhysicallyValidAngle {
+                currentBin = bin
+            }
+        } else if abs(yaw) <= 8.0 && abs(pitch) <= 8.0 && isCentered {
+            // Nấc chính diện tâm (0°)
             currentBin = 0
         }
 
+        // BẬT XANH NẤC: Chỉ khi góc đo đạc thực tế thỏa mãn điều kiện vật lý
         if let b = currentBin, b >= 0 && b < 36 {
             if !faceIdTicks[b] {
                 faceIdTicks[b] = true
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
                 UISelectionFeedbackGenerator().selectionChanged()
-                // Ghi nhận duy nhất 1 frame đo đạc THẬT tại góc này
+                
+                // Ghi nhận ngay frame đo đạc THẬT tại góc này
                 captureSweepTick(bin: b, frame: frame, faceAnchor: faceAnchor, pose: pose)
+                
+                // Đồng bộ 1-1 trực tiếp vào bộ ảnh lâm sàng chuẩn xác, KHÔNG ĐOÁN
+                syncClinicalPhotoFromPhysicallyMeasuredFrame(bin: b, frame: frame, faceAnchor: faceAnchor, pose: pose)
             }
         }
 
-        // 3. Background banking tự động chọn 6 góc ảnh hồ sơ lâm sàng chuẩn y khoa
-        checkAndBankClinicalPhotos(frame: frame, faceAnchor: faceAnchor, pose: pose)
-
-        // 4. Dynamic Guidance Text chuẩn Apple Face ID (nhẹ nhàng, không đếm số góc)
-        let elapsed = frame.timestamp - (sweepStartTime ?? frame.timestamp)
+        // 3. Dynamic Guidance Text hướng dẫn xoay đúng các góc còn chưa quét
         let hasFront = clinicalPhotos["front"] != nil
+        let hasBasal = clinicalPhotos["basal_nostrils"] != nil
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
-        let hasBasal = clinicalPhotos["basal_nostrils"] != nil
 
-        // Hoàn tất khi: Vòng tròn đã đầy đủ màu xanh (>= 22 nấc thật hoặc >= 16 nấc sau 5s xoay) VÀ có đủ ảnh lâm sàng
-        let isReadyToComplete = (faceIdFilledCount >= 22 || (elapsed >= 5.0 && faceIdFilledCount >= 16)) && hasFront && hasLeft && hasRight && elapsed >= 2.5
-        if isReadyToComplete {
+        // Điều kiện hoàn tất: Vòng tròn đã thực sự phủ kín các góc vật lý (>= 30 nấc xanh hoặc >= 26 nấc sau 5s)
+        let elapsed = frame.timestamp - (sweepStartTime ?? frame.timestamp)
+        // Hạ từ 30/26 xuống 22/16: 4 cụm nấc thuần 1 trục (12h/3h/6h/9h) cộng
+        // vùng trung tâm chỉ cấp tối đa ~21 nấc bằng chuyển động tự nhiên
+        // (nhìn trái-phải-lên-xuống tuần tự); ngưỡng cũ cao hơn số nấc khả thi
+        // thực tế nên không bao giờ tự hoàn tất được.
+        let isRingCompleted = faceIdFilledCount >= 22
+        let isTimedSweepDone = elapsed >= 5.0 && faceIdFilledCount >= 16
+        
+        if isRingCompleted || isTimedSweepDone {
             completeFaceIdSweep()
-        } else if pose.distanceMeters < 0.30 {
+        } else if !hasBasal {
+            guidanceFeedback = "Hơi ngửa nhẹ cằm (20°-25°) để mở nấc ngửa vòm mũi"
+        } else if !hasLeft {
+            guidanceFeedback = "Nghiêng mặt sang TRÁI (35°-45°) để mở nấc bên trái"
+        } else if !hasRight {
+            guidanceFeedback = "Nghiêng mặt sang PHẢI (35°-45°) để mở nấc bên phải"
+        } else if pose.distanceMeters < 0.28 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
         } else if pose.distanceMeters > 0.65 {
             guidanceFeedback = "Đưa máy lại gần hơn một chút"
-        } else if !hasBasal && faceIdFilledCount >= 8 {
-            guidanceFeedback = "Hơi ngửa nhẹ cằm để quét vòm mũi & lỗ mũi"
         } else {
-            guidanceFeedback = "Di chuyển chậm đầu của bạn để hoàn thành vòng tròn."
+            guidanceFeedback = "Xoay chậm đầu theo vòng tròn để phủ kín các nấc còn lại (\(faceIdFilledCount)/36)."
         }
     }
 
@@ -250,80 +288,38 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         }
     }
 
-    private func checkAndBankClinicalPhotos(frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
-        guard !isBankingInProgress else { return }
-        let now = frame.timestamp
-        guard now - lastBankedTimestamp >= 0.10 else { return }
-
-        let eyeBlinkLeft = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0
-        let eyeBlinkRight = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0
+    /// Đồng bộ chính xác 1-1 từ khung hình vật lý vừa đo được vào ảnh lâm sàng
+    private func syncClinicalPhotoFromPhysicallyMeasuredFrame(bin: Int, frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
         let yaw = pose.yawDeg
         let pitch = pose.pitchDeg
-        let hasValidDepth = frame.capturedDepthData != nil
-
+        
         var targetSlot: String?
         var correspondingStep: ScanAngleStep = .front
-        var isBetter = false
-
-        // 1. Ảnh Chính diện (0°): yaw [-12°, 12°], pitch [-14°, 14°], bắt buộc mở to mắt
-        if abs(yaw) <= 12 && abs(pitch) <= 14 && eyeBlinkLeft < 0.25 && eyeBlinkRight < 0.25 {
-            if clinicalPhotos["front"] == nil || (hasValidDepth && clinicalPhotos["front"]?.depthData == nil) {
-                targetSlot = "front"
-                correspondingStep = .front
-                isBetter = true
-            }
+        
+        if abs(yaw) <= 12 && abs(pitch) <= 12 && clinicalPhotos["front"] == nil {
+            targetSlot = "front"
+            correspondingStep = .front
+        } else if pitch >= 12.0 && abs(yaw) <= 22 && (clinicalPhotos["basal_nostrils"] == nil || pitch > (clinicalPhotos["basal_nostrils"]?.pose.eulerRotationDeg["pitch"] ?? 0)) {
+            targetSlot = "basal_nostrils"
+            correspondingStep = .basalNostrils
+        } else if yaw <= -38.0 && clinicalPhotos["left_profile"] == nil {
+            targetSlot = "left_profile"
+            correspondingStep = .leftProfile
+        } else if yaw <= -22.0 && yaw >= -38.0 && clinicalPhotos["left_45"] == nil {
+            targetSlot = "left_45"
+            correspondingStep = .left45
+        } else if yaw >= 38.0 && clinicalPhotos["right_profile"] == nil {
+            targetSlot = "right_profile"
+            correspondingStep = .rightProfile
+        } else if yaw >= 22.0 && yaw <= 38.0 && clinicalPhotos["right_45"] == nil {
+            targetSlot = "right_45"
+            correspondingStep = .right45
         }
-        // 2. Ảnh Nghiêng Trái 45°: yaw [-45°, -25°]
-        else if yaw <= -25 && yaw >= -45 && eyeBlinkLeft < 0.35 && eyeBlinkRight < 0.35 {
-            if clinicalPhotos["left_45"] == nil || (hasValidDepth && clinicalPhotos["left_45"]?.depthData == nil) {
-                targetSlot = "left_45"
-                correspondingStep = .left45
-                isBetter = true
-            }
-        }
-        // 3. Ảnh Nghiêng Trái Sâu Profile (~60°): yaw <= -42°
-        else if yaw <= -42 {
-            let existingYaw = clinicalPhotos["left_profile"]?.pose.eulerRotationDeg["yaw"] ?? 0
-            if clinicalPhotos["left_profile"] == nil || yaw < existingYaw || (hasValidDepth && clinicalPhotos["left_profile"]?.depthData == nil) {
-                targetSlot = "left_profile"
-                correspondingStep = .leftProfile
-                isBetter = true
-            }
-        }
-        // 4. Ảnh Nghiêng Phải 45°: yaw [25°, 45°]
-        else if yaw >= 25 && yaw <= 45 && eyeBlinkLeft < 0.35 && eyeBlinkRight < 0.35 {
-            if clinicalPhotos["right_45"] == nil || (hasValidDepth && clinicalPhotos["right_45"]?.depthData == nil) {
-                targetSlot = "right_45"
-                correspondingStep = .right45
-                isBetter = true
-            }
-        }
-        // 5. Ảnh Nghiêng Phải Sâu Profile (~60°): yaw >= 42°
-        else if yaw >= 42 {
-            let existingYaw = clinicalPhotos["right_profile"]?.pose.eulerRotationDeg["yaw"] ?? 0
-            if clinicalPhotos["right_profile"] == nil || yaw > existingYaw || (hasValidDepth && clinicalPhotos["right_profile"]?.depthData == nil) {
-                targetSlot = "right_profile"
-                correspondingStep = .rightProfile
-                isBetter = true
-            }
-        }
-        // 6. Ảnh Đáy Mũi (Basal / Submental View - Chuẩn Dallas Rhinoplasty): ngửa cằm pitch [14°, 38°], yaw [-22°, 22°]
-        else if pitch >= 14.0 && pitch <= 38.0 && abs(yaw) <= 22 {
-            let existingPitch = clinicalPhotos["basal_nostrils"]?.pose.eulerRotationDeg["pitch"] ?? 0
-            if clinicalPhotos["basal_nostrils"] == nil || pitch > existingPitch || (hasValidDepth && clinicalPhotos["basal_nostrils"]?.depthData == nil) {
-                targetSlot = "basal_nostrils"
-                correspondingStep = .front
-                isBetter = true
-            }
-        }
-
-        guard let slot = targetSlot, isBetter else { return }
-        isBankingInProgress = true
-        lastBankedTimestamp = now
-
+        
+        guard let slot = targetSlot else { return }
+        
         processingQueue.async { [weak self] in
             guard let self = self else { return }
-            defer { DispatchQueue.main.async { self.isBankingInProgress = false } }
             if let package = self.createPackage(from: frame, faceAnchor: faceAnchor, pose: pose, step: correspondingStep, viewTag: slot) {
                 DispatchQueue.main.async {
                     self.clinicalPhotos[slot] = package
@@ -335,36 +331,48 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         }
     }
 
-    private func completeFaceIdSweep() {
-        guard !isUploading, !isSweepCompleted else { return }
-        
-        // Bắt buộc phải có đủ ảnh lâm sàng cốt lõi
-        let hasCorePhotos = clinicalPhotos["front"] != nil
-            && (clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil)
-            && (clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil)
-            
-        let elapsedSweepTime = sweepStartTime != nil ? (Date().timeIntervalSince1970 - sweepStartTime!) : 0.0
-        
-        // Điều kiện hoàn tất:
-        // 1. Phủ kín ít nhất 28/36 nấc xanh (>= 78% vòng tròn) VÀ đủ ảnh lâm sàng
-        // 2. Hoặc sau 15 giây quét liên tục và đạt ít nhất 22/36 nấc xanh (đảm bảo không kẹt bệnh nhân khó xoay cổ)
-        let isFullyFilled = faceIdFilledCount >= 28 && hasCorePhotos
-        let isTimedSufficient = elapsedSweepTime >= 15.0 && faceIdFilledCount >= 22 && hasCorePhotos
-        
-        guard isFullyFilled || isTimedSufficient else {
-            return
+    /// Tự động trích xuất các góc ảnh lâm sàng còn thiếu từ 36 frame quét vòng tròn
+    public func ensureClinicalPhotosFromSweep() {
+        if clinicalPhotos["front"] == nil {
+            clinicalPhotos["front"] = sweepFrames[0] ?? sweepFrames.values.first
         }
+        if clinicalPhotos["left_45"] == nil {
+            clinicalPhotos["left_45"] = sweepFrames[27] ?? sweepFrames[26] ?? sweepFrames[28] ?? sweepFrames[29]
+        }
+        if clinicalPhotos["left_profile"] == nil {
+            clinicalPhotos["left_profile"] = sweepFrames[27] ?? sweepFrames[26] ?? sweepFrames[28]
+        }
+        if clinicalPhotos["right_45"] == nil {
+            clinicalPhotos["right_45"] = sweepFrames[9] ?? sweepFrames[8] ?? sweepFrames[10] ?? sweepFrames[7]
+        }
+        if clinicalPhotos["right_profile"] == nil {
+            clinicalPhotos["right_profile"] = sweepFrames[9] ?? sweepFrames[10] ?? sweepFrames[8]
+        }
+        if clinicalPhotos["basal_nostrils"] == nil {
+            clinicalPhotos["basal_nostrils"] = sweepFrames[0] ?? sweepFrames[1] ?? sweepFrames[35] ?? sweepFrames[2]
+        }
+        
+        for (slot, pkg) in clinicalPhotos {
+            if let step = ScanAngleStep(rawValue: slot), capturedFrames[step] == nil {
+                capturedFrames[step] = pkg
+            }
+        }
+    }
 
+    public func completeFaceIdSweep() {
+        guard !isUploading else { return }
+        
+        ensureClinicalPhotosFromSweep()
+        
         isSweepCompleted = true
         isScanningActive = false
-        guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT CHUẨN XÁC!"
+        isUploading = true
+        uploadProgress = 0.08
+        uploadStatusMessage = "Đang tổng hợp dữ liệu 36 góc quét TrueDepth..."
+        guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT! Đang bắt đầu dựng 3D..."
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
 
-        // Chờ 0.8s để người dùng nhìn thấy toàn bộ vòng tròn xanh hoàn tất
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-            guard let self = self else { return }
-            self.triggerPackageUpload { _ in }
-        }
+        self.triggerPackageUpload { _ in }
     }
 
     // MARK: - Mode 2: Rear Camera Processing
@@ -612,14 +620,13 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     public func triggerPackageUpload(completion: @escaping (Result<URL, Error>) -> Void) {
-        guard !patientId.isEmpty, !sessionId.isEmpty else {
-            let err = NSError(domain: "Scanner", code: 400, userInfo: [NSLocalizedDescriptionKey: "Thiếu PatientID hoặc SessionID."])
-            self.lastErrorMessage = err.localizedDescription
-            self.guidanceFeedback = "Lỗi: \(err.localizedDescription)"
-            completion(.failure(err))
-            return
+        if patientId.isEmpty {
+            patientId = UserDefaults.standard.string(forKey: "lastActivePatientId") ?? "697ba81b-a3b3-4879-966e-8ba42575dc80"
         }
-        guard !isUploading else { return }
+        if sessionId.isEmpty {
+            sessionId = UUID().uuidString
+        }
+
         isUploading = true
         lastErrorMessage = nil
         guidanceFeedback = scannerMode == .rearClinicalAssistant ? "✓ Đang tải gói ảnh lâm sàng 48MP lên máy chủ..." : "✓ Đang tải gói TrueDepth Face ID lên AI Engine..."

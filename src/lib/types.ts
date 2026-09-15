@@ -52,7 +52,7 @@ export type ScanSessionStatus =
   | "needs_rescan";
 
 export type ScanQualityStatus = "pass" | "warning" | "fail" | "not_available";
-export type ScanCaptureView = "front" | "left_45" | "left_profile" | "right_45" | "right_profile" | "burst";
+export type ScanCaptureView = "front" | "left_45" | "left_profile" | "right_45" | "right_profile" | "basal_nostrils" | "burst";
 export type ScannerKind = "web_camera" | "ios_native" | "future";
 
 export interface ScanFrame {

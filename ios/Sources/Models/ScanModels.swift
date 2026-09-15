@@ -27,32 +27,42 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case leftProfile = "left_profile"
     case right45 = "right_45"
     case rightProfile = "right_profile"
+    case basalNostrils = "basal_nostrils"
     
     public var id: String { rawValue }
     
     public var title: String {
         switch self {
-        case .front: return "1/5: Chính Diện (0°)"
-        case .left45: return "2/5: Nghiêng Trái (~35°)"
-        case .leftProfile: return "3/5: Trắc Diện Trái (~55°)"
-        case .right45: return "4/5: Nghiêng Phải (~35°)"
-        case .rightProfile: return "5/5: Trắc Diện Phải (~55°)"
+        case .front: return "1/6: Chính Diện (0°)"
+        case .left45: return "2/6: Nghiêng Trái (~35°)"
+        case .leftProfile: return "3/6: Trắc Diện Trái (~55°)"
+        case .right45: return "4/6: Nghiêng Phải (~35°)"
+        case .rightProfile: return "5/6: Trắc Diện Phải (~55°)"
+        case .basalNostrils: return "6/6: Ngửa Cằm / Đáy Mũi (~25°)"
         }
     }
     
     public var targetYawDeg: Float {
         switch self {
-        case .front: return 0.0
+        case .front, .basalNostrils: return 0.0
         case .left45: return -35.0
         case .leftProfile: return -55.0
         case .right45: return 35.0
         case .rightProfile: return 55.0
         }
     }
+
+    public var targetPitchDeg: Float {
+        switch self {
+        case .basalNostrils: return 25.0
+        default: return 0.0
+        }
+    }
     
     public var yawToleranceDeg: Float {
         switch self {
         case .front: return 22.0
+        case .basalNostrils: return 25.0
         case .left45, .right45: return 25.0
         case .leftProfile, .rightProfile: return 30.0
         }
@@ -79,6 +89,7 @@ public enum ScanAngleStep: String, CaseIterable, Identifiable {
         case .leftProfile: return "Nghiêng sang TRÁI để lộ sống mũi (~55°)"
         case .right45: return "Nghiêng nhẹ mặt sang PHẢI (35°-45°)"
         case .rightProfile: return "Nghiêng sang PHẢI để lộ sống mũi (~55°)"
+        case .basalNostrils: return "Hơi ngửa nhẹ cằm để quét vòm mũi & lỗ mũi (~25°)"
         }
     }
 }

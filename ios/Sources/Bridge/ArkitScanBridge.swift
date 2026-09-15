@@ -56,7 +56,8 @@ public final class ArkitScanBridge: NSObject, ObservableObject, WKScriptMessageH
             }
             captureSession.patientId = pid
             captureSession.sessionId = sid
-            captureSession.resetScan()
+            UserDefaults.standard.set(pid, forKey: "lastActivePatientId")
+            captureSession.startActiveSweep()
             
             captureSession.onScanCompleted = { [weak self] studioURL in
                 self?.isPresentingScanner = false

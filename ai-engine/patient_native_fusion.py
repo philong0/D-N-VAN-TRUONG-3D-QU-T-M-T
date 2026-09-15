@@ -347,6 +347,7 @@ class PatientNativeReconstructor:
                 "arface_triangles": None,
                 "depth_f32": None,
                 "landmarks_98": None,
+                "roll_deg": None,
             }
 
             # Detect WFLW 98 facial landmarks on the upright portrait frame
@@ -425,6 +426,10 @@ class PatientNativeReconstructor:
             # --- pose: manifest-embedded first, legacy per-file fallback ---
             pdata = manifest_entry.get("pose") if manifest_entry else None
             pose_from_native_geometry = False
+            if pdata and isinstance(pdata.get("eulerRotationDeg"), dict):
+                roll_val = pdata["eulerRotationDeg"].get("roll")
+                if isinstance(roll_val, (int, float)):
+                    frame_entry["roll_deg"] = float(roll_val)
             # The current iOS bridge writes the real face-local -> camera
             # transform alongside each geometry payload. In face-local
             # coordinates this is exactly the world-to-camera extrinsic that
@@ -746,6 +751,27 @@ class PatientNativeReconstructor:
     def _fuse_arface_geometry(self, arface_frames: list[dict]) -> dict:
         """
         Fuses native Apple ARFaceGeometry instances across all tracked views into a high-density, patient-specific face mesh.
+
+        D-visibilityfusion — REPLACES a prior version that fused every view
+        with a flat per-FRAME weight (1.0, or 0.8 for "profile" in the
+        stem name) applied uniformly to EVERY vertex, i.e. a plain
+        arithmetic mean of vertex index i across all frames. That is only
+        valid if every frame measures every vertex with similar accuracy.
+        It does not: ARKit's own neural mesh estimate is measurably worse
+        on the SELF-OCCLUDED side of the face at oblique/profile angles
+        (confirmed on a real patient: registrationErrorMm 27.84 across 41
+        fused frames, most per-view silhouette IoU 0.16-0.4 against the
+        0.80 bar) -- a SYSTEMATIC, angle-dependent bias, not zero-mean
+        noise, so averaging more oblique frames in pulls the fused surface
+        further from the truth rather than converging to it.
+        Fix: weight each frame's contribution to each vertex by how much
+        that frame's camera actually FACED that vertex (visibility/facing
+        weight), the same real-evidence-based cosine-facing formula this
+        codebase already uses for texture bake fusion (see
+        patient_texture_baker.py's `bake_visibility_aware_texture`) --
+        applied here to geometry fusion instead of color fusion. A frame
+        shot from the left barely influences the right cheek's fused
+        position, and vice versa.
         """
         primary_frame = arface_frames[0]
         base_verts = primary_frame["arface_vertices"].copy()  # (1220, 3) in meters
@@ -760,19 +786,63 @@ class PatientNativeReconstructor:
             mesh_hull = trimesh.convex.convex_hull(base_verts)
             triangles = mesh_hull.faces
 
-        # Weighted average across all multi-angle frames for sub-millimeter noise reduction
-        accum_verts = np.zeros_like(base_verts)
-        weight_sum = 0.0
+        # Pass 1: plain mean across all frames -- ONLY used as a reference
+        # shape to derive approximate per-vertex outward normals for the
+        # real visibility-weighted pass below (a normal's general direction
+        # is far more robust to per-frame angle bias than absolute vertex
+        # position is, so bootstrapping normals from this rough mean is
+        # safe even though the mean's own vertex POSITIONS are not trusted
+        # as the final answer).
+        naive_mean = np.mean([f["arface_vertices"] for f in arface_frames], axis=0)
+        try:
+            ref_mesh = trimesh.Trimesh(vertices=naive_mean, faces=triangles, process=False)
+            ref_normals = ref_mesh.vertex_normals.copy()
+        except Exception:
+            ref_normals = None
 
-        for f in arface_frames:
-            v = f["arface_vertices"]
-            w = 1.0
-            if "profile" in f["stem"]:
-                w = 0.8
-            accum_verts += v * w
-            weight_sum += w
+        n_verts = base_verts.shape[0]
+        if ref_normals is None or ref_normals.shape != (n_verts, 3):
+            # No reliable normals available (degenerate topology) -- fall back
+            # to the old flat-weight mean rather than crash.
+            fused_verts = naive_mean
+        else:
+            accum_verts = np.zeros_like(base_verts)
+            weight_sum = np.zeros(n_verts, dtype=np.float64)
 
-        fused_verts = accum_verts / max(weight_sum, 1.0)
+            for f in arface_frames:
+                v = f["arface_vertices"]
+                cam_pose = f.get("camera_pose")
+                if cam_pose is None:
+                    # No known camera position for this frame -- cannot judge
+                    # visibility, so it can only ever contribute at a low flat
+                    # weight (never a full vote, never fully discarded).
+                    w = np.full(n_verts, 0.15, dtype=np.float64)
+                else:
+                    R = cam_pose[:3, :3]
+                    t = cam_pose[:3, 3]
+                    cam_pos_face = -R.T @ t  # camera position expressed in face-local coordinates
+                    ray = cam_pos_face[None, :] - v
+                    ray_len = np.linalg.norm(ray, axis=1, keepdims=True)
+                    ray_dir = ray / np.clip(ray_len, 1e-6, None)
+                    cos_angle = np.sum(ref_normals * ray_dir, axis=1)
+                    # Same exponent convention already used for texture-bake
+                    # facing weight (patient_texture_baker.py) -- rewards
+                    # near-perpendicular views, near-zero past grazing angles.
+                    w = np.clip(cos_angle, 0.0, 1.0) ** 1.8
+                    # A visible vertex still deserves SOME floor weight so a
+                    # single frame with slightly-off normals near a silhouette
+                    # edge doesn't zero out a real measurement outright.
+                    w = np.maximum(w, 0.02)
+                accum_verts += v * w[:, None]
+                weight_sum += w
+
+            # Any vertex with near-zero total weight (never well-observed by
+            # any frame, e.g. deep under the chin) falls back to the naive
+            # mean rather than dividing by ~0.
+            safe_weight = np.clip(weight_sum, 1e-6, None)
+            fused_verts = accum_verts / safe_weight[:, None]
+            poorly_observed = weight_sum < 0.05
+            fused_verts[poorly_observed] = naive_mean[poorly_observed]
 
         # Subdivide surface for ultra-high density medical curvature (1,220 -> 4,874 -> 19,484 vertices)
         sub_mesh = trimesh.Trimesh(vertices=fused_verts, faces=triangles, process=False)
@@ -1307,11 +1377,143 @@ class PatientNativeReconstructor:
             "region_errors_mm": region_errors_mm,
         }
 
+    def _correct_vertices_with_real_depth(self, fused_mesh: dict, depth_frames: list[dict]) -> dict | None:
+        """
+        For each vertex of an already-fused ARFaceGeometry mesh, projects it
+        into every real depth frame's own image plane, samples the real
+        laser depth at that pixel, and (when geometrically consistent)
+        pulls the vertex toward that real measurement. Returns None (never
+        a partial/guessed correction) if no depth frame carries a usable
+        (depth, intrinsics, camera_pose) triple.
+        """
+        valid_depth_frames = [
+            f for f in depth_frames
+            if f.get("depth_f32") is not None and f.get("depth_intrinsics") is not None and f.get("camera_pose") is not None
+        ]
+        if not valid_depth_frames:
+            return None
+
+        vertices = fused_mesh["vertices"].astype(np.float64).copy()
+        faces = fused_mesh["faces"]
+        try:
+            ref_mesh = trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+            normals = ref_mesh.vertex_normals
+        except Exception:
+            normals = None
+
+        n_verts = vertices.shape[0]
+        # The ARFaceGeometry-fused estimate keeps a modest baseline trust so
+        # regions with no real depth coverage (e.g. deep under the chin, or
+        # the far side of a very oblique frame) are left exactly as they
+        # were, never zeroed out or invented from nothing.
+        BASE_TRUST = 1.0
+        # A real depth measurement is a physical laser reading, not a
+        # neural-network shape guess -- weighted far more heavily whenever
+        # one is available and consistent.
+        DEPTH_TRUST = 6.0
+        # Sanity bound only: rejects samples where the depth pixel almost
+        # certainly belongs to a different surface (an occlusion edge,
+        # background, or a different anatomical fold along the same ray),
+        # not a tight noise filter -- the true correction this step exists
+        # to apply can itself be 1-3cm at an oblique ARFaceGeometry error.
+        MAX_CONSISTENCY_GAP_M = 0.04
+
+        accum = vertices * BASE_TRUST
+        weight_sum = np.full(n_verts, BASE_TRUST, dtype=np.float64)
+        n_frames_used = 0
+
+        for f in valid_depth_frames:
+            depth = f["depth_f32"]
+            K = f["depth_intrinsics"]
+            cam_pose = f["camera_pose"]
+            dh, dw = depth.shape[:2]
+            R = cam_pose[:3, :3]
+            t = cam_pose[:3, 3]
+
+            Xc = (R @ vertices.T).T + t[None, :]
+            z_est = Xc[:, 2]
+            fx, fy = K[0, 0], K[1, 1]
+            cx, cy = K[0, 2], K[1, 2]
+            px = fx * Xc[:, 0] / np.clip(z_est, 1e-6, None) + cx
+            py = fy * Xc[:, 1] / np.clip(z_est, 1e-6, None) + cy
+            px_i = np.round(px).astype(np.int64)
+            py_i = np.round(py).astype(np.int64)
+
+            in_bounds = (z_est > 0.05) & (px_i >= 0) & (px_i < dw) & (py_i >= 0) & (py_i < dh)
+            idx = np.where(in_bounds)[0]
+            if len(idx) == 0:
+                continue
+
+            sampled_depth = depth[py_i[idx], px_i[idx]].astype(np.float64)
+            depth_ok = np.isfinite(sampled_depth) & (sampled_depth > 0.05) & (sampled_depth < 0.85)
+            consistent = depth_ok & (np.abs(sampled_depth - z_est[idx]) < MAX_CONSISTENCY_GAP_M)
+            idx2 = idx[consistent]
+            if len(idx2) == 0:
+                continue
+
+            real_z = sampled_depth[consistent]
+            real_x = (px[idx2] - cx) * real_z / fx
+            real_y = (py[idx2] - cy) * real_z / fy
+            points_cam = np.column_stack([real_x, real_y, real_z])
+            homo = np.column_stack([points_cam, np.ones(len(points_cam))])
+            try:
+                camera_to_world = np.linalg.inv(cam_pose)
+            except np.linalg.LinAlgError:
+                continue
+            points_face = (camera_to_world @ homo.T).T[:, :3]
+
+            if normals is not None:
+                cam_pos_face = -R.T @ t
+                ray = cam_pos_face[None, :] - vertices[idx2]
+                ray_dir = ray / np.clip(np.linalg.norm(ray, axis=1, keepdims=True), 1e-6, None)
+                facing = np.clip(np.sum(normals[idx2] * ray_dir, axis=1), 0.0, 1.0) ** 1.8
+            else:
+                facing = np.ones(len(idx2), dtype=np.float64)
+
+            w = DEPTH_TRUST * np.maximum(facing, 0.05)
+            accum[idx2] += points_face * w[:, None]
+            weight_sum[idx2] += w
+            n_frames_used += 1
+
+        if n_frames_used == 0:
+            print("_correct_vertices_with_real_depth: no depth frame produced a geometrically consistent correction — keeping ARFaceGeometry estimate.", flush=True)
+            return None
+
+        refined_vertices = accum / weight_sum[:, None]
+        print(f"_correct_vertices_with_real_depth: corrected surface using real depth from {n_frames_used}/{len(valid_depth_frames)} usable frames.", flush=True)
+
+        return {
+            "vertices": refined_vertices,
+            "faces": faces,
+            "measured_vertex_count": fused_mesh.get("measured_vertex_count", len(refined_vertices)),
+            "region_errors_mm": fused_mesh.get("region_errors_mm"),
+        }
+
     def _refine_surface_with_truedepth(self, fused_mesh: dict | None, depth_frames: list[dict]) -> dict:
+        """
+        D-realdepthrefine — REPLACES a prior version that returned
+        `fused_mesh` completely UNCHANGED whenever ARFaceGeometry fusion
+        had already produced a mesh, silently discarding every real
+        TrueDepth laser measurement in the package despite this function's
+        own name and its caller passing `depth_frames` specifically for
+        this purpose. Confirmed on a real patient (697ba81b): 5 real
+        `*_depth.raw` files were present and valid, none ever consulted --
+        the pipeline relied entirely on ARKit's own NEURAL-NETWORK shape
+        ESTIMATE (ARFaceGeometry), which is measurably less accurate on the
+        self-occluded side at oblique angles (see `_fuse_arface_geometry`'s
+        own docstring), while the real depth measurement -- sub-millimeter
+        per Apple's TrueDepth spec -- sat unused. Real depth, where it
+        exists and is geometrically consistent with the projected vertex
+        (guards against sampling a different surface/occlusion edge), now
+        pulls each vertex toward the real measurement with much higher
+        trust than the ARFaceGeometry-only estimate; vertices with no
+        usable real-depth observation keep their prior (ARFaceGeometry
+        fusion / raw-depth-only) estimate unchanged.
+        """
         if fused_mesh is not None:
-            # Native Apple ARFaceGeometry fused across views is the canonical, watertight,
-            # patient-specific face geometry with valid topological landmarks and manifold connectivity.
-            # Never overwrite a unified ARFace geometry with disjoint raw depth grids.
+            refined = self._correct_vertices_with_real_depth(fused_mesh, depth_frames)
+            if refined is not None:
+                return refined
             return fused_mesh
 
         VOXEL_SIZE_M = 0.0003  # 0.3mm

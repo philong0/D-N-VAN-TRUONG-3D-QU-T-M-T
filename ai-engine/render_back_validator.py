@@ -23,12 +23,31 @@ def render_mesh_from_camera(
     """
     Software rasterizer to project 3D mesh points onto the camera image plane.
     Returns a 2D binary projection mask of the rendered mesh.
+
+    D-regionmatch — the mesh handed in here (ARFaceGeometry-fused) extends
+    up into the forehead/hairline; the WFLW-98 landmark hull this gets
+    compared against (`observed_face_mask_from_landmarks`) stops at the
+    eyebrows by definition (WFLW has no forehead points at all). Comparing
+    a wider rendered region against a narrower observed one drags IoU down
+    for every view, including a genuinely accurate frontal reconstruction —
+    confirmed on a real patient (697ba81b): even the "front" view (no
+    self-occlusion) measured only 0.70 IoU. Heuristic fix: drop the top
+    slice of the mesh (forehead/scalp, above the estimated eyebrow line)
+    before projecting, so both masks cover roughly the same real anatomical
+    region. The 22% fraction is a starting estimate (typical eyebrow height
+    as a fraction of hairline-to-chin span), not a swept/measured constant —
+    revisit if per-view IoU still reads low after this change.
     """
     h, w = image_shape
     R = camera_pose_4x4[:3, :3]
     t = camera_pose_4x4[:3, 3]
 
     verts = mesh.vertices
+    y_min, y_max = verts[:, 1].min(), verts[:, 1].max()
+    eyebrow_cutoff = y_max - 0.22 * (y_max - y_min)
+    verts = verts[verts[:, 1] <= eyebrow_cutoff]
+    if len(verts) < 10:
+        verts = mesh.vertices  # degenerate crop -- fall back to the full mesh rather than an empty mask
     Xc = (R @ verts.T).T + t[None, :]
     z = Xc[:, 2]
 
@@ -128,6 +147,30 @@ def validate_render_back_fidelity(
                 "reprojectionErrorMm": None,
                 "status": "not_available",
                 "reason": "No independently detected facial landmarks for this frame.",
+            }
+            continue
+        # D-rolldetector — confirmed on a real patient (697ba81b, 41 frames):
+        # frames with real measured roll > ~8-10 degrees showed silhouette
+        # IoU crater to 0.16-0.30 in a sharp, contiguous block (sweep_13
+        # through sweep_24, roll 6.3-16.1 degrees), while neighboring frames
+        # at similar yaw/pitch but LOW roll (sweep_00-12, roll 1.2-5.4
+        # degrees) measured 0.4-0.8 IoU -- roll, not yaw/pitch/occlusion, is
+        # the variable that actually predicts the failure. `detect_face_
+        # landmarks` (PIPNet-style) is a known-fragile-to-in-plane-rotation
+        # detector; its own 2D landmark output is not a trustworthy ground
+        # truth for a significantly rolled frame, so this is a validator
+        # measurement-reliability gap, not (necessarily) a reconstruction
+        # error at that frame. Excluded from scoring (not counted as
+        # "warning"/"pass") rather than silently trusted or penalized.
+        roll_deg = f.get("roll_deg")
+        if roll_deg is not None and abs(roll_deg) > 8.0:
+            view_errors[stem] = {
+                "silhouetteCoverage": round(render_coverage, 4) if np.isfinite(render_coverage) else 0.0,
+                "silhouetteIoU": None,
+                "contourErrorPx": None,
+                "reprojectionErrorMm": None,
+                "status": "not_available",
+                "reason": f"Real measured roll {roll_deg:.1f}° exceeds the landmark detector's reliable range (±8°) -- 2D reference not trustworthy for this frame.",
             }
             continue
         silhouette_iou, contour_error_px = silhouette_metrics(rendered_mask, observed_mask)

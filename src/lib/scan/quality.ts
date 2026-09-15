@@ -9,6 +9,7 @@ export const VIEW_LABELS: Record<ScanCaptureView, string> = {
   left_profile: "Góc nghiêng trái (90°)",
   right_45: "Nghiêng phải (45°)",
   right_profile: "Góc nghiêng phải (90°)",
+  basal_nostrils: "Ngửa cằm / Đáy mũi (25°)",
   burst: "Quét liên tục nhiều góc",
 };
 
