@@ -1,19 +1,29 @@
 {
   "patientId": "634cf7bb-3394-4203-983d-229d36b024df",
-  "sessionId": "photo_session",
-  "modelVersion": "Patient-Specific Multi-Frame Reconstruction (Zero-Template)",
-  "generatedAt": "2026-09-01T08:52:16Z",
-  "processingTimeMs": 165339,
-  "vertexCount": 7088,
-  "triangleCount": 9920,
-  "glbFile": "baseline.glb",
-  "textureFile": "face_HD.png",
+  "modelVersion": "GNM Full-Head Identity-Fit + Face Shell (E2 topology, BUG A-D + G1-G4 fixes)",
+  "generatedAt": "2026-09-14T02:11:36Z",
+  "processingTimeMs": 29256,
+  "vertexCount": 9310,
+  "triangleCount": 18162,
   "viewsUsed": [
-    "front",
-    "left_45",
-    "left_profile",
-    "right_45",
-    "right_profile"
+    "angle1",
+    "angle4",
+    "angle3",
+    "angle2",
+    "angle5"
   ],
+  "warnings": [],
+  "coverageStats": {
+    "shellTexelCount": 2901879,
+    "coveredTexelCount": 1859656,
+    "viewsUsed": [
+      "angle1",
+      "angle4",
+      "angle3",
+      "angle2",
+      "angle5"
+    ],
+    "method": "Direct Single-Layer Projective Blending + Multi-Scale Skin Diffusion"
+  },
   "reconstructionStatus": "completed"
 }

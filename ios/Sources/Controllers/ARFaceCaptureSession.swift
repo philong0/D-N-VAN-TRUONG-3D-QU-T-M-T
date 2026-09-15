@@ -38,7 +38,9 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     @Published public var faceIdTicks: [Bool] = Array(repeating: false, count: 36)
     @Published public var faceIdFilledCount: Int = 0
     @Published public var isRearCameraActive: Bool = false
+    @Published public var isFaceInFramingRect: Bool = false
     public var latestRearFrame: ARFrame?
+    public var sweepStartTime: TimeInterval?
 
     public var patientId = ""
     public var sessionId = ""
@@ -153,12 +155,14 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
 
-        // 1. Polar coordinate binning for 36 ticks (10° each)
-        let yaw = pose.yawDeg
-        let pitch = pose.pitchDeg
+        // 1. Kiểm tra vị trí khuôn mặt trong khung căn chỉnh ban đầu
+        let isCentered = abs(yaw) <= 18 && abs(pitch) <= 20 && pose.distanceMeters >= 0.30 && pose.distanceMeters <= 0.60
+        isFaceInFramingRect = isCentered
+
+        // 2. Polar coordinate binning for 36 ticks (10° each)
         let coneRadius = sqrt(yaw * yaw + pitch * pitch)
 
-        if coneRadius >= 3.0 {
+        if coneRadius >= 4.0 {
             let rad = atan2(pitch, yaw)
             var deg = rad * 180.0 / .pi
             if deg < 0 { deg += 360.0 }
@@ -168,54 +172,62 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
                 UISelectionFeedbackGenerator().selectionChanged()
             }
-        } else {
-            // Near center
+        } else if isCentered {
+            // Chỉ tick frame giữa khi thực sự đã căn giữa
             if !faceIdTicks[0] {
                 faceIdTicks[0] = true
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
             }
         }
 
-        // 2. Continuous on-the-fly background banking without blocking main thread
+        // 3. Khởi tạo sweepStartTime khi người dùng bắt đầu có tương tác xoay
+        if sweepStartTime == nil && (faceIdFilledCount >= 3 || coneRadius >= 8.0) {
+            sweepStartTime = frame.timestamp
+        }
+
+        // 4. Background banking theo góc quay
         checkAndBankAngles(frame: frame, faceAnchor: faceAnchor, pose: pose)
 
-        // 3. Ultra-sensitive dynamic clinical guidance
-        if faceIdFilledCount >= 24 {
+        // 5. Dynamic Guidance Text
+        let hasLeft = capturedFrames[.left45] != nil || capturedFrames[.leftProfile] != nil
+        let hasRight = capturedFrames[.right45] != nil || capturedFrames[.rightProfile] != nil
+        let elapsed = sweepStartTime != nil ? (frame.timestamp - (sweepStartTime ?? frame.timestamp)) : 0
+
+        // Điều kiện hoàn thành quét chuẩn: Phải phủ kín ít nhất 26 tia VÀ đã quét cả 2 bên trái/phải VÀ thời gian xoay >= 3.0s
+        if faceIdFilledCount >= 26 && hasLeft && hasRight && elapsed >= 3.0 {
             guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT FACE ID!"
             completeFaceIdSweep()
         } else if pose.distanceMeters < 0.32 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
-        } else if capturedFrames[.leftProfile] == nil && yaw > -20 {
-            guidanceFeedback = "Xoay nhẹ đầu sang TRÁI (~60°) để lấy sống mũi"
-        } else if capturedFrames[.rightProfile] == nil && yaw < 20 {
-            guidanceFeedback = "Xoay nhẹ đầu sang PHẢI (~60°) để lấy sống mũi"
-        } else if pitch < 8 && capturedFrames[.front] != nil {
+        } else if !hasLeft && yaw > -15 {
+            guidanceFeedback = "Di chuyển đầu sang TRÁI để lấy sống mũi"
+        } else if !hasRight && yaw < 15 {
+            guidanceFeedback = "Di chuyển đầu sang PHẢI để lấy sống mũi"
+        } else if pitch < 6 && capturedFrames[.front] != nil {
             guidanceFeedback = "Hơi ngửa nhẹ cằm để quét vòm mũi"
         } else {
-            guidanceFeedback = "Xoay đều đầu theo vòng tròn để phủ kín 36 tia"
+            guidanceFeedback = "Di chuyển chậm đầu của bạn để hoàn thành vòng tròn."
         }
     }
 
     private func checkAndBankAngles(frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
         guard !isBankingInProgress else { return }
         let now = frame.timestamp
-        guard now - lastBankedTimestamp >= 0.12 else { return }
+        guard now - lastBankedTimestamp >= 0.15 else { return }
 
         let yaw = pose.yawDeg
         let pitch = pose.pitchDeg
 
         var targetToBank: ScanAngleStep?
-        if abs(yaw) <= 15 && abs(pitch) <= 18 && capturedFrames[.front] == nil {
+        if abs(yaw) <= 12 && abs(pitch) <= 15 && capturedFrames[.front] == nil {
             targetToBank = .front
-        } else if yaw <= -18 && yaw >= -48 && capturedFrames[.left45] == nil {
+        } else if yaw <= -18 && yaw >= -45 && capturedFrames[.left45] == nil {
             targetToBank = .left45
-        } else if yaw <= -42 && capturedFrames[.leftProfile] == nil {
-            // Reaching ~55° to 60° left profile
+        } else if yaw <= -40 && capturedFrames[.leftProfile] == nil {
             targetToBank = .leftProfile
-        } else if yaw >= 18 && yaw <= 48 && capturedFrames[.right45] == nil {
+        } else if yaw >= 18 && yaw <= 45 && capturedFrames[.right45] == nil {
             targetToBank = .right45
-        } else if yaw >= 42 && capturedFrames[.rightProfile] == nil {
-            // Reaching ~55° to 60° right profile
+        } else if yaw >= 40 && capturedFrames[.rightProfile] == nil {
             targetToBank = .rightProfile
         }
 
@@ -233,7 +245,6 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             if let package = self.createPackage(from: frame, faceAnchor: faceAnchor, pose: pose, step: step) {
                 DispatchQueue.main.async {
                     self.capturedFrames[step] = package
-                    // Advance step indicator smoothly
                     let all = ScanAngleStep.allCases
                     if let idx = all.firstIndex(of: step), idx + 1 < all.count {
                         self.currentStep = all[idx + 1]
@@ -245,7 +256,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     private func completeFaceIdSweep() {
         guard !isUploading else { return }
-        guard capturedFrames.count >= 2 || faceIdFilledCount >= 22 else { return }
+        guard capturedFrames.count >= 2 || faceIdFilledCount >= 24 else { return }
 
         // Backfill any missing angles from closest captured frames
         let availableSteps = Array(capturedFrames.keys)
@@ -552,6 +563,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         lastErrorMessage = nil
         faceIdTicks = Array(repeating: false, count: 36)
         faceIdFilledCount = 0
+        sweepStartTime = nil
+        isFaceInFramingRect = false
         clearLivePoseState()
         guidanceFeedback = scannerMode == .faceIdSelfScan ? "Đưa khuôn mặt vào trong vòng tròn" : "Điều Dưỡng Quét: Đã sẵn sàng."
     }

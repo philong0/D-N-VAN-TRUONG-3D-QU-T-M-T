@@ -1,6 +1,6 @@
 {
   "overall": "pass",
-  "registrationErrorMm": 24.62,
+  "registrationErrorMm": 7.95,
   "depthCoverage": "native_depth_map",
   "textureCoverage": "photographic texture baked; coverage is not independently measured",
   "anatomicalRegionErrors": {

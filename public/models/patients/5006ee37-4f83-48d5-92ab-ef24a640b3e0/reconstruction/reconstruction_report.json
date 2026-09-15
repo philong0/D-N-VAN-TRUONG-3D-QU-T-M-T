@@ -3,49 +3,53 @@
   "frameCountUsed": 5,
   "depthFrameCount": 1,
   "trackedFrameCount": 5,
-  "registrationErrorMm": 24.62,
-  "worstAnatomicalRegionErrorMm": 0.0,
+  "registrationErrorMm": 7.95,
+  "worstAnatomicalRegionErrorMm": null,
   "anatomicalGateThresholdMm": 35.0,
   "depthCoverage": "native_depth_map",
   "surfaceCoverage": 4746,
   "textureCoverage": "photographic texture baked; coverage is not independently measured",
   "renderBackErrorPerView": {
     "front": {
-      "silhouetteCoverage": 0.8363,
-      "silhouetteIoU": 0.0802,
-      "contourErrorPx": 427.56,
-      "reprojectionErrorMm": 24.17,
+      "silhouetteCoverage": 0.0835,
+      "silhouetteIoU": 0.7673,
+      "contourErrorPx": 21.86,
+      "reprojectionErrorMm": 8.52,
       "status": "warning"
     },
     "left_45": {
-      "silhouetteCoverage": 0.8361,
-      "silhouetteIoU": 0.0767,
-      "contourErrorPx": 432.41,
-      "reprojectionErrorMm": 24.44,
+      "silhouetteCoverage": 0.074,
+      "silhouetteIoU": 0.7868,
+      "contourErrorPx": 19.16,
+      "reprojectionErrorMm": 7.9,
       "status": "warning"
     },
     "left_profile": {
-      "silhouetteCoverage": 0.8362,
-      "silhouetteIoU": 0.069,
-      "contourErrorPx": 445.67,
-      "reprojectionErrorMm": 25.19,
+      "silhouetteCoverage": 0.0656,
+      "silhouetteIoU": 0.775,
+      "contourErrorPx": 18.95,
+      "reprojectionErrorMm": 7.95,
       "status": "warning"
     },
     "right_45": {
-      "silhouetteCoverage": 0.8362,
-      "silhouetteIoU": 0.066,
-      "contourErrorPx": 435.65,
-      "reprojectionErrorMm": 24.62,
+      "silhouetteCoverage": 0.0649,
+      "silhouetteIoU": 0.7718,
+      "contourErrorPx": 19.35,
+      "reprojectionErrorMm": 8.43,
       "status": "warning"
     },
     "right_profile": {
-      "silhouetteCoverage": 0.8354,
-      "silhouetteIoU": 0.0531,
-      "contourErrorPx": 452.74,
-      "reprojectionErrorMm": 25.59,
+      "silhouetteCoverage": 0.0534,
+      "silhouetteIoU": 0.7735,
+      "contourErrorPx": 16.67,
+      "reprojectionErrorMm": 7.69,
       "status": "warning"
     }
   },
+  "measuredViewCount": 5,
+  "requiredMeasuredViewCount": 5,
+  "maxViewReprojectionErrorMm": 5.0,
+  "minViewSilhouetteIoU": 0.8,
   "anatomicalRegionErrors": {
     "face_silhouette": {
       "errorMm": null,
@@ -88,5 +92,5 @@
       "status": "not_available"
     }
   },
-  "evaluatedAt": "2026-09-07T09:27:27Z"
+  "evaluatedAt": "2026-09-10T04:51:00Z"
 }

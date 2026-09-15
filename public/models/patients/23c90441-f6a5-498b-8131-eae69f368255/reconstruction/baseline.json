@@ -1,21 +1,31 @@
 {
   "patientId": "23c90441-f6a5-498b-8131-eae69f368255",
-  "sessionId": "7e5264f7-4d70-4300-b388-2704fcfc5381",
-  "modelVersion": "Patient-Specific Native Multi-Frame Fusion (Zero-Template)",
-  "generatedAt": "2026-09-07T09:08:40Z",
-  "processingTimeMs": 15406,
-  "vertexCount": 6688,
-  "triangleCount": 9216,
-  "glbFile": "baseline.glb",
-  "textureFile": "face_HD.png",
+  "modelVersion": "GNM Full-Head Identity-Fit + Face Shell (E2 topology, BUG A-D + G1-G4 fixes)",
+  "generatedAt": "2026-09-14T02:03:01Z",
+  "processingTimeMs": 33733,
+  "vertexCount": 9310,
+  "triangleCount": 18162,
   "viewsUsed": [
-    "front",
-    "left_45",
-    "left_profile",
-    "right_45",
-    "right_profile"
+    "angle1",
+    "angle2",
+    "angle4",
+    "angle5"
   ],
-  "hasNativeARFace": true,
-  "hasNativeDepth": false,
+  "warnings": [
+    "angle3: no face detected (PIPNet) - dropped",
+    "fit sanity check: maxVertexDisp=49.1mm maxCoeff=7.24 \u2014 unusually large, verify before trusting",
+    "3ddfa-enrichment-skipped: maxCoeff too high (6.25)"
+  ],
+  "coverageStats": {
+    "shellTexelCount": 2901879,
+    "coveredTexelCount": 757708,
+    "viewsUsed": [
+      "angle1",
+      "angle2",
+      "angle4",
+      "angle5"
+    ],
+    "method": "Direct Single-Layer Projective Blending + Multi-Scale Skin Diffusion"
+  },
   "reconstructionStatus": "completed"
 }

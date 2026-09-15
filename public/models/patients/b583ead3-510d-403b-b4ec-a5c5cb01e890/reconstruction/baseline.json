@@ -1,21 +1,30 @@
 {
   "patientId": "b583ead3-510d-403b-b4ec-a5c5cb01e890",
-  "sessionId": "54a8f3e1-d35c-42b2-8618-8a781a80f19e",
-  "modelVersion": "Patient-Specific Native Multi-Frame Fusion (Zero-Template)",
-  "generatedAt": "2026-09-07T08:47:24Z",
-  "processingTimeMs": 16208,
-  "vertexCount": 6429,
-  "triangleCount": 11392,
-  "glbFile": "baseline.glb",
-  "textureFile": "face_HD.png",
+  "modelVersion": "GNM Full-Head Identity-Fit + Face Shell (E2 topology, BUG A-D + G1-G4 fixes)",
+  "generatedAt": "2026-09-14T02:24:03Z",
+  "processingTimeMs": 31888,
+  "vertexCount": 9310,
+  "triangleCount": 18162,
   "viewsUsed": [
-    "front",
-    "left_45",
-    "left_profile",
-    "right_45",
-    "right_profile"
+    "angle1",
+    "angle2",
+    "angle4"
   ],
-  "hasNativeARFace": true,
-  "hasNativeDepth": true,
+  "warnings": [
+    "angle3: no face detected (PIPNet) - dropped",
+    "angle5: no face detected (PIPNet) - dropped",
+    "fit sanity check: maxVertexDisp=36.4mm maxCoeff=7.67 \u2014 unusually large, verify before trusting",
+    "3ddfa-enrichment-skipped: maxCoeff too high (6.95)"
+  ],
+  "coverageStats": {
+    "shellTexelCount": 2901879,
+    "coveredTexelCount": 850575,
+    "viewsUsed": [
+      "angle1",
+      "angle2",
+      "angle4"
+    ],
+    "method": "Direct Single-Layer Projective Blending + Multi-Scale Skin Diffusion"
+  },
   "reconstructionStatus": "completed"
 }

@@ -58,26 +58,122 @@ struct CornerBracket: View {
     }
 }
 
-// MARK: - Face ID 36-Tick Radial Ring (Matches Apple Face ID Image 3, 4, 5)
+//// MARK: - Apple Face ID Smile Glyph (Exact Match with Image 1)
+struct FaceIDSmileGlyph: View {
+    var body: some View {
+        ZStack {
+            // Face outline circle
+            Circle()
+                .stroke(Color(white: 0.65), lineWidth: 7)
+                .frame(width: 140, height: 140)
+            
+            // Left eye
+            Capsule()
+                .fill(Color(white: 0.65))
+                .frame(width: 8, height: 22)
+                .offset(x: -26, y: -12)
+            
+            // Right eye
+            Capsule()
+                .fill(Color(white: 0.65))
+                .frame(width: 8, height: 22)
+                .offset(x: 26, y: -12)
+            
+            // Nose (L shape)
+            Path { path in
+                path.move(to: CGPoint(x: 0, y: -14))
+                path.addLine(to: CGPoint(x: 0, y: 12))
+                path.addLine(to: CGPoint(x: 9, y: 12))
+            }
+            .stroke(Color(white: 0.65), style: StrokeStyle(lineWidth: 6, lineCap: .round, lineJoin: .round))
+            .offset(x: -3, y: 0)
+            
+            // Smile curve
+            Path { path in
+                path.addArc(
+                    center: CGPoint(x: 0, y: 12),
+                    radius: 28,
+                    startAngle: .degrees(25),
+                    endAngle: .degrees(155),
+                    clockwise: false
+                )
+            }
+            .stroke(Color(white: 0.65), style: StrokeStyle(lineWidth: 6, lineCap: .round))
+        }
+        .frame(width: 150, height: 150)
+    }
+}
+
+// MARK: - Face ID 36-Tick Radial Ring (Matches Apple Face ID Image 1, 3, 4, 5)
 struct FaceIDRadialRing: View {
     let ticks: [Bool]
     let totalTicks: Int = 36
     let radius: CGFloat = 146
     let tickLength: CGFloat = 17
+    var isIntroMode: Bool = false
     
     var body: some View {
         ZStack {
             ForEach(0..<totalTicks, id: \.self) { index in
-                let isFilled = index < ticks.count ? ticks[index] : false
+                let isFilled = (!isIntroMode && index < ticks.count) ? ticks[index] : false
                 let angle = Double(index) * (360.0 / Double(totalTicks))
                 
                 Capsule()
-                    .fill(isFilled ? Color(red: 0.18, green: 0.85, blue: 0.35) : Color(white: 0.35).opacity(0.5))
-                    .frame(width: isFilled ? 3.5 : 2.5, height: isFilled ? tickLength + 4 : tickLength)
-                    .shadow(color: isFilled ? Color(red: 0.18, green: 0.85, blue: 0.35).opacity(0.85) : Color.clear, radius: isFilled ? 5 : 0)
+                    .fill(isIntroMode ? Color(white: 0.72) : (isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color(white: 0.38).opacity(0.45)))
+                    .frame(width: isFilled ? 3.5 : (isIntroMode ? 3.0 : 2.5), height: isFilled ? tickLength + 4 : tickLength)
+                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.85) : Color.clear, radius: isFilled ? 5 : 0)
                     .offset(y: -radius)
                     .rotationEffect(.degrees(angle))
                     .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isFilled)
+            }
+        }
+    }
+}
+
+// MARK: - Apple Dynamic Ripple Glow Edge (Viền ánh sáng rung/gợn sóng quét theo góc quay đầu - Ảnh Người Dùng Gửi)
+struct FaceIDRippleGlowEdge: View {
+    let currentYaw: Float
+    let isTracking: Bool
+    @State private var ripplePhase: CGFloat = 0
+    
+    var body: some View {
+        ZStack {
+            // Vòng cung ánh sáng gợn sóng (Ripple Sonar Arc)
+            ForEach(0..<5) { layer in
+                let radiusOffset = CGFloat(layer) * 7.0
+                let opacityVal = 0.85 - Double(layer) * 0.16
+                
+                Circle()
+                    .stroke(
+                        AngularGradient(
+                            gradient: Gradient(colors: [
+                                Color.clear,
+                                Color(red: 0.2, green: 0.95, blue: 0.85).opacity(opacityVal),
+                                Color(red: 0.1, green: 0.85, blue: 0.6).opacity(opacityVal * 0.8),
+                                Color.clear
+                            ]),
+                            center: .center,
+                            startAngle: .degrees(Double(currentYaw * 2.2) - 80),
+                            endAngle: .degrees(Double(currentYaw * 2.2) + 80)
+                        ),
+                        lineWidth: 1.8
+                    )
+                    .frame(width: 258 - radiusOffset, height: 258 - radiusOffset)
+                    .scaleEffect(1.0 + (ripplePhase * 0.02 * CGFloat(layer)))
+            }
+            
+            // Hướng mũi tên mờ chỉ góc quay (Gợi ý quay đầu theo nhịp)
+            if abs(currentYaw) > 12 {
+                Image(systemName: currentYaw < 0 ? "arrow.left" : "arrow.right")
+                    .font(.system(size: 38, weight: .bold))
+                    .foregroundColor(Color.white.opacity(0.22))
+                    .offset(x: currentYaw < 0 ? -45 : 45)
+                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: currentYaw)
+            }
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                ripplePhase = 1.0
             }
         }
     }
@@ -104,10 +200,11 @@ public struct ARFaceScannerView: View {
     @ObservedObject var captureSession: ARFaceCaptureSession
     @Binding var isCompleted: Bool
     
-    // Apple Face ID Phase Transition:
-    // false = Giai đoạn 1: Khung bo góc chữ nhật 4 góc trắng (Ảnh 2)
-    // true  = Giai đoạn 2: Hút mặt vào vòng tròn 36 nan quạt xoay 60° (Ảnh 3, 4, 5)
-    @State private var hasFaceLocked = false
+    // Giai đoạn của Face ID Flow chuẩn Apple:
+    // 0 = Màn hình Giới thiệu ban đầu (Ảnh 1 - Nền trắng, vòng xám, icon cười, nút Bắt đầu xanh)
+    // 1 = Màn hình Định vị khuôn mặt (Ảnh 2 - Khung chữ nhật bo góc, 4 góc bracket trắng)
+    // 2 = Màn hình Quét xoay đầu (Ảnh 3, 4, 5 - Vòng tròn nan quạt xanh lá neon + Viền ánh sáng rung)
+    @State private var enrollmentPhase: Int = 0
     
     public init(captureSession: ARFaceCaptureSession, isCompleted: Binding<Bool>) {
         self.captureSession = captureSession
@@ -116,194 +213,225 @@ public struct ARFaceScannerView: View {
     
     public var body: some View {
         ZStack {
-            // Apple Pure Dark Canvas
-            Color.black.edgesIgnoringSafeArea(.all)
+            // Nền trắng tinh khôi chuẩn Apple iOS Settings
+            Color.white.edgesIgnoringSafeArea(.all)
             
             if captureSession.scannerMode == .faceIdSelfScan {
                 // ====================================================
                 // MODE 1: CHUẨN 100% APPLE FACE ID ENROLLMENT FLOW
                 // ====================================================
-                VStack(spacing: 0) {
-                    // Top Bar: Back & Mode Toggle
-                    HStack {
-                        Button {
-                            captureSession.onScanCancelled?()
-                            isCompleted = true
-                        } label: {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 18, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(10)
-                                .background(Color.white.opacity(0.12), in: Circle())
-                        }
-                        
-                        Spacer()
-                        
-                        // Mode Switcher (Tự Quét vs Điều Dưỡng)
-                        HStack(spacing: 4) {
+                if enrollmentPhase == 0 {
+                    // ----------------------------------------------------
+                    // BƯỚC 1: MÀN HÌNH GIỚI THIỆU (GIỐNG 100% ẢNH 1 BẠN GỬI)
+                    // ----------------------------------------------------
+                    VStack(spacing: 0) {
+                        // Top navigation
+                        HStack {
                             Button {
-                                captureSession.setScannerMode(.faceIdSelfScan)
+                                captureSession.onScanCancelled?()
+                                isCompleted = true
                             } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "faceid")
-                                    Text("Tự Quét (Face ID)")
-                                        .font(.system(size: 11, weight: .bold))
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Color(red: 0.18, green: 0.85, blue: 0.35))
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 20, weight: .semibold))
+                                    .foregroundColor(.black)
+                                    .padding(10)
+                                    .background(Color(white: 0.94), in: Circle())
+                            }
+                            Spacer()
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 20)
+                        
+                        Spacer(minLength: 20)
+                        
+                        // Center Face ID Graphic with Smile
+                        ZStack {
+                            FaceIDRadialRing(ticks: [], isIntroMode: true)
+                            FaceIDSmileGlyph()
+                        }
+                        .frame(width: 320, height: 320)
+                        
+                        Spacer(minLength: 30)
+                        
+                        // Text: Tiêu đề và hướng dẫn chuẩn Apple Settings
+                        VStack(spacing: 12) {
+                            Text("Cách thiết lập Face ID")
+                                .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.black)
-                                .cornerRadius(14)
-                            }
                             
+                            Text("Đầu tiên, định vị khuôn mặt của bạn trong khung hình camera. Sau đó, di chuyển đầu của bạn theo hình tròn để hiển thị tất cả các góc cạnh trên khuôn mặt của bạn.")
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundColor(Color(white: 0.35))
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(4)
+                                .padding(.horizontal, 32)
+                        }
+                        
+                        Spacer(minLength: 40)
+                        
+                        // Nút lớn bo tròn màu xanh dương Apple: [Bắt đầu]
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.35)) {
+                                enrollmentPhase = 1
+                            }
+                            captureSession.startSession()
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        } label: {
+                            Text("Bắt đầu")
+                                .font(.system(size: 17, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 16)
+                                .background(Color(red: 0.0, green: 0.48, blue: 1.0))
+                                .cornerRadius(28)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 36)
+                    }
+                } else {
+                    // ----------------------------------------------------
+                    // BƯỚC 2 & 3: KHUNG QUÉT CAMERA (GIỐNG 100% ẢNH 2, 3, 4, 5)
+                    // ----------------------------------------------------
+                    VStack(spacing: 0) {
+                        // Top Bar: Back button
+                        HStack {
                             Button {
-                                captureSession.setScannerMode(.rearClinicalAssistant)
+                                captureSession.resetScan()
+                                withAnimation { enrollmentPhase = 0 }
                             } label: {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "camera.viewfinder")
-                                    Text("Điều Dưỡng")
-                                        .font(.system(size: 11, weight: .bold))
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Color.white.opacity(0.08))
-                                .foregroundColor(.white.opacity(0.7))
-                                .cornerRadius(14)
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 18, weight: .semibold))
+                                    .foregroundColor(.black)
+                                    .padding(10)
+                                    .background(Color(white: 0.94), in: Circle())
                             }
+                            Spacer()
                         }
-                        .padding(3)
-                        .background(Color.white.opacity(0.12))
-                        .cornerRadius(16)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 16)
                         
-                        Spacer()
+                        Spacer(minLength: 15)
                         
-                        Color.clear.frame(width: 38, height: 38)
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 45)
-                    
-                    Spacer(minLength: 20)
-                    
-                    // Center Viewport: Morphing from Rectangle (Ảnh 2) to Circle (Ảnh 3, 4, 5)
-                    ZStack {
-                        // Live Camera Feed inside Morphing Shape
-                        ARSCNViewContainer(session: captureSession.arSession)
+                        // Card Camera màu đen bo cong mềm mại với Drop Shadow
+                        ZStack {
+                            // Viền đen bao quanh Card Camera
+                            RoundedRectangle(
+                                cornerRadius: enrollmentPhase == 2 ? 140 : 44,
+                                style: .continuous
+                            )
+                            .fill(Color.black)
                             .frame(
-                                width: hasFaceLocked ? 260 : 270,
-                                height: hasFaceLocked ? 260 : 360
+                                width: enrollmentPhase == 2 ? 280 : 280,
+                                height: enrollmentPhase == 2 ? 280 : 380
                             )
-                            .clipShape(
-                                RoundedRectangle(
-                                    cornerRadius: hasFaceLocked ? 130 : 44,
-                                    style: .continuous
+                            .shadow(color: Color.black.opacity(0.18), radius: 20, x: 0, y: 10)
+                            
+                            // Live Camera Feed
+                            ARSCNViewContainer(session: captureSession.arSession)
+                                .frame(
+                                    width: enrollmentPhase == 2 ? 260 : 260,
+                                    height: enrollmentPhase == 2 ? 260 : 360
                                 )
-                            )
-                            .overlay(
-                                Group {
-                                    if !hasFaceLocked {
-                                        // 4 White Corner Brackets (Exact Match with Image 2)
-                                        VStack {
-                                            HStack {
-                                                CornerBracket(corner: .topLeft)
+                                .clipShape(
+                                    RoundedRectangle(
+                                        cornerRadius: enrollmentPhase == 2 ? 130 : 36,
+                                        style: .continuous
+                                    )
+                                )
+                                .overlay(
+                                    Group {
+                                        if enrollmentPhase == 1 {
+                                            // 4 White Corner Brackets (Exact Match with Image 2)
+                                            VStack {
+                                                HStack {
+                                                    CornerBracket(corner: .topLeft)
+                                                    Spacer()
+                                                    CornerBracket(corner: .topRight)
+                                                }
                                                 Spacer()
-                                                CornerBracket(corner: .topRight)
+                                                HStack {
+                                                    CornerBracket(corner: .bottomLeft)
+                                                    Spacer()
+                                                    CornerBracket(corner: .bottomRight)
+                                                }
                                             }
-                                            Spacer()
-                                            HStack {
-                                                CornerBracket(corner: .bottomLeft)
-                                                Spacer()
-                                                CornerBracket(corner: .bottomRight)
-                                            }
+                                            .padding(14)
                                         }
-                                        .padding(12)
-                                    } else {
-                                        // Subtle Circle Border (Exact Match with Image 3)
-                                        Circle()
-                                            .stroke(Color.white.opacity(0.18), lineWidth: 1.5)
                                     }
-                                }
-                            )
-                            .shadow(color: hasFaceLocked ? Color(red: 0.18, green: 0.85, blue: 0.35).opacity(0.35) : Color.black.opacity(0.5), radius: 24)
-                            .animation(.spring(response: 0.65, dampingFraction: 0.75), value: hasFaceLocked)
-                        
-                        // 36-Tick Radial Ring around the Circle (Appears when Face Locked - Image 3, 4, 5)
-                        if hasFaceLocked {
-                            FaceIDRadialRing(ticks: captureSession.faceIdTicks)
-                                .transition(.scale(scale: 0.85).combined(with: .opacity))
-                        }
-                    }
-                    
-                    Spacer(minLength: 25)
-                    
-                    // Instructions & Live Status Notifications (Exact Match with Apple)
-                    VStack(spacing: 12) {
-                        if !hasFaceLocked {
-                            // Phase 1 Instruction (Ảnh 2)
-                            Text("Định vị khuôn mặt\ncủa bạn trong khung.")
-                                .font(.system(size: 21, weight: .bold))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 24)
+                                )
                             
-                            Text("Giữ điện thoại cách mặt khoảng 35 - 50 cm")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white.opacity(0.6))
-                        } else {
-                            // Phase 2 Instruction (Ảnh 3, 4)
-                            Text("Di chuyển chậm đầu của bạn để hoàn thành vòng tròn.")
-                                .font(.system(size: 19, weight: .bold))
-                                .foregroundColor(.white)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 28)
-                            
-                            // Dynamic Clinical Angle Guidance (Báo cho khách biết góc nghiêng sống mũi)
-                            Text(captureSession.guidanceFeedback)
-                                .font(.system(size: 14, weight: .bold))
-                                .foregroundColor(Color(red: 0.18, green: 0.85, blue: 0.35))
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 6)
-                                .background(Color(red: 0.18, green: 0.85, blue: 0.35).opacity(0.12))
-                                .cornerRadius(14)
-                            
-                            // Progress pill
-                            HStack(spacing: 6) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(Color(red: 0.18, green: 0.85, blue: 0.35))
-                                Text("Đã quét: \(captureSession.faceIdFilledCount)/36 tia (\(Int(Double(captureSession.faceIdFilledCount) / 36.0 * 100))%)")
-                                    .font(.system(size: 13, weight: .bold))
-                                    .foregroundColor(.white)
+                            // Viền ánh sáng rung/gợn sóng chạy theo chiều xoay đầu (Exact Match với ảnh bạn gửi)
+                            if enrollmentPhase == 2 {
+                                FaceIDRippleGlowEdge(
+                                    currentYaw: captureSession.currentYawDeg,
+                                    isTracking: captureSession.isTracking
+                                )
+                                
+                                // 36 nan quạt xoay quanh hình tròn
+                                FaceIDRadialRing(ticks: captureSession.faceIdTicks, isIntroMode: false)
+                                    .transition(.scale(scale: 0.88).combined(with: .opacity))
                             }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 6)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(16)
                         }
-                    }
-                    
-                    Spacer(minLength: 20)
-                    
-                    // Bottom Button: "Bắt đầu lại" (Exact Match with Apple Face ID Image 2, 3, 4, 5)
-                    Button {
-                        captureSession.resetScan()
-                        withAnimation { hasFaceLocked = false }
-                    } label: {
-                        Text("Bắt đầu lại")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 14)
-                            .background(Color.white.opacity(0.12))
-                            .cornerRadius(28)
-                    }
-                    .padding(.horizontal, 36)
-                    .padding(.bottom, 35)
-                }
-                .onChange(of: captureSession.isTracking) { isTracking in
-                    if isTracking && !hasFaceLocked {
-                        withAnimation(.spring(response: 0.65, dampingFraction: 0.75)) {
-                            hasFaceLocked = true
+                        .animation(.spring(response: 0.55, dampingFraction: 0.75), value: enrollmentPhase)
+                        
+                        Spacer(minLength: 25)
+                        
+                        // Hướng dẫn tương tác chuẩn Apple
+                        VStack(spacing: 12) {
+                            if enrollmentPhase == 1 {
+                                // Phase 1: Định vị khuôn mặt trong khung
+                                Text("Định vị khuôn mặt\ncủa bạn trong khung.")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 24)
+                            } else {
+                                // Phase 2: Di chuyển chậm đầu để hoàn thành vòng tròn
+                                Text("Di chuyển chậm đầu của bạn để hoàn thành vòng tròn.")
+                                    .font(.system(size: 20, weight: .bold))
+                                    .foregroundColor(.black)
+                                    .multilineTextAlignment(.center)
+                                    .padding(.horizontal, 28)
+                                
+                                // Dynamic Clinical Guidance nhỏ gọn
+                                Text(captureSession.guidanceFeedback)
+                                    .font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(Color(red: 0.12, green: 0.65, blue: 0.28))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 5)
+                                    .background(Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.14))
+                                    .cornerRadius(12)
+                            }
                         }
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        
+                        Spacer(minLength: 25)
+                        
+                        // Nút [Bắt đầu lại] chuẩn Apple Face ID (Nền xám nhạt, bo tròn thanh lịch)
+                        VStack(spacing: 12) {
+                            Button {
+                                captureSession.resetScan()
+                                withAnimation { enrollmentPhase = 1 }
+                            } label: {
+                                Text("Bắt đầu lại")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.black)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 15)
+                                    .background(Color(white: 0.94))
+                                    .cornerRadius(28)
+                            }
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.bottom, 36)
+                    }
+                    .onChange(of: captureSession.isFaceInFramingRect) { inFraming in
+                        // Chỉ chuyển từ khung chữ nhật sang vòng tròn khi khuôn mặt thực sự lọt vào tâm khung
+                        if inFraming && enrollmentPhase == 1 {
+                            withAnimation(.spring(response: 0.65, dampingFraction: 0.75)) {
+                                enrollmentPhase = 2
+                            }
+                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        }
                     }
                 }
             } else {
