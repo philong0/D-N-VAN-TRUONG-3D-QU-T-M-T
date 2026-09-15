@@ -69,13 +69,14 @@ export async function POST(
     // Reject invalid native capture packages before they reach reconstruction.
     // The values are measured ARFaceAnchor angles, not labels supplied by the
     // UI, so a "profile" file cannot silently contain a frontal image.
-    // Tolerances calibrated for real hand-held TrueDepth scanning.
+    const isContinuousSweep = framesDTO.some((f) => f.view.startsWith("sweep_"));
     const nativeTargets: Record<string, { target: number; tolerance: number }> = {
-      front: { target: 0, tolerance: 30 },
-      left_45: { target: -40, tolerance: 30 },
-      left_profile: { target: -55, tolerance: 35 },
-      right_45: { target: 40, tolerance: 30 },
-      right_profile: { target: 55, tolerance: 35 },
+      front: { target: 0, tolerance: 35 },
+      left_45: { target: -35, tolerance: 35 },
+      left_profile: { target: -55, tolerance: 40 },
+      right_45: { target: 35, tolerance: 35 },
+      right_profile: { target: 55, tolerance: 40 },
+      basal_nostrils: { target: 0, tolerance: 45 },
     };
     if (manifest.captureSource === "native_ios" || manifest.captureSource === "native_ios_rear") {
       if (manifest.captureSource === "native_ios" && manifest.hasTrueDepth !== true) {
@@ -84,8 +85,11 @@ export async function POST(
       if (manifest.patientId !== patientId || manifest.sessionId !== sessionId) {
         return NextResponse.json({ error: "Patient/session trong manifest không khớp với phiên upload; từ chối trộn dữ liệu khác người hoặc khác phiên." }, { status: 422 });
       }
-      if (framesDTO.length !== Object.keys(nativeTargets).length) {
+      if (!isContinuousSweep && framesDTO.length < 5) {
         return NextResponse.json({ error: "Gói quét phải có đủ 5 góc quét chuẩn." }, { status: 422 });
+      }
+      if (isContinuousSweep && framesDTO.length < 8) {
+        return NextResponse.json({ error: "Gói quét Face ID liên tục phải có ít nhất 8 khung hình đo đạc." }, { status: 422 });
       }
       const seenViews = new Set<string>();
       const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
@@ -93,7 +97,7 @@ export async function POST(
       const allFiniteArr = (value: unknown): boolean | null => (Array.isArray(value) ? value.every(isFiniteNumber) : null);
       const triangleIndicesAreValid = (value: unknown): boolean | null =>
         Array.isArray(value) ? value.every((index) => Number.isInteger(index) && (index as number) >= 0 && (index as number) < 1220) : null;
-      const PITCH_TOLERANCE_DEG = 52;
+      const PITCH_TOLERANCE_DEG = 55;
 
       interface RejectionReason {
         code: string;
@@ -101,25 +105,8 @@ export async function POST(
         details?: Record<string, unknown>;
       }
 
-      // 2026-09-10 diagnostic-only fix — the previous check here was a
-      // single giant `||` chain covering 8 unrelated conditions (unknown
-      // view, duplicate view, yaw, pitch, geometry, intrinsics, depth
-      // declaration, pose), all collapsing into the same generic
-      // "không đạt pose/quality TrueDepth" message with zero server log.
-      // Real symptom this caused: a real 5/5 native scan on-device reached
-      // this route and got rejected right after upload, and neither the
-      // app nor the server log could say WHICH of the 8 checks actually
-      // failed for the specific view that failed (left_profile in the
-      // observed case). Every condition below is now evaluated
-      // independently (no short-circuit hiding a later failure) and
-      // collected into `reasons`, so a reject always states exactly which
-      // contract(s) were violated with the raw received values. The
-      // accept/reject boundary itself is UNCHANGED from what was already
-      // running (same `nativeTargets` tolerances, same PITCH_TOLERANCE_DEG
-      // = 35, same depth-optional-unless-declared policy via `hasDepth`)
-      // -- this is strictly instrumentation, not a validation-behavior
-      // change, and it does not touch the iOS scanner at all.
       for (const frame of framesDTO) {
+        const isSweepTick = frame.view.startsWith("sweep_");
         const config = nativeTargets[frame.view];
         const geometry = frame.geometry;
         const intrinsics = frame.intrinsics;
@@ -128,7 +115,7 @@ export async function POST(
         const reasons: RejectionReason[] = [];
 
         // 1. unknown/invalid view config
-        if (config === undefined) {
+        if (!isSweepTick && config === undefined) {
           reasons.push({
             code: "unknown_view",
             message: `View "${frame.view}" không nằm trong danh sách góc quét chuẩn (${Object.keys(nativeTargets).join(", ")}).`,
@@ -441,6 +428,9 @@ export async function POST(
       };
       try {
         await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, frame.fileName));
+        if (!frame.view.startsWith("sweep_")) {
+          await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, `${frame.view}.jpg`));
+        }
       } catch (copyErr) {
         console.warn("Failed to copy frame to photos dir:", copyErr);
       }

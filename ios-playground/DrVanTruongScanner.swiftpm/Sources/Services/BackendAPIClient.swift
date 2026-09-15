@@ -130,7 +130,7 @@ public final class BackendAPIClient: ObservableObject {
     public func uploadScanPackage(
         patientId: String,
         sessionId: String,
-        frames: [ScanAngleStep: CapturedFramePackage],
+        frames: [String: CapturedFramePackage],
         scannerMode: ScannerMode = .faceIdSelfScan,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
@@ -150,12 +150,12 @@ public final class BackendAPIClient: ObservableObject {
         // (geometry/intrinsics/pose), matching package/route.ts's actual
         // read contract exactly (see D-contractfix in ScanModels.swift).
         var frameDTOs: [ScanPackageManifestDTO.FrameEntryDTO] = []
-        for (step, frame) in frames {
+        for (viewTag, frame) in frames {
             let entry = ScanPackageManifestDTO.FrameEntryDTO(
-                view: step.rawValue,
+                view: viewTag,
                 timestamp: frame.timestamp,
-                rgbFileName: "\(step.rawValue).jpg",
-                depthFileName: frame.depthData != nil ? "\(step.rawValue)_depth.raw" : nil,
+                rgbFileName: "\(viewTag).jpg",
+                depthFileName: frame.depthData != nil ? "\(viewTag)_depth.raw" : nil,
                 depthWidth: frame.depthWidth,
                 depthHeight: frame.depthHeight,
                 depthIntrinsics: frame.depthIntrinsics,
@@ -208,10 +208,10 @@ public final class BackendAPIClient: ObservableObject {
         
         appendFormField(name: "manifest", value: manifestStr)
         
-        for (step, frame) in frames {
-            appendFileData(name: "\(step.rawValue).jpg", fileName: "\(step.rawValue).jpg", mimeType: "image/jpeg", data: frame.rgbData)
+        for (viewTag, frame) in frames {
+            appendFileData(name: "\(viewTag).jpg", fileName: "\(viewTag).jpg", mimeType: "image/jpeg", data: frame.rgbData)
             if let depthData = frame.depthData {
-                appendFileData(name: "\(step.rawValue)_depth.raw", fileName: "\(step.rawValue)_depth.raw", mimeType: "application/octet-stream", data: depthData)
+                appendFileData(name: "\(viewTag)_depth.raw", fileName: "\(viewTag)_depth.raw", mimeType: "application/octet-stream", data: depthData)
             }
         }
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
@@ -330,5 +330,16 @@ public final class BackendAPIClient: ObservableObject {
                 completion(.success(studio))
             }
         }.resume()
+    }
+
+    public func uploadScanPackage(
+        patientId: String,
+        sessionId: String,
+        frames: [ScanAngleStep: CapturedFramePackage],
+        scannerMode: ScannerMode = .faceIdSelfScan,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        let stringKeyed = Dictionary(uniqueKeysWithValues: frames.map { ($0.key.rawValue, $0.value) })
+        uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: stringKeyed, scannerMode: scannerMode, completion: completion)
     }
 }

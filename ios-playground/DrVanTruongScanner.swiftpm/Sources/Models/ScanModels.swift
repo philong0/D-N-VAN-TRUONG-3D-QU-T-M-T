@@ -176,6 +176,7 @@ public struct FrameQualityEvaluation: Codable {
 public struct CapturedFramePackage: Identifiable {
     public let id = UUID()
     public let step: ScanAngleStep
+    public let viewTag: String
     public let timestamp: Double
     public let rgbData: Data
     public let depthData: Data? // Little-endian Float32 meters, portrait-aligned with RGB
@@ -188,6 +189,34 @@ public struct CapturedFramePackage: Identifiable {
     public let pose: ARKitTransformDTO
     public let geometry: ARKitFaceGeometryDTO
     public let quality: FrameQualityEvaluation
+
+    public init(
+        step: ScanAngleStep = .front,
+        viewTag: String = "",
+        timestamp: Double,
+        rgbData: Data,
+        depthData: Data?,
+        depthWidth: Int?,
+        depthHeight: Int?,
+        depthIntrinsics: CameraIntrinsicsDTO?,
+        intrinsics: CameraIntrinsicsDTO,
+        pose: ARKitTransformDTO,
+        geometry: ARKitFaceGeometryDTO,
+        quality: FrameQualityEvaluation
+    ) {
+        self.step = step
+        self.viewTag = viewTag.isEmpty ? step.rawValue : viewTag
+        self.timestamp = timestamp
+        self.rgbData = rgbData
+        self.depthData = depthData
+        self.depthWidth = depthWidth
+        self.depthHeight = depthHeight
+        self.depthIntrinsics = depthIntrinsics
+        self.intrinsics = intrinsics
+        self.pose = pose
+        self.geometry = geometry
+        self.quality = quality
+    }
 }
 
 public struct ScanPackageManifestDTO: Codable {
