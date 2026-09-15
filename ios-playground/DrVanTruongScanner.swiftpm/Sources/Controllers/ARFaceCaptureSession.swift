@@ -192,24 +192,36 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         checkAndBankAngles(frame: frame, faceAnchor: faceAnchor, pose: pose)
 
         // 5. Dynamic Guidance Text
-        let hasLeft = capturedFrames[.left45] != nil || capturedFrames[.leftProfile] != nil
-        let hasRight = capturedFrames[.right45] != nil || capturedFrames[.rightProfile] != nil
+        let hasFront = capturedFrames[.front] != nil
+        let hasLeft45 = capturedFrames[.left45] != nil
+        let hasLeftProfile = capturedFrames[.leftProfile] != nil
+        let hasRight45 = capturedFrames[.right45] != nil
+        let hasRightProfile = capturedFrames[.rightProfile] != nil
+        let all5Captured = hasFront && hasLeft45 && hasLeftProfile && hasRight45 && hasRightProfile
         let elapsed = sweepStartTime != nil ? (frame.timestamp - (sweepStartTime ?? frame.timestamp)) : 0
 
-        // Điều kiện hoàn thành quét chuẩn: Phải phủ kín ít nhất 26 tia VÀ đã quét cả 2 bên trái/phải VÀ thời gian xoay >= 3.0s
-        if faceIdFilledCount >= 26 && hasLeft && hasRight && elapsed >= 3.0 {
-            guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT FACE ID!"
+        // Điều kiện hoàn thành quét chuẩn y khoa 100%:
+        // Bắt buộc phải thu thập đủ cả 5 góc thật (front, left45, leftProfile, right45, rightProfile)
+        // và vòng tròn Face ID đã phủ kín ít nhất 28 tia, thời gian xoay >= 3.0s
+        if all5Captured && faceIdFilledCount >= 28 && elapsed >= 3.0 {
+            guidanceFeedback = "✓ HOÀN TẤT VÒNG QUÉT CHUẨN XÁC!"
             completeFaceIdSweep()
         } else if pose.distanceMeters < 0.32 {
             guidanceFeedback = "Giữ máy cách mặt khoảng 35 - 50 cm"
-        } else if !hasLeft && yaw > -15 {
-            guidanceFeedback = "Di chuyển đầu sang TRÁI để lấy sống mũi"
-        } else if !hasRight && yaw < 15 {
-            guidanceFeedback = "Di chuyển đầu sang PHẢI để lấy sống mũi"
-        } else if pitch < 6 && capturedFrames[.front] != nil {
+        } else if !hasFront {
+            guidanceFeedback = "Nhìn thẳng vào camera, mở to mắt"
+        } else if !hasLeft45 && !hasLeftProfile {
+            guidanceFeedback = "Quay đầu chậm sang TRÁI để quét má trái"
+        } else if hasLeft45 && !hasLeftProfile {
+            guidanceFeedback = "Quay đầu thêm sang TRÁI (góc nghiêng sâu)"
+        } else if !hasRight45 && !hasRightProfile {
+            guidanceFeedback = "Quay đầu chậm sang PHẢI để quét má phải"
+        } else if hasRight45 && !hasRightProfile {
+            guidanceFeedback = "Quay đầu thêm sang PHẢI (góc nghiêng sâu)"
+        } else if pitch < 5 && capturedFrames[.front] != nil {
             guidanceFeedback = "Hơi ngửa nhẹ cằm để quét vòm mũi"
         } else {
-            guidanceFeedback = "Di chuyển chậm đầu của bạn để hoàn thành vòng tròn."
+            guidanceFeedback = "Tiếp tục xoay đầu chậm theo vòng tròn để hoàn thành."
         }
     }
 
@@ -218,6 +230,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         let now = frame.timestamp
         guard now - lastBankedTimestamp >= 0.12 else { return }
 
+        // Kiểm tra mở mắt: Không chụp khi đang chớp mắt hoặc nhắm mắt để mắt luôn mở to rõ nét
+        let eyeBlinkLeft = faceAnchor.blendShapes[.eyeBlinkLeft]?.floatValue ?? 0
+        let eyeBlinkRight = faceAnchor.blendShapes[.eyeBlinkRight]?.floatValue ?? 0
+        guard eyeBlinkLeft < 0.35 && eyeBlinkRight < 0.35 else { return }
+
         let yaw = pose.yawDeg
         let pitch = pose.pitchDeg
         let hasValidDepth = frame.capturedDepthData != nil
@@ -225,40 +242,38 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         var targetToBank: ScanAngleStep?
         var isBetterAngle = false
 
-        // 1. Góc Chính diện (.front): yaw [-10°, 10°], pitch [-12°, 12°]
-        if abs(yaw) <= 10 && abs(pitch) <= 12 {
+        // 1. Góc Chính diện (.front): yaw [-14°, 14°], pitch [-15°, 15°]
+        if abs(yaw) <= 14 && abs(pitch) <= 15 {
             if capturedFrames[.front] == nil || (hasValidDepth && capturedFrames[.front]?.depthData == nil) {
                 targetToBank = .front
                 isBetterAngle = true
             }
         }
-        // 2. Góc Nghiêng Trái 45° (.left45): yaw [-20°, -40°]
-        else if yaw <= -20 && yaw >= -40 {
+        // 2. Góc Nghiêng Trái 45° (.left45): yaw [-18°, -38°]
+        else if yaw <= -18 && yaw >= -38 {
             if capturedFrames[.left45] == nil || (hasValidDepth && capturedFrames[.left45]?.depthData == nil) {
                 targetToBank = .left45
                 isBetterAngle = true
             }
         }
-        // 3. Góc Nghiêng Trái Sâu Profile (~55°-60°) (.leftProfile): yaw <= -42°
-        else if yaw <= -42 {
+        // 3. Góc Nghiêng Trái Sâu Profile (~55°-60°) (.leftProfile): yaw <= -38°
+        else if yaw <= -38 {
             let existingYaw = capturedFrames[.leftProfile]?.pose.eulerRotationDeg["yaw"] ?? 0
-            // Ưu tiên góc quay sâu hơn tiến gần tới -55°/-60°
             if capturedFrames[.leftProfile] == nil || yaw < existingYaw || (hasValidDepth && capturedFrames[.leftProfile]?.depthData == nil) {
                 targetToBank = .leftProfile
                 isBetterAngle = true
             }
         }
-        // 4. Góc Nghiêng Phải 45° (.right45): yaw [20°, 40°]
-        else if yaw >= 20 && yaw <= 40 {
+        // 4. Góc Nghiêng Phải 45° (.right45): yaw [18°, 38°]
+        else if yaw >= 18 && yaw <= 38 {
             if capturedFrames[.right45] == nil || (hasValidDepth && capturedFrames[.right45]?.depthData == nil) {
                 targetToBank = .right45
                 isBetterAngle = true
             }
         }
-        // 5. Góc Nghiêng Phải Sâu Profile (~55°-60°) (.rightProfile): yaw >= 42°
-        else if yaw >= 42 {
+        // 5. Góc Nghiêng Phải Sâu Profile (~55°-60°) (.rightProfile): yaw >= 38°
+        else if yaw >= 38 {
             let existingYaw = capturedFrames[.rightProfile]?.pose.eulerRotationDeg["yaw"] ?? 0
-            // Ưu tiên góc quay sâu hơn tiến gần tới 55°/60°
             if capturedFrames[.rightProfile] == nil || yaw > existingYaw || (hasValidDepth && capturedFrames[.rightProfile]?.depthData == nil) {
                 targetToBank = .rightProfile
                 isBetterAngle = true
@@ -290,30 +305,11 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     private func completeFaceIdSweep() {
         guard !isUploading else { return }
-        guard capturedFrames.count >= 2 || faceIdFilledCount >= 24 else { return }
+        // Bắt buộc phải có đủ 5 góc chụp thực tế, không chấp nhận thiếu bất kỳ góc nào
+        guard capturedFrames.count >= 5 else { return }
 
-        // Backfill any missing angles from closest captured frames
-        let availableSteps = Array(capturedFrames.keys)
-        if let fallbackKey = availableSteps.first, let base = capturedFrames[fallbackKey] {
-            for required in ScanAngleStep.allCases {
-                if capturedFrames[required] == nil {
-                    capturedFrames[required] = CapturedFramePackage(
-                        step: required,
-                        timestamp: base.timestamp,
-                        rgbData: base.rgbData,
-                        depthData: base.depthData,
-                        depthWidth: base.depthWidth,
-                        depthHeight: base.depthHeight,
-                        depthIntrinsics: base.depthIntrinsics,
-                        intrinsics: base.intrinsics,
-                        pose: base.pose,
-                        geometry: base.geometry,
-                        quality: base.quality
-                    )
-                }
-            }
-        }
-
+        // TUYỆT ĐỐI KHÔNG CLONE/NHÂN BẢN ẢNH THIẾU!
+        // Giữ đúng các ảnh thực tế được người dùng quét để AI engine tái tạo trung thực 100%, không bị kéo méo dị dạng.
         UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
         triggerPackageUpload { _ in }
     }

@@ -93,12 +93,12 @@ def get_face_shell_topology():
     # fallback territory), and angle3's own dominant-texel share specifically
     # dropped ~43.7% (176k->99k texels) -- a real, measured, non-trivial
     # redistribution, not hidden here.
-    # Crisalix Clinical Facial Mask with natural smooth anatomical curvature:
-    # Natural rounded hairline arch (Y <= 0.372 dome) and curved submental/neck contour (Y >= 0.158)
-    hairline_limit = 0.372 - 0.025 * ((tpl_pos[:, 0] / 0.085) ** 2)
-    neck_limit = 0.158 + 0.022 * ((tpl_pos[:, 0] / 0.085) ** 2)
-    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.025) & (np.abs(tpl_pos[:, 0]) <= 0.086)
-    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | eye_sockets
+    # Full Anatomical Clinical Facial Mask including complete Ears, Temples, Eyeballs, and Submental Neck:
+    hairline_limit = 0.380 - 0.025 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    neck_limit = 0.145 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    # Z limit -0.070 covers complete temples and jaw angle; ears group explicitly included so full ear anatomy is preserved:
+    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.070)
+    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | eye_sockets | ears
 
     tri_inside = shell_mask[all_triangles[:, 0]] & shell_mask[all_triangles[:, 1]] & shell_mask[all_triangles[:, 2]]
     shell_triangles = all_triangles[tri_inside]
