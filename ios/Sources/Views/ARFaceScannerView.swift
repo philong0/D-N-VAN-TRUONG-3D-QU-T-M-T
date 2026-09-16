@@ -398,6 +398,15 @@ public struct ARFaceScannerView: View {
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                                 
+                                // Hiển thị tiến trình quét nấc rõ ràng
+                                Text("Đã quét: \(captureSession.faceIdFilledCount)/36 nấc (\(Int(Double(captureSession.faceIdFilledCount) / 36.0 * 100))%)")
+                                    .font(.system(size: 15, weight: .bold))
+                                    .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 4)
+                                    .background(Color(red: 0.0, green: 0.48, blue: 1.0).opacity(0.12))
+                                    .cornerRadius(12)
+
                                 // Dynamic Clinical Guidance nhỏ gọn
                                 Text(captureSession.guidanceFeedback)
                                     .font(.system(size: 13, weight: .semibold))
@@ -428,27 +437,6 @@ public struct ARFaceScannerView: View {
                                         .cornerRadius(28)
                                 }
                             } else {
-                                // Nếu đã quét được nhiều nấc (>= 18 nấc) -> Cho phép bấm DỰNG 3D NGAY
-                                if captureSession.faceIdFilledCount >= 18 {
-                                    Button {
-                                        captureSession.ensureClinicalPhotosFromSweep()
-                                        captureSession.completeFaceIdSweep()
-                                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-                                    } label: {
-                                        HStack(spacing: 8) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .font(.headline)
-                                            Text("DỰNG MÔ HÌNH 3D NGAY (\(captureSession.faceIdFilledCount)/36 nấc)")
-                                                .font(.system(size: 16, weight: .black))
-                                        }
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                        .background(Color(red: 0.12, green: 0.72, blue: 0.32))
-                                        .cornerRadius(28)
-                                        .shadow(color: Color(red: 0.12, green: 0.72, blue: 0.32).opacity(0.4), radius: 8, y: 4)
-                                    }
-                                }
 
                                 // Nút Bắt đầu lại
                                 Button {

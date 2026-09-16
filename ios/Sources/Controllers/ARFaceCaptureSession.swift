@@ -230,10 +230,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             currentBin = 0
         }
 
-        // BẬT XANH NẤC: Mỗi nấc nạp cách nhau tối thiểu 70ms để người dùng xoay đầu tự nhiên, không bị nhảy vèo
+        // BẬT XANH NẤC: Mỗi nấc cách nhau tối thiểu 140ms để người dùng xoay đầu tự nhiên, không bị nhảy vèo quá nhanh
         if let b = currentBin, b >= 0 && b < 36 {
             let now = frame.timestamp
-            if !faceIdTicks[b] && (now - lastBankedTimestamp >= 0.070 || faceIdFilledCount == 0) {
+            if !faceIdTicks[b] && (now - lastBankedTimestamp >= 0.140 || faceIdFilledCount == 0) {
                 lastBankedTimestamp = now
                 faceIdTicks[b] = true
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
@@ -247,20 +247,15 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 3. Dynamic Guidance Text & BẮT BUỘC ĐỦ TẤT CẢ CÁC GÓC LÂM SÀNG CỐT LÕI:
+        // 3. Dynamic Guidance Text & BẮT BUỘC ĐỦ 100% TOÀN BỘ 36/36 NẤC VÒNG TRÒN:
         let hasFront = clinicalPhotos["front"] != nil
         let hasBasal = clinicalPhotos["basal_nostrils"] != nil
         let hasLeft = clinicalPhotos["left_45"] != nil || clinicalPhotos["left_profile"] != nil
         let hasRight = clinicalPhotos["right_45"] != nil || clinicalPhotos["right_profile"] != nil
-        let isFullCircleCovered = faceIdFilledCount >= 34
+        let isFullCircleCovered = faceIdFilledCount >= 36
 
         // ĐIỀU KIỆN TỰ ĐỘNG CHUYỂN 3D:
-        // BẮT BUỘC ĐỦ CẢ 5 YẾU TỐ:
-        // 1. Vòng tròn xanh đã phủ kín (>= 34/36 nấc)
-        // 2. Đã có ảnh chính diện (front)
-        // 3. Đã có ảnh ngửa cằm đáy mũi (basal_nostrils)
-        // 4. Đã có ảnh nghiêng trái (left)
-        // 5. Đã có ảnh nghiêng phải (right)
+        // BẮT BUỘC ĐỦ CẢ 36/36 NẤC XANH (100% VÒNG TRÒN) VÀ CÓ ĐỦ 4 GÓC LÂM SÀNG CỐT LÕI:
         if isFullCircleCovered && hasFront && hasBasal && hasLeft && hasRight {
             completeFaceIdSweep()
         } else if !hasBasal {
@@ -276,7 +271,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         } else if pose.distanceMeters > 0.65 {
             guidanceFeedback = "Đưa máy lại gần hơn một chút"
         } else {
-            guidanceFeedback = "Tiếp tục xoay đều đầu để hoàn thành các nấc còn lại (\(faceIdFilledCount)/36)."
+            guidanceFeedback = "Tiếp tục xoay đều đầu theo vòng tròn để phủ kín 36/36 nấc (\(faceIdFilledCount)/36)."
         }
     }
 

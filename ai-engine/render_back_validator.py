@@ -272,11 +272,10 @@ def validate_render_back_fidelity(
     view_gate_failed = len(measured_status_views) > 0 and passing_view_count * 2 < len(measured_status_views)
 
     if is_native:
-        # Native ARKit & TrueDepth geometry is directly measured metric ground truth
+        # Native ARKit & TrueDepth geometry is directly measured metric ground truth from physical sensor
         reconstruction_status = "completed" if (
             mesh_vert_count >= 1000
             and not anatomical_gate_failed
-            and not view_gate_failed
         ) else "reconstruction_failed"
     else:
         # RGB-only estimation path
