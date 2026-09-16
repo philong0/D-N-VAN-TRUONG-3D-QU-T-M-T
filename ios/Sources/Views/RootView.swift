@@ -91,7 +91,7 @@ public struct RootView: View {
     public init() {
         let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
         let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
-        if current != liveURL && !current.contains("trycloudflare.com") {
+        if current != liveURL {
             UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
         }
     }
