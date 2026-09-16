@@ -92,32 +92,6 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         startSession()
     }
 
-    public func resetScan() {
-        faceIdTicks = Array(repeating: false, count: 10)
-        faceIdFilledCount = 0
-        sweepFrames.removeAll()
-        clinicalPhotos.removeAll()
-        capturedFrames.removeAll()
-        isSweepCompleted = false
-        isUploading = false
-        uploadProgress = 0
-        uploadStatusMessage = ""
-        lastErrorMessage = nil
-        sweepStartTime = nil
-        clearLivePoseState()
-    }
-
-    private func clearLivePoseState() {
-        isTracking = false
-        currentYawDeg = 0
-        currentPitchDeg = 0
-        currentRollDeg = 0
-        currentDistanceMeters = 0
-        isPoseAligned = false
-        holdProgress = 0
-        isAutoCapturing = false
-    }
-
     public func startSession() {
         arSession.pause()
         clearLivePoseState()
