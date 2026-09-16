@@ -77,7 +77,7 @@ struct WebView: UIViewRepresentable {
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
     @StateObject private var apiClient = BackendAPIClient()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://feedback-reef-scholarships-speaker.trycloudflare.com"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://lens-inside-silence-bearing.trycloudflare.com"
     @State private var selectedTab = 0
     @State private var nativePatientId = ""
     @State private var nativeSessionId = ""
