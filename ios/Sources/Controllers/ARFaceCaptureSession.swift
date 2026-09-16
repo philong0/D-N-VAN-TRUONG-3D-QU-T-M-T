@@ -711,7 +711,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         clinicalPhotos.removeAll()
         currentStep = .front
         lastErrorMessage = nil
-        faceIdTicks = Array(repeating: false, count: 36)
+        faceIdTicks = Array(repeating: false, count: 10)
         faceIdFilledCount = 0
         sweepStartTime = nil
         isFaceInFramingRect = false
