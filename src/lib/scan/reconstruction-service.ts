@@ -200,73 +200,9 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       const aiEngineDir = [process.cwd(), "ai" + "-engine"].join(path.sep);
       const venvPython = process.env.PYTHON_BIN || [aiEngineDir, "venv", "bin", "python3"].join(path.sep);
 
-      // 1. Primary Native TrueDepth Multi-Frame & Laser Depth Fusion (Dành riêng cho gói quét iOS Native)
-      // Tận dụng 100% tất cả 36 sweep frames + 6 ảnh lâm sàng + metric depth + ARFaceGeometry thực tế (Không dùng template)
-      if (useNativeFusion) {
-        console.log(`[reconstruction-service] Native TrueDepth package detected for patient ${patientId}. Executing reconstruct_native_truedepth.py with all 36+ frames & metric depth.`);
-        const nativeScriptPath = [aiEngineDir, "reconstruct_native_truedepth.py"].join(path.sep);
-        const nativeCliArgs = [
-          nativeScriptPath,
-          "--package-dir", framesFolder,
-          "--patient-id", patientId,
-          "--session-id", sessionId,
-          "--output-dir", outputDir,
-        ];
-
-        try {
-          const { stdout: nativeOut } = await execFileAsync(venvPython, nativeCliArgs, {
-            cwd: aiEngineDir,
-            maxBuffer: 20 * 1024 * 1024,
-            timeout: 480000,
-          });
-
-          const jsonStart = nativeOut.lastIndexOf('{\n  "ok":') !== -1 ? nativeOut.lastIndexOf('{\n  "ok":') : nativeOut.indexOf("{");
-          const jsonEnd = nativeOut.lastIndexOf("}");
-          if (jsonStart !== -1 && jsonEnd !== -1) {
-            const parsed = JSON.parse(nativeOut.slice(jsonStart, jsonEnd + 1));
-            if (parsed.ok) {
-              const dataModelsDir = path.join(DATA_DIR, "patients", patientId, "models");
-              await ensureDir(dataModelsDir);
-              try {
-                await copyFile(path.join(outputDir, "baseline.glb"), path.join(dataModelsDir, "baseline.glb"));
-                await copyFile(path.join(outputDir, "baseline.obj"), path.join(dataModelsDir, "baseline.obj"));
-                await copyFile(path.join(outputDir, "face_HD.png"), path.join(dataModelsDir, "face_HD.png"));
-                const patientDataDir = path.join(DATA_DIR, "patients", patientId);
-                await ensureDir(path.join(patientDataDir, "reconstruction"));
-                await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId));
-                await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction"));
-                await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "model.glb"));
-                await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "model.obj"));
-                await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "reconstruction", "baseline.glb"));
-                await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "reconstruction", "baseline.obj"));
-                await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
-                await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.obj"));
-                await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.glb"));
-                await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.obj"));
-              } catch (copyErr) {
-                console.warn("[reconstruction-service] copy to dataModelsDir note:", copyErr);
-              }
-              return {
-                status: "completed",
-                provider: "Patient-Specific Native Multi-Frame TrueDepth Fusion (Zero-Template)",
-                artifacts: {
-                  baselineModelFileName: "baseline.glb",
-                  baselineObjFileName: "baseline.obj",
-                  textureFileName: "face_HD.png",
-                  landmarksCount: Object.keys(parsed.landmarks || {}).length,
-                  providerVersion: "TrueDepth-Native-ZeroTemplate-v2",
-                },
-                qualityReport: data.qualityReport,
-                evaluatedAt: now,
-              };
-            }
-          }
-        } catch (nativeErr) {
-          console.warn("[reconstruction-service] reconstruct_native_truedepth note, attempting GNM fallback:", nativeErr);
-        }
-      }
-
-      // 2. Secondary Crisalix-Grade GNM Full-Head Reconstruction (Cho các ca upload ảnh rời từ trình duyệt)
+      // 1. Primary: Crisalix-Grade GNM Full-Head Reconstruction
+      // Tạo mô hình 3D Full-Head hoàn chỉnh (đầu, tai, cổ, đường viền giải phẫu liền lạc, texture sắc nét)
+      // Tương thích 100% với hệ thống mô phỏng thẩm mỹ 3D (nâng mũi, sửa cằm, xoay 5 góc lâm sàng)
       const gnmScriptPath = [aiEngineDir, "reconstruct_gnm_fullhead.py"].join(path.sep);
       const gnmCliArgs = [
         gnmScriptPath,
@@ -276,6 +212,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       ];
 
       try {
+        console.log(`[reconstruction-service] Executing Crisalix-Grade GNM Full-Head reconstruction for patient ${patientId}...`);
         const { stdout: gnmOut } = await execFileAsync(venvPython, gnmCliArgs, {
           cwd: aiEngineDir,
           maxBuffer: 20 * 1024 * 1024,
@@ -290,34 +227,32 @@ export class PythonGNMReconstructionService implements IReconstructionService {
           if (isGnmOk) {
             const dataModelsDir = path.join(DATA_DIR, "patients", patientId, "models");
             await ensureDir(dataModelsDir);
-            try {
-              await copyFile(path.join(outputDir, "baseline.glb"), path.join(dataModelsDir, "baseline.glb"));
-              await copyFile(path.join(outputDir, "baseline.obj"), path.join(dataModelsDir, "baseline.obj"));
-              await copyFile(path.join(outputDir, "face_HD.png"), path.join(dataModelsDir, "face_HD.png"));
-              const patientDataDir = path.join(DATA_DIR, "patients", patientId);
-              await ensureDir(path.join(patientDataDir, "reconstruction"));
-              await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId));
-              await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction"));
-              await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "model.glb"));
-              await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "model.obj"));
-              await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "reconstruction", "baseline.glb"));
-              await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "reconstruction", "baseline.obj"));
-              await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
-              await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.obj"));
-              await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.glb"));
-              await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.obj"));
-            } catch (copyErr) {
-              console.warn("[reconstruction-service] copy to dataModelsDir note:", copyErr);
-            }
+            const patientDataDir = path.join(DATA_DIR, "patients", patientId);
+            await ensureDir(path.join(patientDataDir, "reconstruction"));
+            await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId));
+            await ensureDir(path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction"));
+
+            await copyFile(path.join(outputDir, "baseline.glb"), path.join(dataModelsDir, "baseline.glb"));
+            await copyFile(path.join(outputDir, "baseline.obj"), path.join(dataModelsDir, "baseline.obj"));
+            await copyFile(path.join(outputDir, "face_HD.png"), path.join(dataModelsDir, "face_HD.png"));
+            await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "model.glb"));
+            await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "model.obj"));
+            await copyFile(path.join(outputDir, "baseline.glb"), path.join(patientDataDir, "reconstruction", "baseline.glb"));
+            await copyFile(path.join(outputDir, "baseline.obj"), path.join(patientDataDir, "reconstruction", "baseline.obj"));
+            await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"));
+            await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.obj"));
+            await copyFile(path.join(outputDir, "baseline.glb"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.glb"));
+            await copyFile(path.join(outputDir, "baseline.obj"), path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.obj"));
+
             return {
               status: "completed",
-              provider: "Crisalix-Grade GNM Face Shell Photorealistic Reconstruction",
+              provider: "Crisalix-Grade GNM Full-Head Identity-Fit",
               artifacts: {
                 baselineModelFileName: "baseline.glb",
                 baselineObjFileName: "baseline.obj",
                 textureFileName: "face_HD.png",
                 landmarksCount: 98,
-                providerVersion: "GNM-FaceShell-Crisalix-v1",
+                providerVersion: "GNM-FullHead-FaceShell-v3",
               },
               qualityReport: data.qualityReport,
               evaluatedAt: now,
@@ -325,7 +260,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
           }
         }
       } catch (gnmErr) {
-        console.warn("[reconstruction-service] GNM reconstruction note, attempting fallback:", gnmErr);
+        console.warn("[reconstruction-service] reconstruct_gnm_fullhead note, attempting fallback:", gnmErr);
       }
 
       // 2. High-fidelity 3D Mesh Interpolation from multi-frame buffer
