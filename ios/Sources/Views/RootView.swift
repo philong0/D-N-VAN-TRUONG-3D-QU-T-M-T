@@ -32,6 +32,22 @@ struct WebView: UIViewRepresentable {
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             print("WebView didFailProvisionalNavigation:", error.localizedDescription)
+            let fallback = "https://lens-inside-silence-bearing.trycloudflare.com"
+            if let target = URL(string: fallback), webView.url?.absoluteString != fallback {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    webView.load(URLRequest(url: target))
+                }
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            print("WebView didFail:", error.localizedDescription)
+            let fallback = "https://lens-inside-silence-bearing.trycloudflare.com"
+            if let target = URL(string: fallback), webView.url?.absoluteString != fallback {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    webView.load(URLRequest(url: target))
+                }
+            }
         }
 
         @objc func handleRefreshControl(sender: UIRefreshControl) {
@@ -46,10 +62,6 @@ struct WebView: UIViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
-        // The clinic web UI has mobile breakpoints. Without an explicit
-        // mobile preference WKWebView can use a desktop layout viewport,
-        // which activates `lg:` layout rules and shifts the page offscreen
-        // on an iPhone.
         config.defaultWebpagePreferences.preferredContentMode = .mobile
 
         let webView = WKWebView(frame: .zero, configuration: config)
@@ -67,11 +79,7 @@ struct WebView: UIViewRepresentable {
         return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {
-        // WKWebView manages its own internal navigation history (pushState, replaceState, URL changes).
-        // Reloading here during modal dismissal (e.g. scan complete -> 3D Studio) would reset the page
-        // back to the root server URL and cause an infinite scanning loop.
-    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
 public struct RootView: View {
@@ -80,11 +88,21 @@ public struct RootView: View {
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
-    public init() {}
+    public init() {
+        let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
+        let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
+        if current != liveURL && !current.contains("trycloudflare.com") {
+            UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
+        }
+    }
 
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
-            if let url = URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)), !serverURLString.isEmpty {
+            let activeURLString = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty 
+                ? "https://lens-inside-silence-bearing.trycloudflare.com" 
+                : serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            if let url = URL(string: activeURLString) {
                 WebView(url: url, bridge: scanBridge, reloadTrigger: reloadTrigger)
                     .id(reloadTrigger)
                     .ignoresSafeArea(.all)
@@ -97,30 +115,34 @@ public struct RootView: View {
                             )
                         )
                     }
-            } else {
-                VStack(spacing: 16) {
-                    Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
-                    Text("Bấm nút cài đặt để nhập địa chỉ HTTPS của Web Studio.")
-                        .font(.footnote)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 32)
-                }
             }
 
             // Nút cài đặt nhỏ gọn, tinh tế ở góc dưới phải
             Button {
                 showingSettings = true
             } label: {
-                Image(systemName: "gearshape.fill")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(.white)
-                    .padding(10)
-                    .background(Color.black.opacity(0.65), in: Circle())
-                    .shadow(radius: 4)
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.fill")
+                    Text("Cài đặt")
+                        .font(.caption2.bold())
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.75), in: Capsule())
+                .shadow(radius: 4)
             }
             .padding(.trailing, 16)
             .padding(.bottom, 70)
+        }
+        .onAppear {
+            let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
+            let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
+            if current != liveURL {
+                serverURLString = liveURL
+                UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
+                reloadTrigger = UUID()
+            }
         }
         .sheet(isPresented: $showingSettings) {
             NavigationView {
@@ -130,9 +152,15 @@ public struct RootView: View {
                             .keyboardType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                        Text("Đường dẫn máy chủ đang hoạt động: https://lens-inside-silence-bearing.trycloudflare.com")
-                            .font(.caption)
-                            .foregroundColor(.blue)
+                        
+                        Button("Đặt về link Live mặc định") {
+                            serverURLString = "https://lens-inside-silence-bearing.trycloudflare.com"
+                            UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
+                            reloadTrigger = UUID()
+                            scanBridge.webView?.load(URLRequest(url: URL(string: serverURLString)!))
+                            showingSettings = false
+                        }
+                        .foregroundColor(.blue)
                     }
                     
                     Section {
@@ -140,7 +168,7 @@ public struct RootView: View {
                             let clean = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
                             UserDefaults.standard.set(clean, forKey: "clinicServerURL")
                             reloadTrigger = UUID()
-                            scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "http://localhost:3000")!))
+                            scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "https://lens-inside-silence-bearing.trycloudflare.com")!))
                             showingSettings = false
                         }) {
                             HStack {
@@ -155,7 +183,7 @@ public struct RootView: View {
                 }
                 .navigationTitle("Cài đặt máy chủ")
                 .toolbar {
-                    Button("Xong") { showingSettings = false }
+                    Button("Đóng") { showingSettings = false }
                 }
             }
         }
