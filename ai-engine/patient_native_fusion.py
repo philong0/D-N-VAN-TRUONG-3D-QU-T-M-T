@@ -452,7 +452,13 @@ class PatientNativeReconstructor:
                         camera_to_world = _column_major_4x4(pdata["cameraTransformColumnMajor"])
                         face_to_world = _column_major_4x4(pdata["faceTransformColumnMajor"])
                         face_to_arkit_camera = np.linalg.inv(camera_to_world) @ face_to_world
-                        frame_entry["camera_pose"] = np.diag([1.0, -1.0, -1.0, 1.0]) @ face_to_arkit_camera
+                        arkit_to_portrait_cv = np.array([
+                            [0.0, 1.0, 0.0, 0.0],
+                            [1.0, 0.0, 0.0, 0.0],
+                            [0.0, 0.0, -1.0, 0.0],
+                            [0.0, 0.0, 0.0, 1.0]
+                        ], dtype=np.float64) if was_rotated_cw else np.diag([1.0, -1.0, -1.0, 1.0])
+                        frame_entry["camera_pose"] = arkit_to_portrait_cv @ face_to_arkit_camera
                     elif "cameraTransformColumnMajor" in pdata:
                         frame_entry["camera_pose"] = _column_major_4x4(pdata["cameraTransformColumnMajor"])
                     elif "cameraPose" in pdata:
@@ -467,11 +473,15 @@ class PatientNativeReconstructor:
             if pose_from_native_geometry:
                 # ARKit camera coordinates are +Y up and look down -Z;
                 # OpenCV projection (used by the texture baker/validator) is
-                # +Y down and +Z forward. `faceToCamera` maps the ARFace
-                # local mesh directly into ARKit camera space, so premultiply
-                # this fixed basis conversion before any RGB projection.
-                arkit_to_opencv = np.diag([1.0, -1.0, -1.0, 1.0])
-                frame_entry["camera_pose"] = arkit_to_opencv @ frame_entry["camera_pose"]
+                # +Y down and +Z forward. In portrait orientation (rotated CW 90°),
+                # map ARKit axes to portrait OpenCV pinhole camera space.
+                arkit_to_portrait_cv = np.array([
+                    [0.0, 1.0, 0.0, 0.0],
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 0.0, -1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0]
+                ], dtype=np.float64) if was_rotated_cw else np.diag([1.0, -1.0, -1.0, 1.0])
+                frame_entry["camera_pose"] = arkit_to_portrait_cv @ frame_entry["camera_pose"]
 
             depth_idata = manifest_entry.get("depthIntrinsics") if manifest_entry else None
             if depth_idata:
@@ -682,12 +692,12 @@ class PatientNativeReconstructor:
             # Use proven high-density multi-view triangulated surface (7000+ vertices)
             dense_result = None
 
-        # Clean mesh, remove non-manifold edges, compute vertex normals
+        # Wrap mesh without re-indexing vertices to preserve canonical ARKit topology
         mesh = trimesh.Trimesh(
             vertices=fused_mesh["vertices"],
             faces=fused_mesh["faces"],
-            process=True,
-            validate=True
+            process=False,
+            validate=False
         )
 
         # D-densitygate — real QC gate on mesh DENSITY, not just silhouette
@@ -1841,29 +1851,41 @@ class PatientNativeReconstructor:
     def _extract_anatomical_landmarks(self, vertices: np.ndarray) -> dict:
         """
         Extracts true anatomical 3D landmark points from the reconstructed patient mesh.
+        Uses canonical topological vertex indices for ARFace meshes (>= 1220 vertices),
+        with coordinate-based geometric bounds fallback for arbitrary meshes.
         """
-        pronasale_idx = int(np.argmax(vertices[:, 2]))
-        pronasale = vertices[pronasale_idx].tolist()
+        if len(vertices) >= 1220:
+            pronasale = vertices[8].tolist()
+            subnasale = vertices[2].tolist()
+            pogonion = vertices[27].tolist()
+            menton = vertices[1047].tolist()
+            endocanthion_left = vertices[366].tolist()
+            endocanthion_right = vertices[797].tolist()
+        else:
+            pronasale_idx = int(np.argmax(vertices[:, 2]))
+            pronasale = vertices[pronasale_idx].tolist()
+            menton_idx = int(np.argmin(vertices[:, 1]))
+            menton = vertices[menton_idx].tolist()
 
-        chin_region = vertices[vertices[:, 1] < (vertices[:, 1].min() + 0.05)]
-        pogonion_idx = int(np.argmax(chin_region[:, 2])) if len(chin_region) > 0 else pronasale_idx
-        pogonion = chin_region[pogonion_idx].tolist() if len(chin_region) > 0 else pronasale
-        subnasale_candidates = vertices[(vertices[:, 1] > pogonion[1]) & (vertices[:, 1] < pronasale[1]) & (np.abs(vertices[:, 0]) < 0.015)]
-        subnasale_idx = int(np.argmin(subnasale_candidates[:, 2])) if len(subnasale_candidates) > 0 else pronasale_idx
-        subnasale = subnasale_candidates[subnasale_idx].tolist() if len(subnasale_candidates) > 0 else pronasale
+            midline = np.where(np.abs(vertices[:, 0]) < 0.015)[0]
+            if len(midline) > 0:
+                mid_verts = vertices[midline]
+                chin_mid = midline[(mid_verts[:, 1] < (vertices[:, 1].min() + 0.045))]
+                pogonion_idx = chin_mid[np.argmax(vertices[chin_mid, 2])] if len(chin_mid) > 0 else pronasale_idx
+                pogonion = vertices[pogonion_idx].tolist()
 
-        menton_idx = int(np.argmin(vertices[:, 1]))
-        menton = vertices[menton_idx].tolist()
+                sub_mid = midline[(vertices[midline, 1] > pogonion[1]) & (vertices[midline, 1] < pronasale[1])]
+                subnasale_idx = sub_mid[np.argmin(vertices[sub_mid, 2])] if len(sub_mid) > 0 else pronasale_idx
+                subnasale = vertices[subnasale_idx].tolist()
+            else:
+                pogonion = pronasale
+                subnasale = pronasale
 
-        eye_y_min = pronasale[1] + 0.02
-        eye_y_max = pronasale[1] + 0.06
-        eye_region = vertices[(vertices[:, 1] >= eye_y_min) & (vertices[:, 1] <= eye_y_max)]
-
-        left_eye_pts = eye_region[eye_region[:, 0] < -0.01]
-        right_eye_pts = eye_region[eye_region[:, 0] > 0.01]
-
-        endocanthion_left = left_eye_pts[np.argmax(left_eye_pts[:, 0])].tolist() if len(left_eye_pts) > 0 else [pronasale[0]-0.016, pronasale[1]+0.04, pronasale[2]-0.02]
-        endocanthion_right = right_eye_pts[np.argmin(right_eye_pts[:, 0])].tolist() if len(right_eye_pts) > 0 else [pronasale[0]+0.016, pronasale[1]+0.04, pronasale[2]-0.02]
+            eye_region = vertices[(vertices[:, 1] >= pronasale[1] + 0.015) & (vertices[:, 1] <= pronasale[1] + 0.065)]
+            left_eye_pts = eye_region[eye_region[:, 0] < -0.005]
+            right_eye_pts = eye_region[eye_region[:, 0] > 0.005]
+            endocanthion_left = left_eye_pts[np.argmax(left_eye_pts[:, 0])].tolist() if len(left_eye_pts) > 0 else [pronasale[0]-0.016, pronasale[1]+0.04, pronasale[2]-0.02]
+            endocanthion_right = right_eye_pts[np.argmin(right_eye_pts[:, 0])].tolist() if len(right_eye_pts) > 0 else [pronasale[0]+0.016, pronasale[1]+0.04, pronasale[2]-0.02]
 
         return {
             "pronasale": pronasale,

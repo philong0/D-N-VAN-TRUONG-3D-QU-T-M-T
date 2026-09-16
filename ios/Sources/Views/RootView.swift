@@ -68,9 +68,9 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        if uiView.url?.host != url.host || uiView.url == nil {
-            uiView.load(URLRequest(url: url))
-        }
+        // WKWebView manages its own internal navigation history (pushState, replaceState, URL changes).
+        // Reloading here during modal dismissal (e.g. scan complete -> 3D Studio) would reset the page
+        // back to the root server URL and cause an infinite scanning loop.
     }
 }
 

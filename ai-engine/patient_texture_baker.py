@@ -206,8 +206,16 @@ def bake_visibility_aware_texture(
         ray_dir = ray / np.clip(ray_dist, 1e-6, None)
         cos_angle = np.sum(pts_normal * ray_dir, axis=1)
 
-        # Exponential facing weight: rewards perpendicular angles
-        facing_weight = np.clip(cos_angle, 0.0, 1.0) ** 1.8
+        # Exponential facing weight: rewards perpendicular angles and eliminates ghosting/blurring
+        stem = f.get("stem", "")
+        roll_deg = abs(f.get("roll_deg") or 0.0)
+        roll_penalty = max(0.1, 1.0 - (roll_deg / 20.0)) if roll_deg > 8.0 else 1.0
+        
+        # Clinical key photos (front, left_45, right_45) get extra priority for facial feature clarity
+        is_clinical = stem in ("front", "left_45", "right_45", "basal_nostrils", "left_profile", "right_profile") or stem == "sweep_00"
+        clinical_boost = 1.6 if is_clinical else 1.0
+
+        facing_weight = (np.clip(cos_angle, 0.0, 1.0) ** 3.2) * roll_penalty * clinical_boost
 
         Xc = (R @ pts_pos.T).T + t[None, :]
         z = Xc[:, 2]
@@ -216,7 +224,7 @@ def bake_visibility_aware_texture(
         px = fx * Xc[:, 0] / np.clip(z, 1e-6, None) + cx_c
         py = fy * Xc[:, 1] / np.clip(z, 1e-6, None) + cy_c
 
-        valid = (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (facing_weight > 0.01)
+        valid = (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (facing_weight > 0.005)
 
         img_f = img.astype(np.float32)
         pxc = np.clip(px, 0, iw - 1)
