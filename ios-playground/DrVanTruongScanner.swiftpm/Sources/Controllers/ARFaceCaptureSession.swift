@@ -186,42 +186,42 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         // 2. Nhận diện 10 góc chuẩn giải phẫu (10 Clinical Sectors)
         var detectedSector: Int? = nil
 
-        if abs(yaw) <= 8.0 && abs(pitch) <= 8.0 {
+        if abs(yaw) <= 15.0 && abs(pitch) <= 15.0 {
             // Sector 0: Chính diện (0°)
             detectedSector = 0
-        } else if yaw <= -18.0 && yaw >= -32.0 && abs(pitch) <= 18.0 {
+        } else if yaw <= -10.0 && yaw >= -30.0 && abs(pitch) <= 22.0 {
             // Sector 1: Chếch trái (~25°)
             detectedSector = 1
-        } else if yaw <= -33.0 && yaw >= -55.0 && abs(pitch) <= 22.0 {
+        } else if yaw <= -28.0 && yaw >= -48.0 && abs(pitch) <= 25.0 {
             // Sector 2: Nghiêng trái (~45°)
             detectedSector = 2
-        } else if yaw <= -56.0 {
+        } else if yaw <= -42.0 {
             // Sector 3: Trắc diện sâu trái (~70° Profile)
             detectedSector = 3
-        } else if yaw >= 18.0 && yaw <= 32.0 && abs(pitch) <= 18.0 {
+        } else if yaw >= 10.0 && yaw <= 30.0 && abs(pitch) <= 22.0 {
             // Sector 4: Chếch phải (~25°)
             detectedSector = 4
-        } else if yaw >= 33.0 && yaw <= 55.0 && abs(pitch) <= 22.0 {
+        } else if yaw >= 28.0 && yaw <= 48.0 && abs(pitch) <= 25.0 {
             // Sector 5: Nghiêng phải (~45°)
             detectedSector = 5
-        } else if yaw >= 56.0 {
+        } else if yaw >= 42.0 {
             // Sector 6: Trắc diện sâu phải (~70° Profile)
             detectedSector = 6
-        } else if pitch <= -12.0 && pitch >= -28.0 && abs(yaw) <= 22.0 {
+        } else if pitch <= -8.0 && pitch >= -26.0 && abs(yaw) <= 25.0 {
             // Sector 7: Ngửa nhẹ đáy mũi (-20° Basal)
             detectedSector = 7
-        } else if pitch >= 10.0 && pitch <= 24.0 && abs(yaw) <= 22.0 {
+        } else if pitch >= 6.0 && pitch <= 24.0 && abs(yaw) <= 25.0 {
             // Sector 8: Cúi nhẹ trán & sống mũi (+15° Forehead/Dorsum)
             detectedSector = 8
-        } else if pitch <= -32.0 && abs(yaw) <= 25.0 {
+        } else if pitch <= -18.0 && abs(yaw) <= 28.0 {
             // Sector 9: Ngửa sâu cằm & cổ (-40° Submental)
             detectedSector = 9
         }
 
-        // BẬT XANH NẤC: Mỗi nấc cách nhau tối thiểu 140ms, bắt đúng ảnh ổn định
+        // BẬT XANH NẤC: Mỗi nấc lấy mẫu siêu nhanh (80ms)
         if let s = detectedSector, s >= 0 && s < 10 {
             let now = frame.timestamp
-            if !faceIdTicks[s] && (now - lastBankedTimestamp >= 0.140 || faceIdFilledCount == 0) {
+            if !faceIdTicks[s] && (now - lastBankedTimestamp >= 0.08 || faceIdFilledCount == 0) {
                 lastBankedTimestamp = now
                 faceIdTicks[s] = true
                 faceIdFilledCount = faceIdTicks.filter { $0 }.count
@@ -235,14 +235,10 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             }
         }
 
-        // 3. Dynamic Guidance Text & Điều kiện hoàn thành đủ 10/10 nấc:
-        let hasFront = clinicalPhotos["front"] != nil
-        let hasBasal = clinicalPhotos["basal_nostrils"] != nil
-        let hasLeft = clinicalPhotos["left_45"] != nil
-        let hasRight = clinicalPhotos["right_45"] != nil
-        let isFullCircleCovered = faceIdFilledCount >= 10
+        // 3. Dynamic Guidance Text & Điều kiện hoàn thành thông minh:
+        let isFullCircleCovered = faceIdFilledCount >= 10 || (faceIdFilledCount >= 8 && faceIdTicks[0] && (faceIdTicks[2] || faceIdTicks[3]) && (faceIdTicks[5] || faceIdTicks[6]))
 
-        if isFullCircleCovered && hasFront && hasBasal && hasLeft && hasRight {
+        if isFullCircleCovered {
             completeFaceIdSweep()
         } else if !faceIdTicks[0] {
             guidanceFeedback = "Nhìn thẳng chính diện vào camera (Góc 1/10)"

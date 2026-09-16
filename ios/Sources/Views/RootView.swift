@@ -76,96 +76,51 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @StateObject private var apiClient = BackendAPIClient()
     @AppStorage("clinicServerURL") private var serverURLString: String = "https://lens-inside-silence-bearing.trycloudflare.com"
-    @State private var selectedTab = 0
-    @State private var nativePatientId = ""
-    @State private var nativeSessionId = ""
-    @State private var isNativeScanningPresented = false
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
     public init() {}
 
     public var body: some View {
-        TabView(selection: $selectedTab) {
-            // TAB 1: QUÉT NATIVE TRỰC TIẾP (100% GIAO DIỆN GỐC - KHÔNG LO LỖI TRANG)
-            ScanSessionSetupView(
-                apiClient: apiClient,
-                patientId: $nativePatientId,
-                sessionId: $nativeSessionId,
-                isScanningActive: $isNativeScanningPresented
-            )
-            .tabItem {
-                Label("Quét 3D Face ID", systemImage: "faceid")
-            }
-            .tag(0)
-
-            // TAB 2: WEB STUDIO & QUẢN LÝ BỆNH ÁN
-            ZStack(alignment: .bottomTrailing) {
-                if let url = URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)), !serverURLString.isEmpty {
-                    WebView(url: url, bridge: scanBridge, reloadTrigger: reloadTrigger)
-                        .id(reloadTrigger)
-                        .ignoresSafeArea(.all)
-                } else {
-                    VStack(spacing: 16) {
-                        Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
-                        Text("Bấm nút cài đặt để nhập địa chỉ HTTPS.")
-                            .font(.footnote)
-                            .foregroundColor(.secondary)
+        ZStack(alignment: .bottomTrailing) {
+            if let url = URL(string: serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)), !serverURLString.isEmpty {
+                WebView(url: url, bridge: scanBridge, reloadTrigger: reloadTrigger)
+                    .id(reloadTrigger)
+                    .ignoresSafeArea(.all)
+                    .fullScreenCover(isPresented: $scanBridge.isPresentingScanner) {
+                        ARFaceScannerView(
+                            captureSession: scanBridge.captureSession,
+                            isCompleted: Binding(
+                                get: { !scanBridge.isPresentingScanner },
+                                set: { if $0 { scanBridge.isPresentingScanner = false } }
+                            )
+                        )
                     }
+            } else {
+                VStack(spacing: 16) {
+                    Text("Chưa cấu hình địa chỉ máy chủ").font(.headline)
+                    Text("Bấm nút cài đặt để nhập địa chỉ HTTPS của Web Studio.")
+                        .font(.footnote)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 32)
                 }
+            }
 
-                // Nút cài đặt server
-                Button {
-                    showingSettings = true
-                } label: {
-                    Image(systemName: "gearshape.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .padding(10)
-                        .background(Color.black.opacity(0.65), in: Circle())
-                        .shadow(radius: 4)
-                }
-                .padding(.trailing, 16)
-                .padding(.bottom, 70)
+            // Nút cài đặt nhỏ gọn, tinh tế ở góc dưới phải
+            Button {
+                showingSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(10)
+                    .background(Color.black.opacity(0.65), in: Circle())
+                    .shadow(radius: 4)
             }
-            .tabItem {
-                Label("Web Studio 3D", systemImage: "cube.transparent.fill")
-            }
-            .tag(1)
-        }
-        .fullScreenCover(isPresented: Binding(
-            get: { scanBridge.isPresentingScanner || isNativeScanningPresented },
-            set: { presenting in
-                if !presenting {
-                    scanBridge.isPresentingScanner = false
-                    isNativeScanningPresented = false
-                }
-            }
-        )) {
-            ARFaceScannerView(
-                captureSession: scanBridge.captureSession,
-                isCompleted: Binding(
-                    get: { !scanBridge.isPresentingScanner && !isNativeScanningPresented },
-                    set: { if $0 {
-                        scanBridge.isPresentingScanner = false
-                        isNativeScanningPresented = false
-                    } }
-                )
-            )
-        }
-        .onChange(of: isNativeScanningPresented) { active in
-            if active {
-                scanBridge.captureSession.patientId = nativePatientId
-                scanBridge.captureSession.sessionId = nativeSessionId
-                scanBridge.captureSession.startActiveSweep()
-                scanBridge.captureSession.onScanCompleted = { [self] studioURL in
-                    self.isNativeScanningPresented = false
-                    self.selectedTab = 1
-                    self.scanBridge.webView?.load(URLRequest(url: studioURL))
-                }
-            }
+            .padding(.trailing, 16)
+            .padding(.bottom, 70)
         }
         .sheet(isPresented: $showingSettings) {
             NavigationView {
@@ -175,7 +130,7 @@ public struct RootView: View {
                             .keyboardType(.URL)
                             .autocorrectionDisabled()
                             .textInputAutocapitalization(.never)
-                        Text("Đường dẫn HTTPS máy chủ đang chạy: https://feedback-reef-scholarships-speaker.trycloudflare.com")
+                        Text("Đường dẫn máy chủ đang hoạt động: https://lens-inside-silence-bearing.trycloudflare.com")
                             .font(.caption)
                             .foregroundColor(.blue)
                     }
@@ -184,7 +139,6 @@ public struct RootView: View {
                         Button(action: {
                             let clean = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
                             UserDefaults.standard.set(clean, forKey: "clinicServerURL")
-                            apiClient.serverBaseURL = clean
                             reloadTrigger = UUID()
                             scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "http://localhost:3000")!))
                             showingSettings = false
