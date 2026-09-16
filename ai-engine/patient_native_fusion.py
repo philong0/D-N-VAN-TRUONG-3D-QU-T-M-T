@@ -889,13 +889,39 @@ class PatientNativeReconstructor:
             poorly_observed = weight_sum < 0.05
             fused_verts[poorly_observed] = naive_mean[poorly_observed]
 
-        # Subdivide surface for ultra-high density medical curvature (1,220 -> 4,874 -> 19,484 vertices)
+        # Subdivide surface for ultra-high density medical curvature (1,220 -> 4,874 vertices)
         sub_mesh = trimesh.Trimesh(vertices=fused_verts, faces=triangles, process=False)
         sub_mesh = sub_mesh.subdivide()
+
+        # Select best frontal frame for high-res photo projection
+        frontal_frame = None
+        for f in arface_frames:
+            if f.get("stem") in ("front", "sweep_00"):
+                frontal_frame = f
+                break
+        if frontal_frame is None:
+            frontal_frame = arface_frames[0]
+
+        pts_2d = None
+        rgb_img = frontal_frame.get("rgb_image")
+        intr = frontal_frame.get("intrinsics")
+        face_pose = frontal_frame.get("face_pose")
+
+        if rgb_img is not None and intr is not None and face_pose is not None:
+            h, w = rgb_img.shape[:2]
+            fx, fy = intr[0, 0], intr[1, 1]
+            cx, cy = intr[0, 2], intr[1, 2]
+            sub_homo = np.column_stack([sub_mesh.vertices, np.ones(len(sub_mesh.vertices))])
+            P_cam = (face_pose @ sub_homo.T).T[:, :3]
+            sub_u = cx + fx * (P_cam[:, 0] / np.clip(-P_cam[:, 2], 1e-6, None))
+            sub_v = cy - fy * (P_cam[:, 1] / np.clip(-P_cam[:, 2], 1e-6, None))
+            pts_2d = np.column_stack([sub_u, sub_v])
 
         return {
             "vertices": sub_mesh.vertices,
             "faces": sub_mesh.faces,
+            "pts_2d": pts_2d,
+            "rgb_img": rgb_img,
             "measured_vertex_count": len(fused_verts),
         }
 
@@ -1530,6 +1556,8 @@ class PatientNativeReconstructor:
         return {
             "vertices": refined_vertices,
             "faces": faces,
+            "pts_2d": fused_mesh.get("pts_2d"),
+            "rgb_img": fused_mesh.get("rgb_img"),
             "measured_vertex_count": fused_mesh.get("measured_vertex_count", len(refined_vertices)),
             "region_errors_mm": fused_mesh.get("region_errors_mm"),
         }
