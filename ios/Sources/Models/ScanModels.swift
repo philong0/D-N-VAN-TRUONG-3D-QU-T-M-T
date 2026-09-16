@@ -185,17 +185,43 @@ public struct CameraIntrinsicsDTO: Codable {
     public let imageWidth: Int
     public let imageHeight: Int
     public let lensDistortionCoefficients: [Float]?
+
+    public init(
+        fx: Float,
+        fy: Float,
+        cx: Float,
+        cy: Float,
+        imageWidth: Int,
+        imageHeight: Int,
+        lensDistortionCoefficients: [Float]? = nil
+    ) {
+        self.fx = fx
+        self.fy = fy
+        self.cx = cx
+        self.cy = cy
+        self.imageWidth = imageWidth
+        self.imageHeight = imageHeight
+        self.lensDistortionCoefficients = lensDistortionCoefficients
+    }
 }
 
 public struct ARKitTransformDTO: Codable {
-    /// Column-major flat 16-float 4x4 matrices (`simd_float4x4`'s own
-    /// memory layout) — face-local -> world, and camera-local -> world,
-    /// kept as two SEPARATE real transforms (see D-poseboth in
-    /// ARFaceCaptureSession.swift for why collapsing them into one was a bug).
     public let faceTransformColumnMajor: [Float]
     public let cameraTransformColumnMajor: [Float]
     public let translationMeters: [String: Float]
     public let eulerRotationDeg: [String: Float]
+
+    public init(
+        faceTransformColumnMajor: [Float],
+        cameraTransformColumnMajor: [Float],
+        translationMeters: [String: Float],
+        eulerRotationDeg: [String: Float]
+    ) {
+        self.faceTransformColumnMajor = faceTransformColumnMajor
+        self.cameraTransformColumnMajor = cameraTransformColumnMajor
+        self.translationMeters = translationMeters
+        self.eulerRotationDeg = eulerRotationDeg
+    }
 }
 
 public struct ARKitFaceGeometryDTO: Codable {
@@ -206,6 +232,24 @@ public struct ARKitFaceGeometryDTO: Codable {
     public let textureCoordinates: [Float]
     public let blendShapes: [String: Float]?
     public let isTracked: Bool
+
+    public init(
+        vertexCount: Int,
+        triangleCount: Int,
+        verticesMeters: [Float],
+        triangleIndices: [Int],
+        textureCoordinates: [Float],
+        blendShapes: [String: Float]?,
+        isTracked: Bool
+    ) {
+        self.vertexCount = vertexCount
+        self.triangleCount = triangleCount
+        self.verticesMeters = verticesMeters
+        self.triangleIndices = triangleIndices
+        self.textureCoordinates = textureCoordinates
+        self.blendShapes = blendShapes
+        self.isTracked = isTracked
+    }
 }
 
 public struct FrameQualityEvaluation: Codable {
@@ -217,7 +261,29 @@ public struct FrameQualityEvaluation: Codable {
     public let yawDeg: Float
     public let pitchDeg: Float
     public let distanceMeters: Float
-    public let isDistanceOptimal: Bool // ScanAngleStep camera-relative distance policy
+    public let isDistanceOptimal: Bool
+
+    public init(
+        blurScore: Float,
+        isBlurry: Bool,
+        lightingScore: Float,
+        isLightingAdequate: Bool,
+        isTracked: Bool,
+        yawDeg: Float,
+        pitchDeg: Float,
+        distanceMeters: Float,
+        isDistanceOptimal: Bool
+    ) {
+        self.blurScore = blurScore
+        self.isBlurry = isBlurry
+        self.lightingScore = lightingScore
+        self.isLightingAdequate = isLightingAdequate
+        self.isTracked = isTracked
+        self.yawDeg = yawDeg
+        self.pitchDeg = pitchDeg
+        self.distanceMeters = distanceMeters
+        self.isDistanceOptimal = isDistanceOptimal
+    }
 }
 
 public struct CapturedFramePackage: Identifiable {

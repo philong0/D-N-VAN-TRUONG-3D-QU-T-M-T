@@ -17,6 +17,7 @@ workflows:
         script: |
           set -e
           echo "=== 1. Building Xcode Release Archive ==="
+          mkdir -p "$PWD/build"
           xcodebuild archive \
             -project "$XCODE_PROJECT" \
             -scheme "$XCODE_SCHEME" \
@@ -26,7 +27,7 @@ workflows:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            AD_HOC_CODE_SIGNING_ALLOWED=YES
+            AD_HOC_CODE_SIGNING_ALLOWED=YES 2>&1 | tee "$PWD/build/xcodebuild.log" || (echo "=== XCODEBUILD ERROR LOG ===" && grep -E "(error:|fatal error:)" "$PWD/build/xcodebuild.log" -B 2 -A 3 && exit 1)
 
           echo "=== 2. Creating unsigned IPA for 3uTools signing ==="
           mkdir -p "$PWD/build/Payload"
