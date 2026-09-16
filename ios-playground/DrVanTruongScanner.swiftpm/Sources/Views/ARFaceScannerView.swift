@@ -5,6 +5,8 @@
 
 import SwiftUI
 import ARKit
+import SceneKit
+import Combine
 
 struct ARSCNViewContainer: UIViewRepresentable {
     let session: ARSession
@@ -459,7 +461,7 @@ public struct ARFaceScannerView: View {
                         .padding(.horizontal, 28)
                         .padding(.bottom, 36)
                     }
-                    .onChange(of: captureSession.isFaceInFramingRect) { inFraming in
+                    .onReceive(captureSession.$isFaceInFramingRect) { inFraming in
                         // Khi khuôn mặt lọt vào tâm -> Nhảy sang Vòng tròn Face ID và TỰ ĐỘNG BẮT ĐẦU QUÉT NGAY
                         if inFraming {
                             if enrollmentPhase == 1 {
