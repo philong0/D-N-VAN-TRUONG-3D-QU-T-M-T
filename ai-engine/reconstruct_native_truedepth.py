@@ -135,7 +135,7 @@ def reconstruct_native_package(
         }, f, indent=2)
 
     return {
-        "ok": True,
+        "ok": report["reconstructionStatus"] == "completed",
         "patientId": patient_id,
         "sessionId": session_id,
         "baselineGlbPath": str(glb_path),
