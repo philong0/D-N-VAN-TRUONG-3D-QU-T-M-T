@@ -229,9 +229,42 @@ public final class BackendAPIClient: ObservableObject {
             self.uploadStatusMessage = initialMsg
             self.onProgressUpdate?(0.20, initialMsg)
         }
-        
+
+        performUploadRequest(request, patientId: patientId, sessionId: sessionId, attempt: 1, completion: completion)
+    }
+
+    // D-networkretry — gói quét TrueDepth liên tục (36 frame + depth) nặng
+    // ~30-50MB, gửi qua Cloudflare Tunnel; trước đây bất kỳ lỗi mạng tức
+    // thời nào (rớt sóng vài giây giữa lúc tải) khiến app báo lỗi và bung
+    // về màn quét NGAY LẬP TỨC dù server vẫn nhận đủ dữ liệu và dựng hình
+    // thành công phía sau (xác nhận trên dữ liệu thật: quality.overall=
+    // "pass", reconstruction hoàn tất trong khi app đã báo lỗi từ giây thứ
+    // 2). Chỉ retry lỗi MẠNG (error != nil, tức request chưa từng đến được
+    // server để có phản hồi) -- không retry lỗi ứng dụng thật (422/500 có
+    // phản hồi rõ ràng từ server), tránh gửi lặp một gói mà server đã từ
+    // chối vì lý do chính đáng.
+    private func performUploadRequest(
+        _ request: URLRequest,
+        patientId: String,
+        sessionId: String,
+        attempt: Int,
+        completion: @escaping (Result<URL, Error>) -> Void
+    ) {
+        let maxAttempts = 4
         URLSession.shared.dataTask(with: request) { data, response, error in
             if let error = error {
+                if attempt < maxAttempts {
+                    let delaySeconds = Double(attempt) * 2.0
+                    DispatchQueue.main.async {
+                        let msg = "Mạng chập chờn, đang thử lại (\(attempt)/\(maxAttempts - 1))..."
+                        self.uploadStatusMessage = msg
+                        self.onProgressUpdate?(self.uploadProgress, msg)
+                    }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + delaySeconds) { [weak self] in
+                        self?.performUploadRequest(request, patientId: patientId, sessionId: sessionId, attempt: attempt + 1, completion: completion)
+                    }
+                    return
+                }
                 DispatchQueue.main.async {
                     self.isUploading = false
                     self.uploadStatusMessage = "Lỗi kết nối: \(error.localizedDescription)"
@@ -240,7 +273,7 @@ public final class BackendAPIClient: ObservableObject {
                 }
                 return
             }
-            
+
             guard let httpResponse = response as? HTTPURLResponse else {
                 let err = NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Phản hồi không hợp lệ từ máy chủ."])
                 DispatchQueue.main.async {
@@ -249,7 +282,7 @@ public final class BackendAPIClient: ObservableObject {
                 }
                 return
             }
-            
+
             guard let data = data else {
                 let err = NSError(domain: "API", code: httpResponse.statusCode, userInfo: [NSLocalizedDescriptionKey: "Máy chủ không trả về dữ liệu (HTTP \(httpResponse.statusCode))."])
                 DispatchQueue.main.async {
@@ -258,7 +291,7 @@ public final class BackendAPIClient: ObservableObject {
                 }
                 return
             }
-            
+
             self.handleUploadResponse(
                 data: data,
                 httpResponse: httpResponse,
@@ -363,7 +396,16 @@ public final class BackendAPIClient: ObservableObject {
             guard let self = self else { return }
             
             let elapsed = Date().timeIntervalSince(startTime)
-            if elapsed > 180 { // 3 phút timeout tối đa
+            // D-timeoutmismatch — server cho phép mỗi bước dựng hình (native
+            // TrueDepth rồi mới tới GNM dự phòng) chạy tới 480s
+            // (reconstruction-service.ts), nhưng điện thoại trước đây chỉ
+            // chờ 180s rồi tự báo timeout và bung về màn quét -- trong khi
+            // server VẪN chạy tiếp ngầm và vẫn lưu kết quả thật vào hồ sơ,
+            // gây đúng hiện tượng "điện thoại báo lỗi/quay lại quét nhưng
+            // web vẫn thấy có model mới". Nâng lên 600s để bao trọn cả
+            // trường hợp xấu nhất (native 480s thất bại rồi rơi xuống GNM
+            // thêm ~60-90s).
+            if elapsed > 600 {
                 DispatchQueue.main.async {
                     self.isUploading = false
                     let timeoutErr = NSError(domain: "Reconstruction", code: 408, userInfo: [NSLocalizedDescriptionKey: "Quá thời gian chờ AI Engine dựng 3D. Vui lòng thử lại."])
@@ -383,20 +425,25 @@ public final class BackendAPIClient: ObservableObject {
                 return
             }
             
-            // Tính toán % tiến trình tăng liên tục từ 35% -> 95% trong 55s
-            let smoothProgress = min(0.95, Float(0.35 + (elapsed / 55.0) * 0.58))
-            
+            // D-timeoutmismatch — thanh tiến trình cũ giả định xong trong
+            // 55s (khớp thời gian cũ của GNM một mình); nay pipeline thật có
+            // thể chạy tới 480s (native TrueDepth, có tinh chỉnh pose 2
+            // vòng) rồi mới rơi xuống GNM, nên kéo giãn mốc thời gian theo
+            // đúng thời lượng thật để thanh không bị đứng ở 95% suốt nhiều
+            // phút gây cảm giác treo máy.
+            let smoothProgress = min(0.95, Float(0.35 + (elapsed / 300.0) * 0.58))
+
             // Cập nhật thông điệp và tiến trình theo thời gian thực để người dùng thấy rõ AI đang làm việc
             DispatchQueue.main.async {
                 self.isUploading = true
                 let msg: String
-                if elapsed < 8 {
+                if elapsed < 15 {
                     msg = "AI Engine đang tiếp nhận & đối chiếu các góc quét TrueDepth..."
-                } else if elapsed < 20 {
-                    msg = "Đang dựng cấu trúc nhân trắc GNM Full-Head (tai, cằm, mũi)..."
-                } else if elapsed < 35 {
-                    msg = "Đang tinh chỉnh độ dày mô mềm & tính đối xứng lâm sàng..."
-                } else if elapsed < 55 {
+                } else if elapsed < 60 {
+                    msg = "Đang ghép nối 3D từ dữ liệu TrueDepth thật (có thể mất vài phút)..."
+                } else if elapsed < 180 {
+                    msg = "Đang tinh chỉnh độ chính xác hình học & đối xứng lâm sàng..."
+                } else if elapsed < 300 {
                     msg = "Đang hoàn thiện vân da bề mặt Ultra-HD (PBR Shader)..."
                 } else {
                     msg = "Đang hoàn tất đóng gói mô hình 3D..."

@@ -567,39 +567,10 @@ class PatientNativeReconstructor:
         # per-view rejection gate.
         is_native_ios = self.manifest.get("captureSource") == "native_ios"
         if is_native_ios:
-            # D-continuous-sweep: Support both legacy 5-pose packages and modern continuous
-            # Face ID sweep packages (sweep_00..35 + clinical auto-selected views).
-            is_continuous_sweep = any(f["stem"].startswith("sweep_") for f in self.frames)
-            by_view = {f["stem"]: f for f in self.frames}
-            
-            if is_continuous_sweep:
-                # For continuous sweeps, require at least 1 valid frontal/near-frontal view and >= 6 tracked frames total
-                tracked_frames = [f for f in self.frames if f.get("arface_vertices") is not None and f["arface_vertices"].shape == (1220, 3)]
-                if len(tracked_frames) < 6:
-                    raise ValueError(f"Continuous TrueDepth sweep package has insufficient tracked frames ({len(tracked_frames)}/6 minimum required).")
-            else:
-                # Legacy 5-view checkpoint validation (with graceful fallback if profile has degraded ARKit tracking)
-                expected_views = {"front", "left_45", "right_45"}
-                optional_views = {"left_profile", "right_profile", "basal_nostrils", "basal"}
-                missing = sorted(expected_views - set(by_view))
-                invalid = []
-                for view in sorted((expected_views | optional_views) & set(by_view)):
-                    frame = by_view[view]
-                    vertices = frame.get("arface_vertices")
-                    triangles = frame.get("arface_triangles")
-                    if (vertices is None or vertices.shape != (1220, 3)
-                            or triangles is None or triangles.shape != (2304, 3)
-                            or frame.get("intrinsics") is None):
-                        # Only flag as invalid if it is a core required view
-                        if view in expected_views:
-                            invalid.append(view + " (missing/invalid ARKit face geometry or intrinsics)")
-                if missing or invalid:
-                    detail = []
-                    if missing:
-                        detail.append("missing core RGB views: " + ", ".join(missing))
-                    if invalid:
-                        detail.append("missing/incomplete ARKit geometry: " + ", ".join(invalid))
-                    raise ValueError("Native TrueDepth package is incomplete (" + "; ".join(detail) + ").")
+            # Support 10-sector clinical packages, continuous sweeps, and clinical angle checkpoints
+            tracked_frames = [f for f in self.frames if f.get("arface_vertices") is not None and f["arface_vertices"].shape == (1220, 3)]
+            if len(tracked_frames) < 4:
+                raise ValueError(f"Native TrueDepth package has insufficient tracked frames ({len(tracked_frames)}/4 minimum required).")
 
         # Check if native ARFaceGeometry is available across frames
         arface_frames = [f for f in self.frames if f["arface_vertices"] is not None]

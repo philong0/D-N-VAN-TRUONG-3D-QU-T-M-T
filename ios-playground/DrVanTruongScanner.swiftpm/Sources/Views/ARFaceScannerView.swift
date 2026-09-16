@@ -104,12 +104,12 @@ struct FaceIDSmileGlyph: View {
     }
 }
 
-// MARK: - Face ID 36-Tick Radial Ring (Matches Apple Face ID Image 1, 3, 4, 5)
+// MARK: - Face ID 10-Sector Clinical Radial Ring
 struct FaceIDRadialRing: View {
     let ticks: [Bool]
-    let totalTicks: Int = 36
-    let radius: CGFloat = 146
-    let tickLength: CGFloat = 17
+    let totalTicks: Int = 10
+    let radius: CGFloat = 148
+    let tickLength: CGFloat = 22
     var isIntroMode: Bool = false
     
     var body: some View {
@@ -120,11 +120,11 @@ struct FaceIDRadialRing: View {
                 
                 Capsule()
                     .fill(isIntroMode ? Color(white: 0.72) : (isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color(white: 0.38).opacity(0.45)))
-                    .frame(width: isFilled ? 3.5 : (isIntroMode ? 3.0 : 2.5), height: isFilled ? tickLength + 4 : tickLength)
-                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.85) : Color.clear, radius: isFilled ? 5 : 0)
+                    .frame(width: isFilled ? 7.0 : (isIntroMode ? 5.0 : 4.5), height: isFilled ? tickLength + 6 : tickLength)
+                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.9) : Color.clear, radius: isFilled ? 8 : 0)
                     .offset(y: -radius)
                     .rotationEffect(.degrees(angle))
-                    .animation(.spring(response: 0.2, dampingFraction: 0.6), value: isFilled)
+                    .animation(.spring(response: 0.25, dampingFraction: 0.65), value: isFilled)
             }
         }
     }
@@ -398,8 +398,8 @@ public struct ARFaceScannerView: View {
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                                 
-                                // Hiển thị tiến trình quét nấc rõ ràng
-                                Text("Đã quét: \(captureSession.faceIdFilledCount)/36 nấc (\(Int(Double(captureSession.faceIdFilledCount) / 36.0 * 100))%)")
+                                // Hiển thị tiến trình quét 10 góc giải phẫu rõ ràng
+                                Text("Đã quét: \(captureSession.faceIdFilledCount)/10 góc (\(Int(Double(captureSession.faceIdFilledCount) / 10.0 * 100))%)")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
                                     .padding(.horizontal, 14)
@@ -668,23 +668,43 @@ public struct ARFaceScannerView: View {
                             .animation(.easeInOut(duration: 0.3), value: captureSession.uploadStatusMessage)
                         
                         if captureSession.lastErrorMessage != nil {
-                            Button {
-                                captureSession.isUploading = false
-                                captureSession.startActiveSweep()
-                                withAnimation { enrollmentPhase = 1 }
-                            } label: {
-                                Text("Quét lại")
-                                    .font(.system(size: 15, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(.horizontal, 24)
-                                    .padding(.vertical, 10)
-                                    .background(Color(red: 0.0, green: 0.48, blue: 1.0))
-                                    .cornerRadius(20)
+                            // D-nolostdata — trước đây bấm "Quét lại" gọi
+                            // startActiveSweep() (= resetScan() rồi bắt đầu
+                            // lại), XÓA SẠCH 36 frame đã quét chỉ vì 1 lần
+                            // tải lên thất bại (mạng chập chờn, server lỗi
+                            // tạm thời...) — đây là nguyên nhân thật của
+                            // hiện tượng "quét xong rồi bị đá về quét lại từ
+                            // đầu". Giờ "Thử lại" chỉ gửi lại ĐÚNG dữ liệu đã
+                            // quét (triggerPackageUpload tự đọc lại
+                            // sweepFrames/clinicalPhotos hiện có, không cần
+                            // quét lại gì cả). Chỉ khi bấm riêng "Quét lại từ
+                            // đầu" mới thực sự xóa và bắt đầu mới.
+                            VStack(spacing: 10) {
+                                Button {
+                                    captureSession.triggerPackageUpload { _ in }
+                                } label: {
+                                    Text("Thử lại (giữ nguyên dữ liệu đã quét)")
+                                        .font(.system(size: 15, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 24)
+                                        .padding(.vertical, 10)
+                                        .background(Color(red: 0.0, green: 0.48, blue: 1.0))
+                                        .cornerRadius(20)
+                                }
+                                Button {
+                                    captureSession.isUploading = false
+                                    captureSession.startActiveSweep()
+                                    withAnimation { enrollmentPhase = 1 }
+                                } label: {
+                                    Text("Quét lại từ đầu")
+                                        .font(.system(size: 13, weight: .regular))
+                                        .foregroundColor(Color(white: 0.6))
+                                }
                             }
                         } else {
                             Button {
+                                // Chỉ dừng theo dõi tiến trình, KHÔNG xóa dữ liệu đã quét.
                                 captureSession.isUploading = false
-                                captureSession.startActiveSweep()
                             } label: {
                                 Text("Hủy")
                                     .font(.system(size: 14, weight: .regular))

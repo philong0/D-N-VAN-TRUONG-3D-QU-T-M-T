@@ -69,14 +69,19 @@ export async function POST(
     // Reject invalid native capture packages before they reach reconstruction.
     // The values are measured ARFaceAnchor angles, not labels supplied by the
     // UI, so a "profile" file cannot silently contain a frontal image.
-    const isContinuousSweep = framesDTO.some((f) => f.view.startsWith("sweep_"));
+    const isContinuousSweep = framesDTO.some((f) => f.view.startsWith("sweep_") || f.view.startsWith("sector_"));
     const nativeTargets: Record<string, { target: number; tolerance: number }> = {
       front: { target: 0, tolerance: 35 },
-      left_45: { target: -35, tolerance: 35 },
-      left_profile: { target: -55, tolerance: 40 },
-      right_45: { target: 35, tolerance: 35 },
-      right_profile: { target: 55, tolerance: 40 },
+      left_25: { target: -25, tolerance: 35 },
+      left_45: { target: -45, tolerance: 35 },
+      left_profile: { target: -70, tolerance: 40 },
+      right_25: { target: 25, tolerance: 35 },
+      right_45: { target: 45, tolerance: 35 },
+      right_profile: { target: 70, tolerance: 40 },
+      profile: { target: 70, tolerance: 40 },
       basal_nostrils: { target: 0, tolerance: 45 },
+      forehead_dorsum: { target: 0, tolerance: 45 },
+      submental_chin: { target: 0, tolerance: 45 },
     };
     if (manifest.captureSource === "native_ios" || manifest.captureSource === "native_ios_rear") {
       if (manifest.captureSource === "native_ios" && manifest.hasTrueDepth !== true) {
@@ -395,14 +400,14 @@ export async function POST(
     await fs.mkdir(photosDir, { recursive: true });
     const framesDir = path.join(process.cwd(), ".data", "patients", patientId, "scans", sessionId, "frames");
 
-    // Đúng 4 ảnh hồ sơ theo yêu cầu: 0° (front), 45° (left_45), 60° profile
-    // (left_profile), và đáy mũi ngửa lên (basal_nostrils). Trước đây
-    // basal_nostrils không có trong bảng này nên bị âm thầm loại bỏ, còn
-    // angle4 lại bị right_45/right_profile giành mất.
+    // 5 ảnh hồ sơ lâm sàng cốt lõi: 0° (front), 45° (left_45), 70° profile
+    // (profile/left_profile/right_profile), và đáy mũi ngửa lên (basal_nostrils).
     const frameMappings: Record<string, PhotoAngle> = {
       front: "angle1",
       left_45: "angle2",
+      profile: "angle3",
       left_profile: "angle3",
+      right_profile: "angle3",
       basal_nostrils: "angle4",
     };
 

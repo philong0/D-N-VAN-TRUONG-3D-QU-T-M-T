@@ -23,73 +23,85 @@ public enum ScannerMode: String, CaseIterable, Identifiable {
 
 public enum ScanAngleStep: String, CaseIterable, Identifiable {
     case front = "front"
+    case left25 = "left_25"
     case left45 = "left_45"
     case leftProfile = "left_profile"
+    case right25 = "right_25"
     case right45 = "right_45"
     case rightProfile = "right_profile"
     case basalNostrils = "basal_nostrils"
+    case foreheadDorsum = "forehead_dorsum"
+    case submentalChin = "submental_chin"
     
     public var id: String { rawValue }
     
+    public var sectorIndex: Int {
+        switch self {
+        case .front: return 0
+        case .left25: return 1
+        case .left45: return 2
+        case .leftProfile: return 3
+        case .right25: return 4
+        case .right45: return 5
+        case .rightProfile: return 6
+        case .basalNostrils: return 7
+        case .foreheadDorsum: return 8
+        case .submentalChin: return 9
+        }
+    }
+    
     public var title: String {
         switch self {
-        case .front: return "1/6: Chính Diện (0°)"
-        case .left45: return "2/6: Nghiêng Trái (~35°)"
-        case .leftProfile: return "3/6: Trắc Diện Trái (~55°)"
-        case .right45: return "4/6: Nghiêng Phải (~35°)"
-        case .rightProfile: return "5/6: Trắc Diện Phải (~55°)"
-        case .basalNostrils: return "6/6: Ngửa Cằm / Đáy Mũi (~25°)"
+        case .front: return "1/10: Chính Diện (0°)"
+        case .left25: return "2/10: Chếch Trái (~25°)"
+        case .left45: return "3/10: Nghiêng Trái (~45°)"
+        case .leftProfile: return "4/10: Trắc Diện Trái (~70°)"
+        case .right25: return "5/10: Chếch Phải (~25°)"
+        case .right45: return "6/10: Nghiêng Phải (~45°)"
+        case .rightProfile: return "7/10: Trắc Diện Phải (~70°)"
+        case .basalNostrils: return "8/10: Ngửa Đáy Mũi (-20°)"
+        case .foreheadDorsum: return "9/10: Cúi Sống Mũi & Trán (+15°)"
+        case .submentalChin: return "10/10: Ngửa Dưới Cằm (-40°)"
         }
     }
     
     public var targetYawDeg: Float {
         switch self {
-        case .front, .basalNostrils: return 0.0
-        case .left45: return -35.0
-        case .leftProfile: return -55.0
-        case .right45: return 35.0
-        case .rightProfile: return 55.0
+        case .front, .basalNostrils, .foreheadDorsum, .submentalChin: return 0.0
+        case .left25: return -25.0
+        case .left45: return -45.0
+        case .leftProfile: return -70.0
+        case .right25: return 25.0
+        case .right45: return 45.0
+        case .rightProfile: return 70.0
         }
     }
 
     public var targetPitchDeg: Float {
         switch self {
-        case .basalNostrils: return 25.0
+        case .basalNostrils: return -20.0
+        case .foreheadDorsum: return 15.0
+        case .submentalChin: return -40.0
         default: return 0.0
         }
     }
     
-    public var yawToleranceDeg: Float {
-        switch self {
-        case .front: return 22.0
-        case .basalNostrils: return 25.0
-        case .left45, .right45: return 25.0
-        case .leftProfile, .rightProfile: return 30.0
-        }
+    public var isProfileAngle: Bool {
+        return self == .leftProfile || self == .rightProfile
     }
-
-    /// Comfortable clinical tolerances calibrated for real hand-held TrueDepth scanning.
-    public var pitchToleranceDeg: Float { 35.0 }
-    public var rollToleranceDeg: Float { 35.0 }
-    public var minDistanceMeters: Float { 0.18 }
-    public var maxDistanceMeters: Float { 0.85 }
-    public var stabilityWindowSeconds: Double { 0.20 }
-    public var holdDurationSeconds: Double { 0.15 }
-    public var maxYawStandardDeviationDeg: Float { 15.0 }
-    public var maxPitchStandardDeviationDeg: Float { 15.0 }
-    public var maxRollStandardDeviationDeg: Float { 15.0 }
-    public var maxAngularVelocityDegPerSecond: Float { 80.0 }
-    public var minimumStabilitySamples: Int { 2 }
-    public var captureCooldownSeconds: Double { 0.25 }
     
     public var instruction: String {
         switch self {
         case .front: return "Nhìn thẳng vào camera (0°)"
-        case .left45: return "Nghiêng nhẹ mặt sang TRÁI (35°-45°)"
-        case .leftProfile: return "Nghiêng sang TRÁI để lộ sống mũi (~55°)"
-        case .right45: return "Nghiêng nhẹ mặt sang PHẢI (35°-45°)"
-        case .rightProfile: return "Nghiêng sang PHẢI để lộ sống mũi (~55°)"
-        case .basalNostrils: return "Hơi ngửa nhẹ cằm để quét vòm mũi & lỗ mũi (~25°)"
+        case .left25: return "Hơi quay nhẹ mặt sang TRÁI (20°-30°)"
+        case .left45: return "Nghiêng mặt sang TRÁI (40°-50°)"
+        case .leftProfile: return "Quay hẳn sang TRÁI lộ rõ trắc diện mũi (65°-75°)"
+        case .right25: return "Hơi quay nhẹ mặt sang PHẢI (20°-30°)"
+        case .right45: return "Nghiêng mặt sang PHẢI (40°-50°)"
+        case .rightProfile: return "Quay hẳn sang PHẢI lộ rõ trắc diện mũi (65°-75°)"
+        case .basalNostrils: return "Hơi ngửa nhẹ cằm (15°-25°) để quét đáy & lỗ mũi"
+        case .foreheadDorsum: return "Hơi cúi nhẹ đầu (10°-18°) để quét sống mũi & trán"
+        case .submentalChin: return "Ngửa cằm cao (35°-45°) để quét góc cằm & cổ"
         }
     }
 }
