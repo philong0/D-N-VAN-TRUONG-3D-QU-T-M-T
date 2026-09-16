@@ -215,11 +215,14 @@ def reconstruct_patient_gnm(patient_id: str, photos_dir: Path, output_dir: Path)
     for cdir in [photos_dir, photos_dir / "frames", photos_dir.parent / "photos", photos_dir.parent.parent / "photos",
                  Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
                  Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos")]:
-        candidate_img = cdir / "below.jpg"
-        candidate_json = cdir / "below_orientation.json"
-        if candidate_img.exists() and candidate_json.exists():
-            below_photo_path = candidate_img
-            below_orientation_path = candidate_json
+        for candidate_stem in ("basal_nostrils", "below", "sweep_01"):
+            candidate_img = cdir / f"{candidate_stem}.jpg"
+            candidate_json = cdir / f"{candidate_stem}_orientation.json"
+            if candidate_img.exists() and candidate_json.exists():
+                below_photo_path = candidate_img
+                below_orientation_path = candidate_json
+                break
+        if below_photo_path:
             break
 
     print(f"Loaded slots: {list(images.keys())} from {photos_dir}", flush=True)
@@ -245,7 +248,7 @@ def reconstruct_gnm_from_images(
     if not images:
         return {"ok": False, "error": "no-usable-photo"}
 
-    view_inputs, view_slots, view_images, view_landmarks, warnings = [], [], [], [], []
+    view_inputs, view_slots, view_images, view_landmarks, view_yaws, warnings = [], [], [], [], [], []
     for raw_slot, image_bgr in images.items():
         h, w = image_bgr.shape[:2]
         # Measure true yaw angle first
@@ -257,18 +260,16 @@ def reconstruct_gnm_from_images(
         yaw_deg = float(raw_res.get("yaw", 0.0))
         yaw_abs = abs(yaw_deg)
 
-        # Automatic anatomical slot classification based on real head yaw
-        if raw_slot in ("angle1", "angle2", "angle3", "angle4", "angle5"):
-            canon_slot = raw_slot
+        # Automatic anatomical slot classification based on real head yaw:
+        # A photo with abs(yaw) < 50° is an oblique view (angle2/4), NEVER a profile (angle3/5).
+        if yaw_abs <= 12.0:
+            canon_slot = "angle1"
+        elif yaw_deg < -12.0:
+            canon_slot = "angle3" if yaw_deg <= -50.0 else "angle2"
         else:
-            if yaw_abs <= 12.0:
-                canon_slot = "angle1"
-            elif yaw_deg < -12.0:
-                canon_slot = "angle3" if yaw_deg <= -55.0 else "angle2"
-            else:
-                canon_slot = "angle5" if yaw_deg >= 55.0 else "angle4"
+            canon_slot = "angle5" if yaw_deg >= 50.0 else "angle4"
 
-        is_profile = canon_slot in ("angle3", "angle5") and yaw_abs >= 65.0
+        is_profile = canon_slot in ("angle3", "angle5") and yaw_abs >= 60.0
         if is_profile:
             result = detect_pose(image_bgr, is_profile_view=True)
         else:
@@ -279,6 +280,7 @@ def reconstruct_gnm_from_images(
         view_slots.append(canon_slot)
         view_images.append(image_bgr)
         view_landmarks.append(result["landmarks_98"])
+        view_yaws.append(yaw_deg)
 
     if len(view_inputs) == 0:
         return {"ok": False, "error": "no-face-detected-in-any-photo", "warnings": warnings}
@@ -325,7 +327,7 @@ def reconstruct_gnm_from_images(
     from gnm_correspondence import VERTEX_INDICES as _GNM_VIDX, WEIGHTS as _GNM_W, WFLW_INDICES as _GNM_WFLW, point_mask as _gnm_point_mask
 
     bake_views = []
-    for slot, image_bgr, lms_98 in zip(view_slots, view_images, view_landmarks):
+    for slot, image_bgr, lms_98, v_yaw in zip(view_slots, view_images, view_landmarks, view_yaws):
         h, w = image_bgr.shape[:2]
         K = np.array([[w, 0, w / 2], [0, w, h / 2], [0, 0, 1]], dtype=np.float64)
         is_profile = slot in ("angle3", "angle5")
@@ -344,7 +346,7 @@ def reconstruct_gnm_from_images(
         else:
             continue
         person_mask = compute_person_silhouette_mask(lms_98, (h, w), slot=slot)
-        bake_views.append({"image": image_bgr, "R": R, "t": t, "camera_matrix": K, "person_mask": person_mask, "landmarks_98": lms_98, "slot": slot})
+        bake_views.append({"image": image_bgr, "R": R, "t": t, "camera_matrix": K, "person_mask": person_mask, "landmarks_98": lms_98, "slot": slot, "yaw": v_yaw})
 
     # 2026-09-14 -- optional "below" (chin-underside) view. Deliberately
     # posed WITHOUT detect_pose()/solvePnP-on-98-landmarks (that path needs

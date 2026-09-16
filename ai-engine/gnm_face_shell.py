@@ -172,11 +172,12 @@ def multiband_blend_views(view_imgs: list[np.ndarray], view_masks: list[np.ndarr
     # detail pixel a single real photo's own unmodified value.
     blended_pyr = []
     for l in range(levels):
-        dominant = np.argmax(np.stack([pyr_masks[k][l] for k in range(n_views)], axis=0), axis=0)
-        l_blend = np.zeros_like(pyr_laps[0][l])
-        for k in range(n_views):
-            sel = (dominant == k)[:, :, None]
-            l_blend = np.where(sel, pyr_laps[k][l], l_blend)
+        # Soft multi-band blending across Laplacian pyramid bands:
+        # Avoids hard argmax seams between views that cause rectangular patches on cheeks.
+        m_stack = np.stack([pyr_masks[k][l] for k in range(n_views)], axis=0) # (K, H, W)
+        m_sum = np.sum(m_stack, axis=0, keepdims=True)
+        m_norm = np.where(m_sum > 1e-6, m_stack / np.clip(m_sum, 1e-6, None), 1.0 / n_views)
+        l_blend = np.sum(np.stack([pyr_laps[k][l] for k in range(n_views)], axis=0) * m_norm[:, :, :, None], axis=0)
         blended_pyr.append(l_blend)
 
     mask_sum_base_raw = sum(pyr_masks[k][levels] for k in range(n_views))
@@ -420,29 +421,27 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
         is_frontal = (k == frontal_idx)
         in_bounds = (z > 0.05) & (px >= 2) & (px < iw - 3) & (py >= 2) & (py < ih - 3)
 
+        view_yaw = abs(float(v.get("yaw", 0.0)))
         if is_frontal:
             # Frontal photo covers the central facial shell with full natural fidelity
-            min_cos = 0.05
-            facing_weight = _smoothstep(0.02, 0.45, np.maximum(cos_angle, 0.0))
+            min_cos = 0.08
+            facing_weight = _smoothstep(0.08, 0.50, np.maximum(cos_angle, 0.0))
+            # Frontal photo must never texture the ears (hair occludes) or underside of nose tip
+            valid = in_bounds & (cos_angle > min_cos) & (~is_ear_zone)
         elif slot == "below":
-            # 2026-09-14 -- chin-underside checkpoint: camera looks up at a
-            # steep angle no other view uses, so its own facing geometry is
-            # naturally different (surfaces it actually saw face DOWN toward
-            # it, not forward toward a frontal/45deg camera) -- a relaxed
-            # min_cos here only decides IF this view contributes at all; the
-            # hard zone restriction right below (is_chin_underside_zone |
-            # is_nostril_zone | is_under_nose_tip) is what actually keeps it
-            # out of every other facial region regardless of this threshold.
-            min_cos = -0.10
+            # Chin-underside / basal nostrils photo
+            min_cos = 0.02
             facing_weight = _smoothstep(0.02, 0.50, np.maximum(cos_angle, 0.0))
+            valid = in_bounds & (cos_angle > min_cos) & (is_chin_underside_zone | is_nostril_zone | is_under_nose_tip)
         else:
-            # Side views cover lateral cheeks, ears, temples, and jawline
-            min_cos = np.where(is_ear_zone, -0.20, 0.05)
-            facing_weight = _smoothstep(0.02, 0.50, np.maximum(cos_angle, 0.0))
-
-        valid = in_bounds & (cos_angle > min_cos)
-        if slot == "below":
-            valid &= (is_chin_underside_zone | is_nostril_zone | is_under_nose_tip)
+            # Oblique and profile views
+            min_cos = 0.08
+            facing_weight = _smoothstep(0.08, 0.50, np.maximum(cos_angle, 0.0))
+            valid = in_bounds & (cos_angle > min_cos)
+            # Only genuine profile photos (yaw >= 48°) can directly texture ears.
+            # Oblique photos have hair covering the ear area; diffuse smooth authentic skin tone instead.
+            if view_yaw < 48.0:
+                valid &= (~is_ear_zone)
 
         # Smooth feathering from person mask edge (never a hard binary rectangular cut)
         mask_weight = np.ones(n_pts, dtype=np.float32)
