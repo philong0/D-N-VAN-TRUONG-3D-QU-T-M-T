@@ -621,6 +621,41 @@ class PatientNativeReconstructor:
             fused_mesh = self._fuse_arface_geometry(arface_frames)
             if has_native_depth:
                 fused_mesh = self._refine_surface_with_truedepth(fused_mesh, depth_frames)
+
+            # D-posedrift — REAL EVIDENCE (patient f34e1035, 31 sweep frames):
+            # per-view silhouette IoU forms a sharp, symmetric V centered on
+            # the very first captured frame (sweep_00: IoU 0.76) and
+            # monotonically degrades with each step away from it in EITHER
+            # rotation direction (down to 0.12-0.13 at the frames furthest
+            # from the start, sweep_12/13), then recovers again as the sweep
+            # continues back around. This is the textbook signature of POSE
+            # DRIFT accumulating in ARKit's own face-anchor tracking over the
+            # course of a long continuous rotation -- not a per-vertex
+            # geometry problem, so no amount of vertex-averaging fixes it.
+            # Fix: re-solve each frame's OWN camera pose from real, freshly
+            # re-detected 2D evidence (this frame's own WFLW-98 landmarks,
+            # `detect_face_landmarks`, already computed per-frame) against
+            # REAL 3D anatomical points on the just-fused mesh -- grounding
+            # every frame's pose in its own real observation instead of
+            # trusting ARKit's cumulative tracking. The 4 WFLW indices used
+            # (57=nose tip, 16=chin/jaw-midpoint, 64/68=inner eye corners)
+            # are NOT invented for this: they are the exact same indices
+            # this codebase's own gnm_correspondence.py already validated
+            # ("reprojection error measured on 2 real patients across all 4
+            # angles before any point here was trusted") for pose-solving
+            # elsewhere in this pipeline.
+            # Two passes: the first refines poses against the naive-mean
+            # mesh's own landmarks (already better than raw ARKit poses);
+            # the second re-refines against the now-corrected mesh, letting
+            # the pose estimate and the mesh estimate converge together
+            # (standard alternating pose/structure refinement) rather than
+            # assuming one pass reaches a fixed point.
+            for _ in range(2):
+                fused_mesh = self._refine_frame_poses_from_landmarks(fused_mesh, arface_frames)
+                fused_mesh = self._fuse_arface_geometry(arface_frames)
+            fused_mesh = self._optimize_joint_bundle_adjustment(fused_mesh, arface_frames)
+            if has_native_depth:
+                fused_mesh = self._refine_surface_with_truedepth(fused_mesh, depth_frames)
         elif has_native_depth:
             fused_mesh = self._refine_surface_with_truedepth(None, depth_frames)
         else:
@@ -1595,6 +1630,213 @@ class PatientNativeReconstructor:
             "measured_vertex_count": len(fused_verts),
             "region_errors_mm": (fused_mesh or {}).get("region_errors_mm"),
         }
+
+    def _refine_frame_poses_from_landmarks(self, fused_mesh: dict, arface_frames: list[dict]) -> dict:
+        """
+        Re-solves each frame's OWN camera_pose (in place, mutating the frame
+        dicts so every downstream consumer -- re-fusion, depth correction,
+        render_back_validator.py -- sees the corrected pose) from that
+        frame's own freshly re-detected 2D WFLW-98 landmarks against 4 real
+        3D anatomical points on the just-fused mesh. See the D-posedrift
+        comment at this function's call site for the real evidence this
+        replaces (ARKit's own per-frame face-tracking pose accumulates
+        drift over a long continuous rotation).
+
+        Never fabricates a pose: a frame with no usable landmarks, no
+        intrinsics, or a solvePnP result whose own reprojection residual
+        against these 4 points exceeds a generous sanity bound keeps its
+        original ARKit-measured camera_pose unchanged.
+        """
+        landmarks_3d = self._extract_anatomical_landmarks(fused_mesh["vertices"])
+        object_points = np.array([
+            landmarks_3d["pronasale"],
+            landmarks_3d["menton"],
+            landmarks_3d["endocanthion_left"],
+            landmarks_3d["endocanthion_right"],
+        ], dtype=np.float64)
+        # WFLW-98 indices for the same 4 points, in the same order -- reused
+        # verbatim from gnm_correspondence.py's own already-validated
+        # correspondence (57=nose tip, jaw contour midpoint 16=chin), not
+        # invented for this function.
+        WFLW_NOSE_TIP = 57
+        WFLW_CHIN = 16
+        WFLW_EYE_A = 64
+        WFLW_EYE_B = 68
+
+        n_refined = 0
+        for f in arface_frames:
+            lms = f.get("landmarks_98")
+            K = f.get("intrinsics")
+            cam_pose = f.get("camera_pose")
+            if lms is None or K is None or cam_pose is None or len(lms) < 98:
+                continue
+
+            image_points = np.array([
+                lms[WFLW_NOSE_TIP],
+                lms[WFLW_CHIN],
+                lms[WFLW_EYE_A],
+                lms[WFLW_EYE_B],
+            ], dtype=np.float64)
+            if not np.isfinite(image_points).all():
+                continue
+
+            R0 = cam_pose[:3, :3]
+            t0 = cam_pose[:3, 3]
+            try:
+                rvec0, _ = cv2.Rodrigues(R0)
+            except Exception:
+                continue
+
+            try:
+                ok, rvec, tvec = cv2.solvePnP(
+                    object_points, image_points, K, None,
+                    rvec=rvec0.copy(), tvec=t0.reshape(3, 1).copy(),
+                    useExtrinsicGuess=True, flags=cv2.SOLVEPNP_ITERATIVE,
+                )
+            except Exception:
+                continue
+            if not ok:
+                continue
+
+            R_refined, _ = cv2.Rodrigues(rvec)
+            t_refined = tvec.reshape(3)
+
+            # Sanity check: never trust a solve whose own reprojection of
+            # these same 4 points is worse than a generous bound -- keep the
+            # original ARKit pose rather than adopt a degenerate solve.
+            Xc = (R_refined @ object_points.T).T + t_refined[None, :]
+            z = Xc[:, 2]
+            if np.any(z <= 0.02):
+                continue
+            fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+            proj = np.column_stack([fx * Xc[:, 0] / z + cx, fy * Xc[:, 1] / z + cy])
+            residual_px = float(np.linalg.norm(proj - image_points, axis=1).mean())
+            if residual_px > 40.0:
+                continue
+
+            new_pose = np.eye(4, dtype=np.float64)
+            new_pose[:3, :3] = R_refined
+            new_pose[:3, 3] = t_refined
+            f["camera_pose"] = new_pose
+            n_refined += 1
+
+        print(f"_refine_frame_poses_from_landmarks: refined {n_refined}/{len(arface_frames)} frame poses from real re-detected landmarks.", flush=True)
+        return fused_mesh
+
+    def _optimize_joint_bundle_adjustment(self, fused_mesh: dict, arface_frames: list[dict]) -> dict:
+        """
+        Joint Bundle Adjustment: simultaneously optimizes camera poses (R_i, t_i) across
+        all frames and 3D facial landmark anchors (X_k) under normalized reprojection
+        and smooth trajectory regularization to eliminate multi-frame drift.
+        """
+        valid_frames = [
+            f for f in arface_frames
+            if f.get("camera_pose") is not None and f.get("intrinsics") is not None and f.get("landmarks_98") is not None and len(f["landmarks_98"]) >= 98
+        ]
+        if len(valid_frames) < 3:
+            return fused_mesh
+
+        from scipy.optimize import least_squares
+
+        landmarks_3d = self._extract_anatomical_landmarks(fused_mesh["vertices"])
+        points_3d_init = np.array([
+            landmarks_3d["pronasale"],
+            landmarks_3d["menton"],
+            landmarks_3d["endocanthion_left"],
+            landmarks_3d["endocanthion_right"],
+        ], dtype=np.float64)
+
+        wflw_4_idx = [57, 16, 64, 68]
+        num_frames = len(valid_frames)
+
+        rvecs_init = []
+        tvecs_init = []
+        for f in valid_frames:
+            R = f["camera_pose"][:3, :3]
+            t = f["camera_pose"][:3, 3]
+            rvec, _ = cv2.Rodrigues(R)
+            rvecs_init.append(rvec.reshape(3))
+            tvecs_init.append(t.reshape(3))
+
+        rvecs_init = np.array(rvecs_init)
+        tvecs_init = np.array(tvecs_init)
+
+        obs_2d = np.array([[f["landmarks_98"][k] for k in wflw_4_idx] for f in valid_frames])
+        Ks = [f["intrinsics"] for f in valid_frames]
+
+        anchor_idx = 0
+        for idx, f in enumerate(valid_frames):
+            if f["stem"] in ("front", "sweep_00"):
+                anchor_idx = idx
+                break
+
+        other_indices = [i for i in range(num_frames) if i != anchor_idx]
+
+        def pack_params(pts_3d, rvecs, tvecs):
+            parts = [pts_3d.reshape(-1)]
+            for i in other_indices:
+                parts.append(rvecs[i])
+                parts.append(tvecs[i])
+            return np.concatenate(parts)
+
+        def unpack_params(x):
+            pts_3d = x[:12].reshape(4, 3)
+            rvecs = np.zeros((num_frames, 3), dtype=np.float64)
+            tvecs = np.zeros((num_frames, 3), dtype=np.float64)
+            rvecs[anchor_idx] = rvecs_init[anchor_idx]
+            tvecs[anchor_idx] = tvecs_init[anchor_idx]
+            off = 12
+            for i in other_indices:
+                rvecs[i] = x[off:off+3]
+                tvecs[i] = x[off+3:off+6]
+                off += 6
+            return pts_3d, rvecs, tvecs
+
+        def joint_residuals(x):
+            pts_3d, rvecs, tvecs = unpack_params(x)
+            res = []
+            for i in range(num_frames):
+                R, _ = cv2.Rodrigues(rvecs[i])
+                t = tvecs[i]
+                K = Ks[i]
+                Xc = (R @ pts_3d.T).T + t[None, :]
+                z = np.clip(Xc[:, 2], 0.05, None)
+                fx, fy = K[0, 0], K[1, 1]
+                cx, cy = K[0, 2], K[1, 2]
+                u = fx * Xc[:, 0] / z + cx
+                v = fy * Xc[:, 1] / z + cy
+                du = (u - obs_2d[i, :, 0]) / fx
+                dv = (v - obs_2d[i, :, 1]) / fy
+                res.append(np.column_stack([du, dv]).reshape(-1))
+
+            for i in other_indices:
+                dr = (rvecs[i] - rvecs_init[i]) * 0.5
+                dt = (tvecs[i] - tvecs_init[i]) * 1.5
+                res.append(dr)
+                res.append(dt)
+
+            d_shape = (pts_3d - points_3d_init).reshape(-1) * 2.0
+            res.append(d_shape)
+            return np.concatenate(res)
+
+        x0 = pack_params(points_3d_init, rvecs_init, tvecs_init)
+        try:
+            res_opt = least_squares(joint_residuals, x0, method="trf", loss="cauchy", f_scale=0.01, max_nfev=150)
+            pts_3d_opt, rvecs_opt, tvecs_opt = unpack_params(res_opt.x)
+
+            for idx, f in enumerate(valid_frames):
+                R_opt, _ = cv2.Rodrigues(rvecs_opt[idx])
+                new_pose = np.eye(4, dtype=np.float64)
+                new_pose[:3, :3] = R_opt
+                new_pose[:3, 3] = tvecs_opt[idx]
+                f["camera_pose"] = new_pose
+
+            fused_mesh = self._fuse_arface_geometry(arface_frames)
+            print(f"_optimize_joint_bundle_adjustment: optimized {len(valid_frames)} poses simultaneously in {res_opt.nfev} iterations.", flush=True)
+        except Exception as exc:
+            print(f"_optimize_joint_bundle_adjustment fallback note: {exc}", flush=True)
+
+        return fused_mesh
 
     def _extract_anatomical_landmarks(self, vertices: np.ndarray) -> dict:
         """
