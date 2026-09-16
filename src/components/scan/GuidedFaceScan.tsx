@@ -453,8 +453,8 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
       // 4. Chờ quét 5 góc và upload package xong
       await bridgePromise;
 
-      // 5. Chuyển thẳng vào 3D Studio để xem mô hình 3D lập tức
-      window.location.href = `/patients/${patientId}/studio`;
+      // 5. Chuyển thẳng vào 3D Studio để xem mô hình 3D lập tức (replace lịch sử để tránh bị loop)
+      window.location.replace(`/patients/${patientId}/studio`);
     } catch (err) {
       console.warn("Native ARKit scan error:", err);
       setIsArkitScanning(false);
