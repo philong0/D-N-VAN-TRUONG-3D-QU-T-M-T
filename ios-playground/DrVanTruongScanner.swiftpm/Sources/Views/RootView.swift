@@ -79,20 +79,24 @@ struct WebView: UIViewRepresentable {
         return webView
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        if let currentURL = uiView.url?.absoluteString, currentURL != url.absoluteString {
+            uiView.load(URLRequest(url: url))
+        }
+    }
 }
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "https://lens-inside-silence-bearing.trycloudflare.com"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "http://149.118.63.240"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
     public init() {
-        let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
+        let defaultURL = "http://149.118.63.240"
         let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
-        if current.isEmpty {
-            UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
+        if current.isEmpty || current.contains("trycloudflare.com") {
+            UserDefaults.standard.set(defaultURL, forKey: "clinicServerURL")
         }
     }
 

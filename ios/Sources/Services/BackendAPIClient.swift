@@ -18,10 +18,10 @@ public final class BackendAPIClient: ObservableObject {
     public var activeServerURL: String {
         var url = serverBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if url.isEmpty {
-            url = "https://lens-inside-silence-bearing.trycloudflare.com"
+            url = "http://149.118.63.240"
         }
         if !url.hasPrefix("http://") && !url.hasPrefix("https://") {
-            url = "https://" + url
+            url = "http://" + url
         }
         if url.hasSuffix("/") {
             url = String(url.dropLast())
@@ -29,7 +29,7 @@ public final class BackendAPIClient: ObservableObject {
         return url
     }
 
-    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "https://lens-inside-silence-bearing.trycloudflare.com" {
+    @Published public var serverBaseURL: String = UserDefaults.standard.string(forKey: "clinicServerURL") ?? "http://149.118.63.240" {
         didSet {
             UserDefaults.standard.set(serverBaseURL, forKey: "clinicServerURL")
         }
