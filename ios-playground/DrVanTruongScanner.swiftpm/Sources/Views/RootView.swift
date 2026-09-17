@@ -91,7 +91,7 @@ public struct RootView: View {
     public init() {
         let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
         let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
-        if current != liveURL {
+        if current.isEmpty {
             UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
         }
     }
@@ -123,7 +123,7 @@ public struct RootView: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "gearshape.fill")
-                    Text("Cài đặt")
+                    Text("Đổi Kênh Máy Chủ")
                         .font(.caption2.bold())
                 }
                 .foregroundColor(.white)
@@ -135,40 +135,56 @@ public struct RootView: View {
             .padding(.trailing, 16)
             .padding(.bottom, 70)
         }
-        .onAppear {
-            let liveURL = "https://lens-inside-silence-bearing.trycloudflare.com"
-            let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
-            if current != liveURL {
-                serverURLString = liveURL
-                UserDefaults.standard.set(liveURL, forKey: "clinicServerURL")
-                reloadTrigger = UUID()
-            }
-        }
         .sheet(isPresented: $showingSettings) {
             NavigationView {
                 Form {
-                    Section(header: Text("Địa chỉ máy chủ (Web Studio)")) {
-                        TextField("https://...", text: $serverURLString)
-                            .keyboardType(.URL)
-                            .autocorrectionDisabled()
-                            .textInputAutocapitalization(.never)
-                        
-                        Button("Đặt về link Live mặc định") {
+                    Section(header: Text("Chọn Kênh Kết Nối")) {
+                        Button(action: {
+                            serverURLString = "http://149.118.63.240"
+                            UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
+                            reloadTrigger = UUID()
+                            scanBridge.webView?.load(URLRequest(url: URL(string: serverURLString)!))
+                            showingSettings = false
+                        }) {
+                            HStack {
+                                Image(systemName: "bolt.fill").foregroundColor(.orange)
+                                VStack(alignment: .leading) {
+                                    Text("Kênh 1: Máy chủ IP Trực tiếp (Khuyên dùng)").bold()
+                                    Text("http://149.118.63.240").font(.caption).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+
+                        Button(action: {
                             serverURLString = "https://lens-inside-silence-bearing.trycloudflare.com"
                             UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
                             reloadTrigger = UUID()
                             scanBridge.webView?.load(URLRequest(url: URL(string: serverURLString)!))
                             showingSettings = false
+                        }) {
+                            HStack {
+                                Image(systemName: "lock.shield.fill").foregroundColor(.blue)
+                                VStack(alignment: .leading) {
+                                    Text("Kênh 2: Cloudflare HTTPS Tunnel").bold()
+                                    Text("https://lens-inside-silence-bearing.trycloudflare.com").font(.caption).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
                         }
-                        .foregroundColor(.blue)
                     }
-                    
-                    Section {
+
+                    Section(header: Text("Tùy Chỉnh Địa Chỉ Máy Chủ")) {
+                        TextField("http://...", text: $serverURLString)
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        
                         Button(action: {
                             let clean = serverURLString.trimmingCharacters(in: .whitespacesAndNewlines)
                             UserDefaults.standard.set(clean, forKey: "clinicServerURL")
                             reloadTrigger = UUID()
-                            scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "https://lens-inside-silence-bearing.trycloudflare.com")!))
+                            scanBridge.webView?.load(URLRequest(url: URL(string: clean) ?? URL(string: "http://149.118.63.240")!))
                             showingSettings = false
                         }) {
                             HStack {
