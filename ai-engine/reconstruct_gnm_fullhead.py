@@ -41,10 +41,35 @@ SLOT_ALIASES = {
     # 5-slot scan-session naming -> canonical angle slots
     "front": "angle1",
     "left_45": "angle2",
+    "left_oblique": "angle2",
     "left_profile": "angle3",
+    "left_lateral": "angle3",
+    "profile": "angle3",
     "right_45": "angle4",
+    "right_oblique": "angle4",
     "right_profile": "angle5",
+    "right_lateral": "angle5",
+    "basal_nostrils": "angle1",
+    "sweep_00": "angle1",
+    "sweep_01": "angle2",
+    "sweep_02": "angle2",
+    "sweep_03": "angle3",
+    "sweep_04": "angle4",
+    "sweep_05": "angle4",
+    "sweep_06": "angle5",
 }
+
+
+def resolve_slot(filename: str) -> str | None:
+    stem = Path(filename).stem
+    if stem in ("angle1", "angle2", "angle3", "angle4", "angle5"):
+        return stem
+    if stem in SLOT_ALIASES:
+        return SLOT_ALIASES[stem]
+    for alias_key, canon_slot in SLOT_ALIASES.items():
+        if stem.endswith(f"_{alias_key}") or stem == alias_key:
+            return canon_slot
+    return None
 
 
 def smooth_mesh_surface(positions: np.ndarray, triangles: np.ndarray) -> np.ndarray:
@@ -168,53 +193,56 @@ def reconstruct_patient_gnm(patient_id: str, photos_dir: Path, output_dir: Path)
     (angle1-5 or the 5-slot scan naming, aliased via SLOT_ALIASES), then
     delegate to `reconstruct_gnm_from_images`."""
     images = {}
-    for f in sorted(photos_dir.glob("*")):
-        if f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
-            continue
-        raw_slot = f.stem
-        slot = SLOT_ALIASES.get(raw_slot, raw_slot)
-        img = cv2.imread(str(f))
-        if img is None:
-            continue
-        if slot in ("angle1", "angle2", "angle3", "angle4", "angle5") and slot not in images:
-            images[slot] = img
+    candidate_dirs = [
+        photos_dir,
+        photos_dir / "frames",
+        photos_dir / "frames" / "clinical",
+        photos_dir.parent / "photos",
+        photos_dir.parent.parent / "photos",
+        Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
+        Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos"),
+    ]
 
+    # Include all scan sessions if available
+    for parent_base in [photos_dir.parent, Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}")]:
+        scans_base = parent_base / "scans"
+        if scans_base.exists():
+            for sdir in sorted(scans_base.glob("*")):
+                if sdir.is_dir():
+                    candidate_dirs.append(sdir / "frames")
+                    candidate_dirs.append(sdir / "frames" / "clinical")
+
+    for cdir in candidate_dirs:
+        if not cdir.exists():
+            continue
+        for f in sorted(cdir.glob("*")):
+            if f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
+                continue
+            slot = resolve_slot(f.name)
+            if slot and slot not in images:
+                img = cv2.imread(str(f))
+                if img is not None:
+                    images[slot] = img
+                    print(f"Loaded {slot} from {f}", flush=True)
+
+    # If still missing some angles, load any sweep_*.jpg frames as auxiliary views
     if len(images) < 4:
-        # Fallback to search in parent or dedicated photos folders
-        candidate_dirs = [
-            photos_dir / "frames",
-            photos_dir.parent / "photos",
-            photos_dir.parent.parent / "photos",
-            Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
-            Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos"),
-        ]
         for cdir in candidate_dirs:
-            if cdir.exists() and cdir != photos_dir:
-                for f in sorted(cdir.glob("*")):
-                    if f.suffix.lower() not in (".jpg", ".jpeg", ".png"):
-                        continue
-                    raw_slot = f.stem
-                    slot = SLOT_ALIASES.get(raw_slot, raw_slot)
-                    if slot in ("angle1", "angle2", "angle3", "angle4", "angle5") and slot not in images:
-                        im = cv2.imread(str(f))
-                        if im is not None:
-                            images[slot] = im
-                            print(f"Fallback loaded {slot} from {f}", flush=True)
+            if not cdir.exists():
+                continue
+            for f in sorted(cdir.glob("sweep_*.jpg")):
+                raw_stem = f.stem
+                if raw_stem not in images:
+                    img = cv2.imread(str(f))
+                    if img is not None:
+                        images[raw_stem] = img
+                        print(f"Loaded sweep frame {raw_stem} from {f}", flush=True)
 
-    # 2026-09-14 -- optional "below" (chin-underside) checkpoint, added
-    # ADDITIVELY alongside angle1-5 above (never replaces/changes any of
-    # that existing loading logic). This photo cannot go through the same
-    # SLOT_ALIASES/angle1-5 path: it needs its own real-device-orientation
-    # sidecar JSON, not just an image file, and it is intentionally never
-    # added to `images` (which feeds fit_multiview / 3D geometry) -- see
-    # chin_underside_anchor.py's own docstring for why this view is
-    # texture-only. Looked up the same way as the angle1-5 fallback search
-    # above (own dir first, then the same candidate dirs).
     below_photo_path = None
     below_orientation_path = None
-    for cdir in [photos_dir, photos_dir / "frames", photos_dir.parent / "photos", photos_dir.parent.parent / "photos",
-                 Path(f"/home/ubuntu/dr-vantruong-3d-studio/.data/patients/{patient_id}/photos"),
-                 Path(f"/home/ubuntu/dr-vantruong-3d-studio/public/models/patients/{patient_id}/photos")]:
+    for cdir in candidate_dirs:
+        if not cdir.exists():
+            continue
         for candidate_stem in ("basal_nostrils", "below", "sweep_01"):
             candidate_img = cdir / f"{candidate_stem}.jpg"
             candidate_json = cdir / f"{candidate_stem}_orientation.json"
@@ -225,11 +253,12 @@ def reconstruct_patient_gnm(patient_id: str, photos_dir: Path, output_dir: Path)
         if below_photo_path:
             break
 
-    print(f"Loaded slots: {list(images.keys())} from {photos_dir}", flush=True)
+    print(f"Loaded slots: {list(images.keys())} for patient {patient_id}", flush=True)
     return reconstruct_gnm_from_images(
         patient_id, images, output_dir,
         below_photo_path=below_photo_path, below_orientation_path=below_orientation_path,
     )
+
 
 
 def reconstruct_gnm_from_images(
