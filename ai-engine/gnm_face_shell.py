@@ -70,11 +70,8 @@ def get_face_shell_topology():
     hockey = vgroups[gnames.index("hockey_mask")] > 0.5
     eye_sockets = vgroups[gnames.index("eye_sockets")] > 0.5
 
-    # Pure aesthetic face mask matching 100% real camera photo coverage (Crisalix medical standard):
-    hairline_limit = 0.355 - 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    neck_limit = 0.178 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.052)
-    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.052)) | eye_sockets
+    # Anterior Clinical Face-Only Mask: Forehead, Eyes, Nose, Cheeks, Lips, Chin, Jawline (100% camera covered, pure exterior skin)
+    shell_mask = hockey
 
 
 
@@ -430,6 +427,11 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
             if view_yaw < 48.0:
                 valid &= (~is_ear_zone)
 
+        # Depth-buffer occlusion check: strictly rejects texels hidden behind another part of face
+        if slot in depth_buffers:
+            is_visible = pyrender_occlusion.visible(pts_pos, slot, depth_buffers, epsilon=0.012)
+            valid &= is_visible
+
         # Smooth feathering from person mask edge (never a hard binary rectangular cut)
         mask_weight = np.ones(n_pts, dtype=np.float32)
         if person_mask is not None:
@@ -557,20 +559,18 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     tex_canvas = flat_tex.reshape(tex_size, tex_size, 3)
     valid_mask = flat_val.reshape(tex_size, tex_size)
 
-    # Seamless Natural Skin Boundary Diffusion:
+    # Seamless Natural Skin Boundary Diffusion (strictly isolated to small seam gaps, preventing hair bleed):
     shell_mask_u8 = texel_valid.astype(np.uint8) * 255
     unobserved = ((valid_mask == 0) & (shell_mask_u8 > 0)).astype(np.uint8) * 255
 
     if unobserved.any():
-        # Telea inpainting diffuses the authentic skin colors and gradients directly from the observed border
-        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
-        # Check if any deep peripheral texels remain unreached
-        unfilled = (unobserved > 0) & (inpainted_base.sum(axis=-1) == 0)
+        # Telea inpainting with tight 3px radius to seal mesh seams without propagating dark hairline
+        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        unfilled = (unobserved > 0) & ((inpainted_base.sum(axis=-1) == 0) | (valid_mask == 0))
         if unfilled.any():
             valid_texels = tex_canvas[valid_mask > 0]
             med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
             inpainted_base[unfilled] = med_skin.astype(np.uint8)
-            inpainted_base = cv2.inpaint(inpainted_base, unfilled.astype(np.uint8) * 255, inpaintRadius=10, flags=cv2.INPAINT_TELEA)
         final_texture = inpainted_base.copy()
         final_texture[valid_mask > 0] = tex_canvas[valid_mask > 0]
     else:
