@@ -100,9 +100,17 @@ public struct RootView: View {
     // tra được thành công khi chạy curl NGAY TRÊN máy chủ, không đại diện
     // cho khả năng điện thoại thật (mạng di động/WiFi khác) truy cập được
     // qua Internet -- đúng lý do Cloudflare Tunnel được dùng ngay từ đầu.
-    // Không còn ghi đè gì trong init() nữa; mặc định + fallback giờ đều là
-    // đường link tunnel đã xác nhận hoạt động thật.
-    public init() {}
+    // D-cleanupstale — máy đã từng cài bản lỗi trước đó có thể vẫn còn lưu
+    // sẵn "http://149.118.63.240" trong UserDefaults từ lần chạy trước; chỉ
+    // xoá đoạn GHI ĐÈ (ở trên) không tự dọn giá trị xấu ĐÃ LƯU SẴN đó, vì
+    // @AppStorage chỉ dùng giá trị mặc định khi CHƯA có gì lưu. Dọn đúng 1
+    // lần duy nhất, chỉ khi giá trị đã lưu CHÍNH XÁC là IP thô nói trên
+    // (không đụng vào bất kỳ URL nào khác người dùng có thể đã tự đặt).
+    public init() {
+        if UserDefaults.standard.string(forKey: "clinicServerURL") == "http://149.118.63.240" {
+            UserDefaults.standard.removeObject(forKey: "clinicServerURL")
+        }
+    }
 
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
