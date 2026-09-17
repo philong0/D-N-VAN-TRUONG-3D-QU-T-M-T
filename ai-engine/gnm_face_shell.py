@@ -68,37 +68,16 @@ def get_face_shell_topology():
 
     skin_ext = vgroups[gnames.index("skin_exterior")] > 0.5
     hockey = vgroups[gnames.index("hockey_mask")] > 0.5
-    ears = vgroups[gnames.index("ears")] > 0.5
     eye_sockets = vgroups[gnames.index("eye_sockets")] > 0.5
 
-    # Continuous anterior-to-lateral face shell including full forehead dome, ears, and neck.
-    # z >= -0.056 covers ears, temples, and full cranial dome completely
-    # y_threshold down to 0.075 covers full submental neck
-    #
-    # 2026-08-28 -- BUG E fix (PHASE E2/E3, real regression-tested on patient
-    # 257d9bfe): z_threshold -0.050->-0.056, y_base 0.080->0.075. Pulls in
-    # ~216 REAL, already-existing GNM skin_exterior vertices (100% real GNM
-    # indices, confirmed via full-mesh triangle adjacency -- not a distance
-    # heuristic, not synthetic midpoints) just outside the old cutoff,
-    # densifying the loop-0 boundary (jaw/neck/temple silhouette) with real
-    # surface curvature. Measured on this same patient's own fitted geometry
-    # (not just the neutral template): silhouette max_jump jaw/neck 10->7px
-    # (-30%), crown/back 12->7px (-42%), n_jumps>=3px -50%/-67%. An earlier
-    # synthetic-midpoint-subdivision attempt (PHASE E1) measured ZERO
-    # improvement (collinear points don't change a projected silhouette) and
-    # would have required a Canvas3D.tsx contract change (shellVertexIndices
-    # assumes real GNM indices) -- this real-vertex approach needs neither.
-    # Traded off (see PHASE E3 report): coverage% 20.47%->19.54% (shell area
-    # grew 4.0%, mostly landing in already-established zero-photo-coverage
-    # fallback territory), and angle3's own dominant-texel share specifically
-    # dropped ~43.7% (176k->99k texels) -- a real, measured, non-trivial
-    # redistribution, not hidden here.
-    # Full Anatomical Clinical Facial Mask including complete Ears, Temples, Eyeballs, and Submental Neck:
-    hairline_limit = 0.380 - 0.025 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    neck_limit = 0.145 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    # Z limit -0.070 covers complete temples and jaw angle; ears group explicitly included so full ear anatomy is preserved:
-    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.070)
-    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | eye_sockets | ears
+    # Pure aesthetic face mask matching 100% real camera photo coverage (Crisalix medical standard):
+    hairline_limit = 0.355 - 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    neck_limit = 0.178 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.052)
+    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.052)) | eye_sockets
+
+
+
 
     tri_inside = shell_mask[all_triangles[:, 0]] & shell_mask[all_triangles[:, 1]] & shell_mask[all_triangles[:, 2]]
     shell_triangles = all_triangles[tri_inside]
