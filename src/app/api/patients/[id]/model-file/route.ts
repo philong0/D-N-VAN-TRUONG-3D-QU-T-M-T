@@ -17,16 +17,15 @@ export async function GET(
     if (selected.startsWith(path.resolve(patientRoot, "native-baselines") + path.sep)) acceptedPaths.push(selected);
   } catch {}
   const candidatePaths = [
-    ...acceptedPaths,
     path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.glb"),
-    path.join(process.cwd(), ".data", "patients", patientId, "reconstruction", "baseline.glb"),
     path.join(process.cwd(), ".data", "patients", patientId, "models", "baseline.glb"),
-    path.join(process.cwd(), ".data", "patients", patientId, "model.glb"),
+    path.join(process.cwd(), ".data", "patients", patientId, "reconstruction", "baseline.glb"),
     path.join(DATA_DIR, "patients", patientId, "models", "baseline.glb"),
     path.join(DATA_DIR, "patients", patientId, "reconstruction", "baseline.glb"),
-    path.join(DATA_DIR, "patients", patientId, "model.glb"),
     path.join(process.cwd(), "public", "models", "patients", patientId, "baseline.glb"),
-    path.join(process.cwd(), "public", "models", "patients", patientId, "model.glb"),
+    path.join(process.cwd(), ".data", "patients", patientId, "model.glb"),
+    path.join(DATA_DIR, "patients", patientId, "model.glb"),
+    ...acceptedPaths,
   ];
 
   for (const candidate of candidatePaths) {
