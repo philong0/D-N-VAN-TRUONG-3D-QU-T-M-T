@@ -106,27 +106,39 @@ struct FaceIDSmileGlyph: View {
     }
 }
 
-// MARK: - Face ID 10-Sector Clinical Radial Ring
+// MARK: - Face ID 36-Tick Smooth Continuous Radial Ring
 struct FaceIDRadialRing: View {
     let ticks: [Bool]
-    let totalTicks: Int = 10
+    let totalTicks: Int = 36
     let radius: CGFloat = 148
-    let tickLength: CGFloat = 22
+    let tickLength: CGFloat = 18
     var isIntroMode: Bool = false
     
     var body: some View {
         ZStack {
             ForEach(0..<totalTicks, id: \.self) { index in
-                let isFilled = (!isIntroMode && index < ticks.count) ? ticks[index] : false
+                // Map the 36 fine ticks or 10-sector array into 36 visual ticks
+                let isFilled: Bool = {
+                    if isIntroMode { return false }
+                    if ticks.count == 36 {
+                        return index < ticks.count ? ticks[index] : false
+                    }
+                    if ticks.count == 10 {
+                        let sector = (index * 10) / 36
+                        return sector < ticks.count ? ticks[sector] : false
+                    }
+                    return false
+                }()
+                
                 let angle = Double(index) * (360.0 / Double(totalTicks))
                 
                 Capsule()
-                    .fill(isIntroMode ? Color(white: 0.72) : (isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color(white: 0.38).opacity(0.45)))
-                    .frame(width: isFilled ? 7.0 : (isIntroMode ? 5.0 : 4.5), height: isFilled ? tickLength + 6 : tickLength)
-                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.9) : Color.clear, radius: isFilled ? 8 : 0)
+                    .fill(isIntroMode ? Color(white: 0.75) : (isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35) : Color(white: 0.38).opacity(0.40)))
+                    .frame(width: isFilled ? 5.0 : (isIntroMode ? 4.0 : 3.5), height: isFilled ? tickLength + 4 : tickLength)
+                    .shadow(color: isFilled ? Color(red: 0.19, green: 0.82, blue: 0.35).opacity(0.85) : Color.clear, radius: isFilled ? 6 : 0)
                     .offset(y: -radius)
                     .rotationEffect(.degrees(angle))
-                    .animation(.spring(response: 0.25, dampingFraction: 0.65), value: isFilled)
+                    .animation(.spring(response: 0.22, dampingFraction: 0.70), value: isFilled)
             }
         }
     }
