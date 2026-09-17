@@ -280,36 +280,41 @@ def reconstruct_gnm_from_images(
     view_inputs, view_slots, view_images, view_landmarks, view_yaws, warnings = [], [], [], [], [], []
     for raw_slot, image_bgr in images.items():
         h, w = image_bgr.shape[:2]
-        # Measure true yaw angle first
-        raw_res = detect_pose(image_bgr, is_profile_view=False)
-        if not raw_res["has_face"]:
-            warnings.append(f"{raw_slot}: no face detected (PIPNet) - dropped")
-            continue
 
-        yaw_deg = float(raw_res.get("yaw", 0.0))
-        yaw_abs = abs(yaw_deg)
-
-        # Automatic anatomical slot classification based on real head yaw:
-        # A photo with abs(yaw) < 50° is an oblique view (angle2/4), NEVER a profile (angle3/5).
-        if yaw_abs <= 12.0:
-            canon_slot = "angle1"
-        elif yaw_deg < -12.0:
-            canon_slot = "angle3" if yaw_deg <= -50.0 else "angle2"
+        # 1. Determine canonical slot from known slot name or alias first
+        slot_clean = resolve_slot(raw_slot) or raw_slot
+        if slot_clean in ("angle1", "angle2", "angle3", "angle4", "angle5"):
+            canon_slot = slot_clean
         else:
-            canon_slot = "angle5" if yaw_deg >= 50.0 else "angle4"
+            # For unassigned sweep frames, measure head yaw to assign slot
+            probe_res = detect_pose(image_bgr, is_profile_view=False)
+            yaw_deg = float(probe_res.get("yaw", 0.0))
+            yaw_abs = abs(yaw_deg)
+            if yaw_abs <= 15.0:
+                canon_slot = "angle1"
+            elif yaw_deg < -15.0:
+                canon_slot = "angle3" if yaw_deg <= -50.0 else "angle2"
+            else:
+                canon_slot = "angle5" if yaw_deg >= 50.0 else "angle4"
 
-        is_profile = canon_slot in ("angle3", "angle5") and yaw_abs >= 60.0
-        if is_profile:
-            result = detect_pose(image_bgr, is_profile_view=True)
-        else:
-            result = raw_res
+        # 2. Detect landmarks with appropriate profile flag
+        is_profile = canon_slot in ("angle3", "angle5")
+        result = detect_pose(image_bgr, is_profile_view=is_profile)
+        if not result["has_face"]:
+            # Retry with opposite profile flag if face not found
+            result = detect_pose(image_bgr, is_profile_view=not is_profile)
+            if not result["has_face"]:
+                warnings.append(f"{raw_slot}: no face detected (PIPNet) - dropped")
+                continue
 
+        yaw_deg = float(result.get("yaw", 0.0))
         camera_matrix = np.array([[w, 0, w / 2], [0, w, h / 2], [0, 0, 1]], dtype=np.float64)
         view_inputs.append(ViewInput(result["landmarks_98"], camera_matrix, is_profile, (h, w)))
         view_slots.append(canon_slot)
         view_images.append(image_bgr)
         view_landmarks.append(result["landmarks_98"])
         view_yaws.append(yaw_deg)
+
 
     if len(view_inputs) == 0:
         return {"ok": False, "error": "no-face-detected-in-any-photo", "warnings": warnings}

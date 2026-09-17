@@ -388,15 +388,23 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     # any weight branch) plus this new chin-underside box.
     is_chin_underside_zone = (np.abs(pts_pos[:, 0]) < 0.060) & (pts_pos[:, 1] >= 0.140) & (pts_pos[:, 1] <= 0.215)
 
-    # Sample baseline warm skin tone from philtrum/cheek for natural shadow blending
-    front_img = views[frontal_idx]["image"]
+    # Sample baseline warm skin tone directly from patient's detected face landmarks
+    front_view = views[frontal_idx]
+    front_img = front_view["image"]
     h_f, w_f = front_img.shape[:2]
-    philtrum_pos = np.array([[0.0, 0.205, 0.095]])
-    Xc_p = (views[frontal_idx]["R"] @ philtrum_pos.T).T + views[frontal_idx]["t"][None, :]
-    K_f = views[frontal_idx]["camera_matrix"]
-    px_p = int(np.clip(K_f[0, 0] * Xc_p[0, 0] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[0, 2], 0, w_f - 1))
-    py_p = int(np.clip(K_f[1, 1] * Xc_p[0, 1] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[1, 2], 0, h_f - 1))
-    base_skin_bgr = front_img[max(0, py_p - 10):py_p + 10, max(0, px_p - 10):px_p + 10].mean(axis=(0, 1)).astype(np.float32)
+    lms_f = front_view.get("landmarks_98")
+    if lms_f is not None and len(lms_f) >= 60:
+        lms_arr = np.asarray(lms_f, dtype=np.float64)
+        nx, ny = int(np.clip(lms_arr[54, 0], 5, w_f - 6)), int(np.clip(lms_arr[54, 1], 5, h_f - 6))
+        base_skin_bgr = front_img[ny - 4:ny + 5, nx - 4:nx + 5].mean(axis=(0, 1)).astype(np.float32)
+    else:
+        philtrum_pos = np.array([[0.0, 0.205, 0.095]])
+        Xc_p = (front_view["R"] @ philtrum_pos.T).T + front_view["t"][None, :]
+        K_f = front_view["camera_matrix"]
+        px_p = int(np.clip(K_f[0, 0] * Xc_p[0, 0] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[0, 2], 0, w_f - 1))
+        py_p = int(np.clip(K_f[1, 1] * Xc_p[0, 1] / np.clip(Xc_p[0, 2], 1e-6, None) + K_f[1, 2], 0, h_f - 1))
+        base_skin_bgr = front_img[max(0, py_p - 10):py_p + 10, max(0, px_p - 10):px_p + 10].mean(axis=(0, 1)).astype(np.float32)
+
 
     for k, v in enumerate(views):
         R, t, K = v["R"], v["t"], v["camera_matrix"]
