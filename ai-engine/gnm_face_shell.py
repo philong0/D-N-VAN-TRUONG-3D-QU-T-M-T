@@ -68,10 +68,14 @@ def get_face_shell_topology():
 
     skin_ext = vgroups[gnames.index("skin_exterior")] > 0.5
     hockey = vgroups[gnames.index("hockey_mask")] > 0.5
+    ears = vgroups[gnames.index("ears")] > 0.5
     eye_sockets = vgroups[gnames.index("eye_sockets")] > 0.5
 
-    # Anterior Clinical Face-Only Mask: Forehead, Eyes, Nose, Cheeks, Lips, Chin, Jawline (100% camera covered, pure exterior skin)
-    shell_mask = hockey
+    # Full Anatomical Clinical Facial Mask including complete Ears, Temples, Forehead dome, and Submental Neck:
+    hairline_limit = 0.380 - 0.025 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    neck_limit = 0.145 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
+    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.070)
+    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | (eye_sockets & skin_ext) | ears
 
 
 
@@ -559,20 +563,29 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     tex_canvas = flat_tex.reshape(tex_size, tex_size, 3)
     valid_mask = flat_val.reshape(tex_size, tex_size)
 
-    # Seamless Natural Skin Boundary Diffusion (strictly isolated to small seam gaps, preventing hair bleed):
+    # Seamless Natural Skin Boundary Diffusion:
     shell_mask_u8 = texel_valid.astype(np.uint8) * 255
     unobserved = ((valid_mask == 0) & (shell_mask_u8 > 0)).astype(np.uint8) * 255
 
     if unobserved.any():
-        # Telea inpainting with tight 3px radius to seal mesh seams without propagating dark hairline
-        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-        unfilled = (unobserved > 0) & ((inpainted_base.sum(axis=-1) == 0) | (valid_mask == 0))
+        valid_texels = tex_canvas[valid_mask > 0]
+        med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
+        
+        # Telea inpainting smoothly diffuses real facial skin tone outward across ears and neck
+        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=21, flags=cv2.INPAINT_TELEA)
+        unfilled = (unobserved > 0) & (inpainted_base.sum(axis=-1) == 0)
         if unfilled.any():
-            valid_texels = tex_canvas[valid_mask > 0]
-            med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
             inpainted_base[unfilled] = med_skin.astype(np.uint8)
-        final_texture = inpainted_base.copy()
-        final_texture[valid_mask > 0] = tex_canvas[valid_mask > 0]
+            inpainted_base = cv2.inpaint(inpainted_base, unfilled.astype(np.uint8) * 255, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
+            
+        # Smooth feathering at the boundary between observed facial photos and diffused skin
+        dist_to_unobserved = cv2.distanceTransform(valid_mask, cv2.DIST_L2, 5)
+        blend_alpha = np.clip(dist_to_unobserved / 8.0, 0.0, 1.0)[:, :, np.newaxis]
+        
+        final_texture = np.clip(
+            tex_canvas.astype(np.float32) * blend_alpha + 
+            inpainted_base.astype(np.float32) * (1.0 - blend_alpha), 0, 255
+        ).astype(np.uint8)
     else:
         final_texture = tex_canvas.copy()
 
