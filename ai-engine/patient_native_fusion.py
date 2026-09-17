@@ -1411,6 +1411,8 @@ class PatientNativeReconstructor:
             f for f in depth_frames
             if f.get("depth_f32") is not None and f.get("depth_intrinsics") is not None and f.get("camera_pose") is not None
         ]
+        from depth_consensus import independent_depth_frames
+        valid_depth_frames = independent_depth_frames(valid_depth_frames)
         if not valid_depth_frames:
             return None
 
@@ -1423,24 +1425,10 @@ class PatientNativeReconstructor:
             normals = None
 
         n_verts = vertices.shape[0]
-        # The ARFaceGeometry-fused estimate keeps a modest baseline trust so
-        # regions with no real depth coverage (e.g. deep under the chin, or
-        # the far side of a very oblique frame) are left exactly as they
-        # were, never zeroed out or invented from nothing.
-        BASE_TRUST = 1.0
-        # A real depth measurement is a physical laser reading, not a
-        # neural-network shape guess -- weighted far more heavily whenever
-        # one is available and consistent.
-        DEPTH_TRUST = 6.0
-        # Sanity bound only: rejects samples where the depth pixel almost
-        # certainly belongs to a different surface (an occlusion edge,
-        # background, or a different anatomical fold along the same ray),
-        # not a tight noise filter -- the true correction this step exists
-        # to apply can itself be 1-3cm at an oblique ARFaceGeometry error.
-        MAX_CONSISTENCY_GAP_M = 0.04
-
-        accum = vertices * BASE_TRUST
-        weight_sum = np.full(n_verts, BASE_TRUST, dtype=np.float64)
+        # Keep independent normal-displacement observations; do not give a
+        # single noisy nearest depth pixel six times the measured mesh weight.
+        observations = []
+        observation_weights = []
         n_frames_used = 0
 
         for f in valid_depth_frames:
@@ -1500,17 +1488,27 @@ class PatientNativeReconstructor:
             else:
                 facing = np.ones(len(idx2), dtype=np.float64)
 
-            w = DEPTH_TRUST * np.maximum(facing, 0.05)
-            accum[idx2] += points_face * w[:, None]
-            weight_sum[idx2] += w
+            if normals is None:
+                continue
+            visible = facing >= 0.3
+            ids = idx2[visible]
+            delta = np.full(n_verts, np.nan)
+            weight = np.zeros(n_verts)
+            delta[ids] = np.sum((points_face[visible] - vertices[ids]) * normals[ids], axis=1)
+            weight[ids] = facing[visible] / (1. + (median_gap / .003) ** 2)
+            observations.append(delta)
+            observation_weights.append(weight)
             n_frames_used += 1
 
         if n_frames_used == 0:
             print("_correct_vertices_with_real_depth: no depth frame produced a geometrically consistent correction — keeping ARFaceGeometry estimate.", flush=True)
             return None
 
-        refined_vertices = accum / weight_sum[:, None]
-        print(f"_correct_vertices_with_real_depth: corrected surface using real depth from {n_frames_used}/{len(valid_depth_frames)} usable frames.", flush=True)
+        from depth_consensus import consensus_displacement
+        correction, consensus = consensus_displacement(normals, faces, observations, observation_weights)
+        refined_vertices = vertices + correction
+        self.depth_report.append(consensus)
+        print(f"_correct_vertices_with_real_depth: {consensus}", flush=True)
 
         return {
             "vertices": refined_vertices,
@@ -1523,24 +1521,10 @@ class PatientNativeReconstructor:
 
     def _refine_surface_with_truedepth(self, fused_mesh: dict | None, depth_frames: list[dict]) -> dict:
         """
-        D-realdepthrefine — REPLACES a prior version that returned
-        `fused_mesh` completely UNCHANGED whenever ARFaceGeometry fusion
-        had already produced a mesh, silently discarding every real
-        TrueDepth laser measurement in the package despite this function's
-        own name and its caller passing `depth_frames` specifically for
-        this purpose. Confirmed on a real patient (697ba81b): 5 real
-        `*_depth.raw` files were present and valid, none ever consulted --
-        the pipeline relied entirely on ARKit's own NEURAL-NETWORK shape
-        ESTIMATE (ARFaceGeometry), which is measurably less accurate on the
-        self-occluded side at oblique angles (see `_fuse_arface_geometry`'s
-        own docstring), while the real depth measurement -- sub-millimeter
-        per Apple's TrueDepth spec -- sat unused. Real depth, where it
-        exists and is geometrically consistent with the projected vertex
-        (guards against sampling a different surface/occlusion edge), now
-        pulls each vertex toward the real measurement with much higher
-        trust than the ARFaceGeometry-only estimate; vertices with no
-        usable real-depth observation keep their prior (ARFaceGeometry
-        fusion / raw-depth-only) estimate unchanged.
+        Refine measured ARFaceGeometry only where independent depth samples
+        agree in face-local normal displacement. Raw depth is not assumed
+        noiseless: frame disagreement reduces its weight, and unsupported
+        vertices retain their captured ARFace estimate.
         """
         if fused_mesh is not None:
             refined = self._correct_vertices_with_real_depth(fused_mesh, depth_frames)
