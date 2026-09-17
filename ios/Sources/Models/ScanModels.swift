@@ -341,7 +341,19 @@ public struct ScanPackageManifestDTO: Codable {
     public let patientId: String
     public let sessionId: String
     public let capturedAt: String
-    public let frames: [FrameEntryDTO]
+    public let frames: [FrameEntryDTO]?
+    public var scannerBuild: String? = nil
+    public var imageOrientation: String? = nil
+    public var reconstructionFrames: [FrameEntryDTO]? = nil
+    public var clinicalPhotos: [ClinicalPhotoDTO]? = nil
+
+    public struct ClinicalPhotoDTO: Codable {
+        public let role: String
+        public let timestamp: Double
+        public let yawDeg: Float
+        public let pitchDeg: Float
+        public let rgbFileName: String
+    }
 
     /// D-contractfix — field names AND shape here must exactly match what
     /// `src/app/api/patients/[id]/scan-sessions/[sessionId]/package/route.ts`

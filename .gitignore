@@ -29,6 +29,7 @@ ai-engine/models/*.onnx
 
 # next.js
 /.next/
+/.next-*/
 /out/
 
 # production

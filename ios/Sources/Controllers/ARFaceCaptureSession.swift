@@ -10,6 +10,7 @@ import UIKit
 import Combine
 import simd
 import Vision
+import CryptoKit
 
 public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDelegate {
     @Published public var isTrueDepthSupported = false
@@ -36,7 +37,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     // MARK: - Dual Mode & Face ID Sweep States
     @Published public var scannerMode: ScannerMode = .faceIdSelfScan
-    @Published public var faceIdTicks: [Bool] = Array(repeating: false, count: 10)
+    @Published public var faceIdTicks: [Bool] = Array(repeating: false, count: 36)
     @Published public var faceIdFilledCount: Int = 0
     @Published public var sweepFrames: [Int: CapturedFramePackage] = [:]
     @Published public var clinicalPhotos: [String: CapturedFramePackage] = [:]
@@ -59,7 +60,19 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     private let processingQueue = DispatchQueue(label: "com.drvantruong.scanner.processingQueue", qos: .userInitiated)
     private var isBankingInProgress = false
     private var lastBankedTimestamp: TimeInterval = 0
+    private var candidateBank = ContinuousKeyframeBank()
+    private var candidatePackages: [String: CapturedFramePackage] = [:]
+    private var captureGeneration = UUID()
+    private var lastPoseSample: (time: Double, yaw: Float, pitch: Float)?
+    private var frozenFrames: [String: CapturedFramePackage]?
+    private var frozenClinical: [String: CapturedFramePackage] = [:]
     private var activeApiClient: BackendAPIClient?
+    private var uploadAttempt = ScanUploadAttempt()
+    private var runningMode: ScannerMode?
+    private let speech = AVSpeechSynthesizer()
+    private var spokenPhase: ContinuousKeyframeBank.Phase?
+    @Published public var voiceGuidanceEnabled = true
+    @Published public var requiresNewScan = false
 
     public override init() {
         super.init()
@@ -93,6 +106,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     public func startSession() {
+        guard runningMode != scannerMode, frozenFrames == nil else { return }
+        runningMode = scannerMode
         arSession.pause()
         clearLivePoseState()
 
@@ -120,7 +135,35 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         turnGuidance = "XOAY NHẸ ĐẦU THEO VÒNG TRÒN"
     }
 
-    public func pauseSession() { arSession.pause() }
+    public func pauseSession() {
+        speech.stopSpeaking(at: .immediate)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        runningMode = nil
+        uploadAttempt.invalidate()
+        arSession.pause()
+        isScanningActive = false
+        captureGeneration = UUID()
+        isBankingInProgress = false
+    }
+
+    public func sessionWasInterrupted(_ session: ARSession) {
+        DispatchQueue.main.async {
+            guard self.isScanningActive else { return }
+            self.isTracking = false
+            self.speech.stopSpeaking(at: .immediate)
+            self.guidanceFeedback = "Camera đang tạm dừng. Dữ liệu đã quét được giữ lại."
+        }
+    }
+
+    public func sessionInterruptionEnded(_ session: ARSession) {
+        DispatchQueue.main.async {
+            guard self.isScanningActive, self.frozenFrames == nil else { return }
+            self.runningMode = nil
+            self.startSession()
+            self.spokenPhase = nil
+            self.announceScanPhase()
+        }
+    }
 
     // MARK: - ARSessionDelegate
 
@@ -147,229 +190,93 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         }
     }
 
-    // MARK: - Mode 1: 10-Sector Clinical 3D Scan Pipeline
-
+    // MARK: - Continuous native capture: all state transitions follow successful banking.
     private func consumeFaceIdFrame(frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
         isTracking = faceAnchor.isTracked
-        currentYawDeg = pose.yawDeg
-        currentPitchDeg = pose.pitchDeg
-        currentRollDeg = pose.rollDeg
-        currentDistanceMeters = pose.distanceMeters
-
+        currentYawDeg = pose.yawDeg; currentPitchDeg = pose.pitchDeg
+        currentRollDeg = pose.rollDeg; currentDistanceMeters = pose.distanceMeters
+        isFaceInFramingRect = faceAnchor.isTracked && abs(pose.yawDeg) <= 15 && abs(pose.pitchDeg) <= 25
+            && pose.distanceMeters >= 0.25 && pose.distanceMeters <= 0.70
+        let previous = lastPoseSample
+        lastPoseSample = (frame.timestamp, pose.yawDeg, pose.pitchDeg)
+        guard isScanningActive, frozenFrames == nil else { return }
+        guidanceFeedback = candidateBank.guidance
         guard faceAnchor.isTracked else {
-            guidanceFeedback = "Đưa khuôn mặt vào trong vòng tròn"
+            guidanceFeedback = "Đang tìm lại khuôn mặt; giữ máy ổn định"
             return
         }
-
-        let yaw = pose.yawDeg
-        let pitch = pose.pitchDeg
-
-        // 1. Kiểm tra vị trí khuôn mặt trong khung căn chỉnh ban đầu
-        let isCentered = abs(yaw) <= 18 && abs(pitch) <= 20 && pose.distanceMeters >= 0.30 && pose.distanceMeters <= 0.60
-        isFaceInFramingRect = isCentered
-
-        // CHỈ xử lý ghi nhận dữ liệu khi chế độ quét được kích hoạt thật sự
-        guard isScanningActive else { return }
-
-        // Chờ người dùng định vị khuôn mặt vào tâm vòng tròn trước khi tính giờ quét
-        if sweepStartTime == nil {
-            if isCentered {
-                sweepStartTime = frame.timestamp
-                guidanceFeedback = "Di chuyển đầu theo 10 góc giải phẫu trên vòng tròn."
-                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            } else {
-                guidanceFeedback = "Định vị khuôn mặt trong vòng tròn"
-                return
-            }
-        }
-
-        // 2. Nhận diện 10 góc chuẩn giải phẫu (10 Clinical Sectors)
-        var detectedSector: Int? = nil
-
-        if abs(yaw) <= 15.0 && abs(pitch) <= 15.0 {
-            // Sector 0: Chính diện (0°)
-            detectedSector = 0
-        } else if yaw <= -10.0 && yaw >= -30.0 && abs(pitch) <= 22.0 {
-            // Sector 1: Chếch trái (~25°)
-            detectedSector = 1
-        } else if yaw <= -28.0 && yaw >= -48.0 && abs(pitch) <= 25.0 {
-            // Sector 2: Nghiêng trái (~45°)
-            detectedSector = 2
-        } else if yaw <= -42.0 {
-            // Sector 3: Trắc diện sâu trái (~70° Profile)
-            detectedSector = 3
-        } else if yaw >= 10.0 && yaw <= 30.0 && abs(pitch) <= 22.0 {
-            // Sector 4: Chếch phải (~25°)
-            detectedSector = 4
-        } else if yaw >= 28.0 && yaw <= 48.0 && abs(pitch) <= 25.0 {
-            // Sector 5: Nghiêng phải (~45°)
-            detectedSector = 5
-        } else if yaw >= 42.0 {
-            // Sector 6: Trắc diện sâu phải (~70° Profile)
-            detectedSector = 6
-        } else if pitch <= -8.0 && pitch >= -26.0 && abs(yaw) <= 25.0 {
-            // Sector 7: Ngửa nhẹ đáy mũi (-20° Basal)
-            detectedSector = 7
-        } else if pitch >= 6.0 && pitch <= 24.0 && abs(yaw) <= 25.0 {
-            // Sector 8: Cúi nhẹ trán & sống mũi (+15° Forehead/Dorsum)
-            detectedSector = 8
-        } else if pitch <= -18.0 && abs(yaw) <= 28.0 {
-            // Sector 9: Ngửa sâu cằm & cổ (-40° Submental)
-            detectedSector = 9
-        }
-
-        // BẬT XANH NẤC: Mỗi nấc lấy mẫu siêu nhanh (80ms)
-        if let s = detectedSector, s >= 0 && s < 10 {
-            let now = frame.timestamp
-            if !faceIdTicks[s] && (now - lastBankedTimestamp >= 0.08 || faceIdFilledCount == 0) {
-                lastBankedTimestamp = now
-                faceIdTicks[s] = true
-                faceIdFilledCount = faceIdTicks.filter { $0 }.count
-                UISelectionFeedbackGenerator().selectionChanged()
-                
-                // Ghi nhận ngay frame đo đạc THẬT tại góc này
-                captureSweepTick(bin: s, frame: frame, faceAnchor: faceAnchor, pose: pose)
-                
-                // Đồng bộ trực tiếp vào bộ 5 ảnh lâm sàng chuẩn
-                syncClinicalPhotoFromPhysicallyMeasuredFrame(bin: s, frame: frame, faceAnchor: faceAnchor, pose: pose)
-            }
-        }
-
-        // 3. Dynamic Guidance Text & Điều kiện hoàn thành thông minh:
-        let isFullCircleCovered = faceIdFilledCount >= 10 || (faceIdFilledCount >= 8 && faceIdTicks[0] && (faceIdTicks[2] || faceIdTicks[3]) && (faceIdTicks[5] || faceIdTicks[6]))
-
-        if isFullCircleCovered {
-            completeFaceIdSweep()
-        } else if !faceIdTicks[0] {
-            guidanceFeedback = "Nhìn thẳng chính diện vào camera (Góc 1/10)"
-        } else if !faceIdTicks[1] {
-            guidanceFeedback = "👈 Hơi quay nhẹ mặt sang TRÁI (Góc 2/10)"
-        } else if !faceIdTicks[2] {
-            guidanceFeedback = "👈 Nghiêng mặt sang TRÁI 45° (Góc 3/10)"
-        } else if !faceIdTicks[3] {
-            guidanceFeedback = "👈 Quay hẳn sang TRÁI lấy trắc diện 70° (Góc 4/10)"
-        } else if !faceIdTicks[4] {
-            guidanceFeedback = "👉 Hơi quay nhẹ mặt sang PHẢI (Góc 5/10)"
-        } else if !faceIdTicks[5] {
-            guidanceFeedback = "👉 Nghiêng mặt sang PHẢI 45° (Góc 6/10)"
-        } else if !faceIdTicks[6] {
-            guidanceFeedback = "👉 Quay hẳn sang PHẢI lấy trắc diện 70° (Góc 7/10)"
-        } else if !faceIdTicks[7] {
-            guidanceFeedback = "👆 Hơi ngửa nhẹ cằm (20°) quét đáy mũi (Góc 8/10)"
-        } else if !faceIdTicks[8] {
-            guidanceFeedback = "👇 Hơi cúi nhẹ đầu (15°) quét trán & sống mũi (Góc 9/10)"
-        } else if !faceIdTicks[9] {
-            guidanceFeedback = "👆 Ngửa cằm cao (40°) quét góc cằm & cổ (Góc 10/10)"
-        } else {
-            guidanceFeedback = "Đã quét \(faceIdFilledCount)/10 góc. Tiếp tục xoay các góc còn lại."
-        }
-    }
-
-    private func captureSweepTick(bin: Int, frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
-        let viewTags = [
-            "front", "left_25", "left_45", "left_profile",
-            "right_25", "right_45", "right_profile",
-            "basal_nostrils", "forehead_dorsum", "submental_chin"
-        ]
-        let viewTag = bin < viewTags.count ? viewTags[bin] : "sweep_\(String(format: "%02d", bin))"
-        let correspondingStep: ScanAngleStep = ScanAngleStep.allCases.first(where: { $0.sectorIndex == bin }) ?? .front
-
+        guard !isBankingInProgress, frame.timestamp-lastBankedTimestamp >= 0.12 else { return }
+        let dt = previous.map { frame.timestamp-$0.time } ?? 0
+        let motion = dt > 0 ? Double(max(abs(pose.yawDeg-(previous?.yaw ?? pose.yawDeg)),
+                                        abs(pose.pitchDeg-(previous?.pitch ?? pose.pitchDeg))))/dt : 0
+        guard motion <= 90, abs(pose.pitchDeg) <= 25, abs(pose.rollDeg) <= 25,
+              abs(pose.yawDeg) <= 65 else { return }
+        let blink = max(faceAnchor.blendShapes[.eyeBlinkLeft]?.doubleValue ?? 0,
+                        faceAnchor.blendShapes[.eyeBlinkRight]?.doubleValue ?? 0)
+        guard blink < 0.6 else { return }
+        isBankingInProgress = true
+        lastBankedTimestamp = frame.timestamp
+        let generation = captureGeneration
         processingQueue.async { [weak self] in
             guard let self = self else { return }
-            if let package = self.createPackage(from: frame, faceAnchor: faceAnchor, pose: pose, step: correspondingStep, viewTag: viewTag) {
-                DispatchQueue.main.async {
-                    self.sweepFrames[bin] = package
+            // Everything is derived from this exact retained ARFrame/anchor,
+            // never from arSession.currentFrame during asynchronous processing.
+            let package = autoreleasepool {
+                self.createPackage(from: frame, faceAnchor: faceAnchor, pose: pose, step: .front, viewTag: "candidate")
+            }
+            let hash = package.map { SHA256.hash(data: $0.rgbData).map { String(format: "%02x", $0) }.joined() }
+            DispatchQueue.main.async {
+                guard generation == self.captureGeneration else { return }
+                self.isBankingInProgress = false
+                guard self.isScanningActive, let package = package, let hash = hash else { return }
+                let q = package.quality
+                guard q.isTracked, !q.isBlurry, q.isLightingAdequate, q.isDistanceOptimal else {
+                    self.guidanceFeedback = "Giữ máy ổn định, xoay chậm trong ánh sáng đều"
+                    return
                 }
-            }
-        }
-    }
-
-    /// Đồng bộ chính xác vào bộ 5 ảnh lâm sàng chuẩn
-    private func syncClinicalPhotoFromPhysicallyMeasuredFrame(bin: Int, frame: ARFrame, faceAnchor: ARFaceAnchor, pose: CameraRelativeFacePose) {
-        var targetSlot: String?
-        var correspondingStep: ScanAngleStep = .front
-        
-        switch bin {
-        case 0:
-            targetSlot = "front"
-            correspondingStep = .front
-        case 2:
-            targetSlot = "left_45"
-            correspondingStep = .left45
-        case 3:
-            targetSlot = "profile"
-            correspondingStep = .leftProfile
-            clinicalPhotos["left_profile"] = nil // reset trigger
-        case 5:
-            targetSlot = "right_45"
-            correspondingStep = .right45
-        case 6:
-            // Cập nhật profile nếu góc phải nét hơn hoặc chưa có
-            if clinicalPhotos["profile"] == nil {
-                targetSlot = "profile"
-                correspondingStep = .rightProfile
-            }
-        case 7:
-            targetSlot = "basal_nostrils"
-            correspondingStep = .basalNostrils
-        default:
-            break
-        }
-        
-        guard let slot = targetSlot else { return }
-        
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            if let package = self.createPackage(from: frame, faceAnchor: faceAnchor, pose: pose, step: correspondingStep, viewTag: slot) {
-                DispatchQueue.main.async {
-                    self.clinicalPhotos[slot] = package
-                    if let step = ScanAngleStep(rawValue: slot) {
-                        self.capturedFrames[step] = package
-                    }
-                }
-            }
-        }
-    }
-
-    /// Tự động trích xuất đầy đủ 5 góc ảnh lâm sàng từ 10 frame quét
-    public func ensureClinicalPhotosFromSweep() {
-        if clinicalPhotos["front"] == nil {
-            clinicalPhotos["front"] = sweepFrames[0] ?? sweepFrames.values.first
-        }
-        if clinicalPhotos["left_45"] == nil {
-            clinicalPhotos["left_45"] = sweepFrames[2] ?? sweepFrames[1]
-        }
-        if clinicalPhotos["right_45"] == nil {
-            clinicalPhotos["right_45"] = sweepFrames[5] ?? sweepFrames[4]
-        }
-        if clinicalPhotos["profile"] == nil {
-            clinicalPhotos["profile"] = sweepFrames[3] ?? sweepFrames[6] ?? sweepFrames[2]
-        }
-        if clinicalPhotos["basal_nostrils"] == nil {
-            clinicalPhotos["basal_nostrils"] = sweepFrames[7] ?? sweepFrames[9] ?? sweepFrames[0]
-        }
-        
-        for (slot, pkg) in clinicalPhotos {
-            if let step = ScanAngleStep(rawValue: slot), capturedFrames[step] == nil {
-                capturedFrames[step] = pkg
+                let score = log1p(Double(q.blurScore))/8 - abs(Double(q.lightingScore)-0.5)
+                    - motion/180 - blink/2 - abs(Double(q.pitchDeg))/90 + (package.depthData == nil ? 0 : 0.1)
+                let candidate = ContinuousSample(hash: hash, timestamp: package.timestamp,
+                    yaw: Double(q.yawDeg), pitch: Double(q.pitchDeg), score: score)
+                guard self.candidateBank.bank(candidate) else { return }
+                self.candidatePackages[hash] = package
+                let retained = Set(self.candidateBank.samples.map(\.hash))
+                self.candidatePackages = self.candidatePackages.filter { retained.contains($0.key) }
+                let progress = min(35, self.candidateBank.phase.rawValue*8 + min(3, self.candidateBank.samples.count/7))
+                self.faceIdFilledCount = progress
+                self.faceIdTicks = (0..<36).map { $0 < progress }
+                self.guidanceFeedback = self.candidateBank.guidance
+                self.announceScanPhase()
+                if self.candidateBank.phase == .ready { self.completeFaceIdSweep() }
             }
         }
     }
 
     public func completeFaceIdSweep() {
-        guard !isUploading else { return }
-        
-        ensureClinicalPhotosFromSweep()
-        
-        isSweepCompleted = true
+        guard !isBankingInProgress, !isUploading, frozenFrames == nil,
+              candidateBank.phase == .ready else { return }
+        let selected = candidateBank.selected()
+        let photos = candidateBank.clinical()
+        guard (7...10).contains(selected.count), photos.count == 4 else { return }
+        var frames: [String: CapturedFramePackage] = [:]
+        for (i, sample) in selected.enumerated() {
+            guard let package = candidatePackages[sample.hash] else { return }
+            frames[String(format: "sweep_%02d", i)] = package
+        }
+        for (role, sample) in photos {
+            guard let package = candidatePackages[sample.hash] else { return }
+            frozenClinical[role] = package
+        }
+        frozenFrames = frames
+        clinicalPhotos = frozenClinical
+        // Release unselected image/depth buffers and stop the camera once sealed.
+        candidatePackages.removeAll()
+        pauseSession()
         isScanningActive = false
-        isUploading = true
-        uploadProgress = 0.12
-        uploadStatusMessage = "Đang tổng hợp dữ liệu 10 góc quét TrueDepth..."
-        guidanceFeedback = "✓ HOÀN TẤT 10 GÓC! Đang bắt đầu dựng 3D..."
-        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
-
-        self.triggerPackageUpload { _ in }
+        guidanceFeedback = "Đang đóng gói dữ liệu đã chọn"
+        print("Continuous scan: banked=\(candidateBank.acceptedCount), selected=\(frames.count), clinical=\(photos.count)")
+        for sample in selected { print("Keyframe timestamp=\(sample.timestamp) yaw=\(sample.yaw) pitch=\(sample.pitch) score=\(sample.score) hash=\(sample.hash)") }
+        triggerPackageUpload { _ in }
     }
 
     // MARK: - Mode 2: Rear Camera Processing
@@ -410,27 +317,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             return
         }
 
-        // In Face ID mode: manual capture fallback if user prefers tapping
-        guard let sample = arSession.currentFrame,
-              let faceAnchor = sample.anchors.compactMap({ $0 as? ARFaceAnchor }).first else {
-            throw NSError(domain: "Scanner", code: 422, userInfo: [NSLocalizedDescriptionKey: "Chưa nhận diện được khuôn mặt trong vòng tròn."])
-        }
-        let faceToCamera = sample.camera.transform.inverse * faceAnchor.transform
-        let pose = CameraRelativeFacePose(faceToCamera: faceToCamera)
-
-        processingQueue.async { [weak self] in
-            guard let self = self else { return }
-            if let package = self.createPackage(from: sample, faceAnchor: faceAnchor, pose: pose, step: self.currentStep) {
-                DispatchQueue.main.async {
-                    self.capturedFrames[self.currentStep] = package
-                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    self.advanceToNextStep()
-                    if self.capturedFrames.count >= ScanAngleStep.allCases.count {
-                        self.triggerPackageUpload { _ in }
-                    }
-                }
-            }
-        }
+        // Native continuous mode has no manual per-frame capture path.
     }
 
     private func captureRearFrame(frame: ARFrame) throws {
@@ -525,7 +412,9 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         var depthW: Int?
         var depthH: Int?
         var depthIntrinsics: CameraIntrinsicsDTO?
-        if let capturedDepth = frame.capturedDepthData, let processed = DepthDataProcessor.processDepthData(capturedDepth) {
+        if abs(frame.capturedDepthDataTimestamp - frame.timestamp) <= 0.035,
+           let capturedDepth = frame.capturedDepthData, let processed = DepthDataProcessor.processDepthData(capturedDepth),
+           processed.validPointCount > processed.width * processed.height / 10 {
             depthData = processed.rawData
             depthW = processed.width
             depthH = processed.height
@@ -563,6 +452,17 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
               geometry.triangleIndices.count == 2304 * 3,
               geometry.textureCoordinates.count == 1220 else { return nil }
 
+        let faceToCamera = frame.camera.transform.inverse * faceAnchor.transform
+        let visibleCount = geometry.vertices.filter { vertex in
+            let point = faceToCamera * SIMD4<Float>(vertex.x, vertex.y, vertex.z, 1)
+            let z = -point.z
+            guard z > 0.05 else { return false }
+            let u = intrinsicsDTO.fx * point.y / z + intrinsicsDTO.cx
+            let v = intrinsicsDTO.fy * point.x / z + intrinsicsDTO.cy
+            return u >= 0 && v >= 0 && u < Float(intrinsicsDTO.imageWidth) && v < Float(intrinsicsDTO.imageHeight)
+        }.count
+        guard Float(visibleCount) / Float(geometry.vertices.count) >= 0.9 else { return nil }
+
         let geometryDTO = ARKitFaceGeometryDTO(
             vertexCount: geometry.vertices.count,
             triangleCount: geometry.triangleIndices.count / 3,
@@ -573,17 +473,8 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
             isTracked: faceAnchor.isTracked
         )
 
-        let quality = FrameQualityEvaluation(
-            blurScore: 300.0,
-            isBlurry: false,
-            lightingScore: 0.6,
-            isLightingAdequate: true,
-            isTracked: faceAnchor.isTracked,
-            yawDeg: pose.yawDeg,
-            pitchDeg: pose.pitchDeg,
-            distanceMeters: pose.distanceMeters,
-            isDistanceOptimal: true
-        )
+        let quality = QualityEvaluator.evaluate(pixelBuffer: frame.capturedImage, pose: pose,
+            isFaceTracked: faceAnchor.isTracked, targetStep: .front)
 
         return CapturedFramePackage(
             step: step,
@@ -617,53 +508,62 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     public func triggerPackageUpload(completion: @escaping (Result<URL, Error>) -> Void) {
-        if patientId.isEmpty {
-            patientId = UserDefaults.standard.string(forKey: "lastActivePatientId") ?? "697ba81b-a3b3-4879-966e-8ba42575dc80"
+        guard !patientId.isEmpty else {
+            lastErrorMessage = "Thiếu hồ sơ bệnh nhân. Hãy mở quét từ hồ sơ cần quét."
+            return
         }
+        guard let attempt = uploadAttempt.begin() else { return }
         if sessionId.isEmpty {
             sessionId = UUID().uuidString
         }
 
         isUploading = true
         lastErrorMessage = nil
+        requiresNewScan = false
         guidanceFeedback = scannerMode == .rearClinicalAssistant ? "✓ Đang tải gói ảnh lâm sàng 48MP lên máy chủ..." : "✓ Đang tải gói TrueDepth Face ID lên AI Engine..."
 
-        // Tổng hợp toàn bộ các frame đo đạc quét liên tục (sweep_00..35) VÀ bộ ảnh hồ sơ lâm sàng (front, left_45, ...)
-        var allFramesToUpload: [String: CapturedFramePackage] = [:]
-        for (bin, pkg) in sweepFrames {
-            allFramesToUpload["sweep_\(String(format: "%02d", bin))"] = pkg
-        }
-        for (slot, pkg) in clinicalPhotos {
-            allFramesToUpload[slot] = pkg
-        }
-        for (step, pkg) in capturedFrames {
-            if allFramesToUpload[step.rawValue] == nil {
-                allFramesToUpload[step.rawValue] = pkg
+        let allFramesToUpload: [String: CapturedFramePackage]
+        if scannerMode == .faceIdSelfScan {
+            guard let sealed = frozenFrames, !isBankingInProgress else {
+                isUploading = false
+                _ = uploadAttempt.finish(attempt)
+                completion(.failure(NSError(domain: "Scanner", code: 409, userInfo: [NSLocalizedDescriptionKey: "Dữ liệu chưa được finalization."])))
+                return
             }
+            allFramesToUpload = sealed
+        } else {
+            allFramesToUpload = Dictionary(uniqueKeysWithValues: capturedFrames.map { ($0.key.rawValue, $0.value) })
         }
-
-        let apiClient = BackendAPIClient()
+        let apiClient = activeApiClient ?? BackendAPIClient()
         self.activeApiClient = apiClient
+        apiClient.onPackageFinalized = { [weak self] in
+            guard let self = self, self.uploadAttempt.isCurrent(attempt) else { return }
+            self.isSweepCompleted = true
+            self.faceIdFilledCount = 36
+            self.faceIdTicks = Array(repeating: true, count: 36)
+        }
         apiClient.onProgressUpdate = { [weak self] progress, message in
             DispatchQueue.main.async {
-                self?.uploadProgress = progress
-                self?.uploadStatusMessage = message
-                self?.guidanceFeedback = message
+                guard let self = self, self.uploadAttempt.isCurrent(attempt) else { return }
+                self.uploadProgress = progress
+                self.uploadStatusMessage = message
+                self.guidanceFeedback = message
             }
         }
 
-        apiClient.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: allFramesToUpload, scannerMode: scannerMode) { [weak self] result in
+        apiClient.uploadScanPackage(patientId: patientId, sessionId: sessionId, frames: allFramesToUpload, clinicalPhotos: frozenClinical, scannerMode: scannerMode) { [weak self] result in
             DispatchQueue.main.async {
-                self?.isUploading = false
-                self?.activeApiClient = nil
+                guard let self = self, self.uploadAttempt.finish(attempt) else { return }
+                self.isUploading = false
                 switch result {
                 case .success(let studioURL):
-                    self?.guidanceFeedback = "✓ Tải lên thành công! Đang mở 3D Studio..."
-                    self?.onScanCompleted?(studioURL)
+                    self.guidanceFeedback = "✓ Tải lên thành công! Đang mở 3D Studio..."
+                    self.onScanCompleted?(studioURL)
                     completion(.success(studioURL))
                 case .failure(let error):
-                    self?.lastErrorMessage = error.localizedDescription
-                    self?.guidanceFeedback = "Lỗi: \(error.localizedDescription)"
+                    self.lastErrorMessage = error.localizedDescription
+                    self.requiresNewScan = (error as NSError).domain == "Reconstruction" && (error as NSError).code == 422
+                    self.guidanceFeedback = "Lỗi: \(error.localizedDescription)"
                     completion(.failure(error))
                 }
             }
@@ -671,6 +571,17 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
     }
 
     public func resetScan() {
+        uploadAttempt.invalidate()
+        speech.stopSpeaking(at: .immediate)
+        spokenPhase = nil
+        requiresNewScan = false
+        if frozenFrames != nil { sessionId = UUID().uuidString }
+        captureGeneration = UUID()
+        candidateBank = ContinuousKeyframeBank()
+        candidatePackages.removeAll()
+        frozenFrames = nil; frozenClinical.removeAll()
+        activeApiClient = nil
+        lastBankedTimestamp = 0; lastPoseSample = nil
         isScanningActive = false
         isSweepCompleted = false
         isUploading = false
@@ -681,7 +592,7 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
         clinicalPhotos.removeAll()
         currentStep = .front
         lastErrorMessage = nil
-        faceIdTicks = Array(repeating: false, count: 10)
+        faceIdTicks = Array(repeating: false, count: 36)
         faceIdFilledCount = 0
         sweepStartTime = nil
         isFaceInFramingRect = false
@@ -692,8 +603,25 @@ public final class ARFaceCaptureSession: NSObject, ObservableObject, ARSessionDe
 
     public func startActiveSweep() {
         resetScan()
+        startSession()
         isScanningActive = true
         guidanceFeedback = "Định vị khuôn mặt trong vòng tròn"
+        announceScanPhase()
+    }
+
+    private func announceScanPhase() {
+        guard candidateBank.phase != spokenPhase else { return }
+        spokenPhase = candidateBank.phase
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        guard voiceGuidanceEnabled else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio, options: .duckOthers)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        // Spoken direction changes only after a valid frame was banked.
+        let utterance = AVSpeechUtterance(string: candidateBank.guidance)
+        utterance.voice = AVSpeechSynthesisVoice(language: "vi-VN")
+        utterance.rate = AVSpeechUtteranceDefaultSpeechRate * 0.9
+        speech.stopSpeaking(at: .immediate)
+        speech.speak(utterance)
     }
 
     private func clearLivePoseState() {

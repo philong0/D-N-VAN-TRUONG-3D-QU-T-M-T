@@ -219,6 +219,7 @@ public struct ARFaceScannerView: View {
     // 1 = Màn hình Định vị khuôn mặt (Ảnh 2 - Khung chữ nhật bo góc, 4 góc bracket trắng)
     // 2 = Màn hình Quét xoay đầu (Ảnh 3, 4, 5 - Vòng tròn nan quạt xanh lá neon + Viền ánh sáng rung)
     @State private var enrollmentPhase: Int = 0
+    @State private var confirmRestart = false
     
     public init(captureSession: ARFaceCaptureSession, isCompleted: Binding<Bool>) {
         self.captureSession = captureSession
@@ -273,7 +274,7 @@ public struct ARFaceScannerView: View {
                                 .font(.system(size: 24, weight: .bold))
                                 .foregroundColor(.black)
                             
-                            Text("Đầu tiên, định vị khuôn mặt của bạn trong khung hình camera. Sau đó, di chuyển đầu của bạn theo hình tròn để hiển thị tất cả các góc cạnh trên khuôn mặt của bạn.")
+                            Text("Giữ điện thoại ngang tầm mắt. Nhìn giữa, xoay nhẹ sang trái, sang phải rồi trở về giữa. Nghe hướng dẫn, không cần nhìn màn hình khi quay đầu.")
                                 .font(.system(size: 16, weight: .regular))
                                 .foregroundColor(Color(white: 0.35))
                                 .multilineTextAlignment(.center)
@@ -283,13 +284,17 @@ public struct ARFaceScannerView: View {
                         
                         Spacer(minLength: 40)
                         
-                        // Nút lớn bo tròn màu xanh dương Apple: [Bắt đầu]
+                        Toggle("Hướng dẫn bằng giọng nói", isOn: $captureSession.voiceGuidanceEnabled)
+                            .padding(.horizontal, 32)
+                            .padding(.bottom, 12)
+
+                        // START
                         Button {
                             withAnimation(.easeInOut(duration: 0.35)) {
                                 enrollmentPhase = 1
                             }
                             captureSession.startSession()
-                            captureSession.resetScan()
+                            captureSession.startActiveSweep()
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         } label: {
                             Text("Bắt đầu")
@@ -400,20 +405,20 @@ public struct ARFaceScannerView: View {
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                             } else if !captureSession.isScanningActive {
-                                Text("Đã nhận diện khuôn mặt.\nBấm nút bên dưới để bắt đầu quét.")
+                                Text("Đang hoàn tất dữ liệu quét.")
                                     .font(.system(size: 19, weight: .bold))
                                     .foregroundColor(.black)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                             } else {
-                                Text("Di chuyển chậm đầu của bạn để hoàn thành vòng tròn.")
+                                Text("Xoay đầu chậm, giữ máy ổn định.")
                                     .font(.system(size: 19, weight: .bold))
                                     .foregroundColor(.black)
                                     .multilineTextAlignment(.center)
                                     .padding(.horizontal, 24)
                                 
                                 // Hiển thị tiến trình quét 10 góc giải phẫu rõ ràng
-                                Text("Đã quét: \(captureSession.faceIdFilledCount)/10 góc (\(Int(Double(captureSession.faceIdFilledCount) / 10.0 * 100))%)")
+                                Text("\(Int(Double(captureSession.faceIdFilledCount) / 36.0 * 100))%")
                                     .font(.system(size: 15, weight: .bold))
                                     .foregroundColor(Color(red: 0.0, green: 0.48, blue: 1.0))
                                     .padding(.horizontal, 14)
@@ -436,29 +441,10 @@ public struct ARFaceScannerView: View {
                         
                         // Nút tương tác
                         VStack(spacing: 12) {
-                            if enrollmentPhase == 2 && !captureSession.isScanningActive {
-                                // Nút lớn xanh dương BẮT ĐẦU QUÉT (Chủ động bấm mới được quét!)
-                                Button {
-                                    captureSession.startActiveSweep()
-                                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                                } label: {
-                                    Text("Bắt đầu quét")
-                                        .font(.system(size: 17, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 16)
-                                        .background(Color(red: 0.0, green: 0.48, blue: 1.0))
-                                        .cornerRadius(28)
-                                }
-                            } else {
-
+                            if !captureSession.isUploading && !captureSession.isSweepCompleted {
                                 // Nút Bắt đầu lại
                                 Button {
-                                    if enrollmentPhase == 1 {
-                                        captureSession.resetScan()
-                                    } else {
-                                        captureSession.startActiveSweep()
-                                    }
+                                    confirmRestart = true
                                 } label: {
                                     Text("Bắt đầu lại")
                                         .font(.system(size: 15, weight: .semibold))
@@ -475,14 +461,11 @@ public struct ARFaceScannerView: View {
                     }
                     .onReceive(captureSession.$isFaceInFramingRect) { inFraming in
                         // Khi khuôn mặt lọt vào tâm -> Nhảy sang Vòng tròn Face ID và TỰ ĐỘNG BẮT ĐẦU QUÉT NGAY
-                        if inFraming {
+                        if inFraming && enrollmentPhase == 1 {
                             if enrollmentPhase == 1 {
                                 withAnimation(.spring(response: 0.65, dampingFraction: 0.75)) {
                                     enrollmentPhase = 2
                                 }
-                            }
-                            if !captureSession.isScanningActive {
-                                captureSession.startActiveSweep()
                             }
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         }
@@ -648,15 +631,17 @@ public struct ARFaceScannerView: View {
             }
             
             // 3. Uploading & AI 3D Reconstruction Overlay
-            if captureSession.isUploading {
+            if captureSession.isUploading || captureSession.isSweepCompleted || captureSession.lastErrorMessage != nil {
                 ZStack {
                     Color.black.opacity(0.92).edgesIgnoringSafeArea(.all)
                     VStack(spacing: 20) {
-                        ProgressView()
-                            .scaleEffect(1.6)
-                            .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.18, green: 0.85, blue: 0.35)))
+                        if captureSession.isUploading {
+                            ProgressView()
+                                .scaleEffect(1.6)
+                                .progressViewStyle(CircularProgressViewStyle(tint: Color(red: 0.18, green: 0.85, blue: 0.35)))
+                        }
                         
-                        Text("ĐANG DỰNG MÔ HÌNH 3D FULL-HEAD")
+                        Text(captureSession.lastErrorMessage == nil ? "ĐÃ QUÉT XONG — ĐANG XỬ LÝ" : "CHƯA HOÀN TẤT MÔ HÌNH 3D")
                             .font(.headline)
                             .bold()
                             .foregroundColor(.white)
@@ -682,18 +667,9 @@ public struct ARFaceScannerView: View {
                             .animation(.easeInOut(duration: 0.3), value: captureSession.uploadStatusMessage)
                         
                         if captureSession.lastErrorMessage != nil {
-                            // D-nolostdata — trước đây bấm "Quét lại" gọi
-                            // startActiveSweep() (= resetScan() rồi bắt đầu
-                            // lại), XÓA SẠCH 36 frame đã quét chỉ vì 1 lần
-                            // tải lên thất bại (mạng chập chờn, server lỗi
-                            // tạm thời...) — đây là nguyên nhân thật của
-                            // hiện tượng "quét xong rồi bị đá về quét lại từ
-                            // đầu". Giờ "Thử lại" chỉ gửi lại ĐÚNG dữ liệu đã
-                            // quét (triggerPackageUpload tự đọc lại
-                            // sweepFrames/clinicalPhotos hiện có, không cần
-                            // quét lại gì cả). Chỉ khi bấm riêng "Quét lại từ
-                            // đầu" mới thực sự xóa và bắt đầu mới.
+                            // Network retry keeps the sealed package; QC rejection needs a new scan.
                             VStack(spacing: 10) {
+                                if !captureSession.requiresNewScan {
                                 Button {
                                     captureSession.triggerPackageUpload { _ in }
                                 } label: {
@@ -705,8 +681,8 @@ public struct ARFaceScannerView: View {
                                         .background(Color(red: 0.0, green: 0.48, blue: 1.0))
                                         .cornerRadius(20)
                                 }
+                                }
                                 Button {
-                                    captureSession.isUploading = false
                                     captureSession.startActiveSweep()
                                     withAnimation { enrollmentPhase = 1 }
                                 } label: {
@@ -715,16 +691,16 @@ public struct ARFaceScannerView: View {
                                         .foregroundColor(Color(white: 0.6))
                                 }
                             }
-                        } else {
-                            Button {
-                                // Chỉ dừng theo dõi tiến trình, KHÔNG xóa dữ liệu đã quét.
-                                captureSession.isUploading = false
+                        }
+                        Button {
+                                captureSession.pauseSession()
+                                captureSession.onScanCancelled?()
+                                isCompleted = true
                             } label: {
-                                Text("Hủy")
+                                Text("Đóng màn hình quét")
                                     .font(.system(size: 14, weight: .regular))
                                     .foregroundColor(Color(white: 0.6))
                                     .padding(.top, 4)
-                            }
                         }
                     }
                     .padding(28)
@@ -736,6 +712,17 @@ public struct ARFaceScannerView: View {
                     )
                 }
             }
+        }
+        .overlay(alignment: .top) {
+            Text(ScannerRelease.identifier)
+                .font(.caption2.monospaced())
+                .foregroundColor(.secondary)
+                .padding(8)
+                .allowsHitTesting(false)
+        }
+        .confirmationDialog("Bỏ dữ liệu đang quét và bắt đầu lại?", isPresented: $confirmRestart, titleVisibility: .visible) {
+            Button("Quét lại từ đầu", role: .destructive) { captureSession.startActiveSweep() }
+            Button("Tiếp tục lần quét hiện tại", role: .cancel) {}
         }
         .onAppear {
             captureSession.startSession()

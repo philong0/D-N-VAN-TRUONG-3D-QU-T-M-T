@@ -50,7 +50,13 @@ export function resolvePrimaryCategory(services: ServiceKey[]): PrimaryPhotoCate
   return "other";
 }
 
-export function getSlotLabels(services: ServiceKey[]): SlotLabel[] {
+export function getSlotLabels(services: ServiceKey[], mapping?: "continuous_v3"): SlotLabel[] {
+  if (mapping === "continuous_v3") return [
+    { label: "Chính diện", hint: "Ảnh thật từ continuous scan." },
+    { label: "Chếch trái", hint: "Góc quan sát thực tế, không gán góc cố định." },
+    { label: "Bên trái", hint: "Ảnh bên trái trong sweep; không giả định trắc diện 90°." },
+    { label: "Chếch phải", hint: "Ảnh dưới lên được chụp riêng khi cần." },
+  ];
   switch (resolvePrimaryCategory(services)) {
     case "nose":
       return NOSE_SLOTS;

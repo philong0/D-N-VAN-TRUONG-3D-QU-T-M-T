@@ -13,6 +13,12 @@ workflows:
         XCODE_PROJECT: "ios/DrVanTruongScanner.xcodeproj"
         XCODE_SCHEME: "DrVanTruongScanner"
     scripts:
+      - name: Identify scanner source revision
+        script: |
+          mkdir -p "$CM_BUILD_DIR/build"
+          git rev-parse HEAD > "$CM_BUILD_DIR/build/scanner-revision.txt"
+          cat ios/Sources/Services/ContinuousKeyframeBank.swift | sed -n '/static let identifier/p' >> "$CM_BUILD_DIR/build/scanner-revision.txt"
+          cat "$CM_BUILD_DIR/build/scanner-revision.txt"
       - name: Build and Package unsigned iOS IPA for 3uTools
         script: |
           echo "=== 1. Building Xcode Release Archive ==="
@@ -48,6 +54,7 @@ workflows:
           echo "=== 3. Verify artifacts ==="
           ls -la "$PWD"
     artifacts:
+      - build/scanner-revision.txt
       - build/*.ipa
       - "*.ipa"
       - build/DrVanTruongScanner.xcarchive
@@ -65,6 +72,12 @@ workflows:
         distribution_type: development
         bundle_identifier: com.drvantruong.scanner
     scripts:
+      - name: Identify scanner source revision
+        script: |
+          mkdir -p "$CM_BUILD_DIR/build"
+          git rev-parse HEAD > "$CM_BUILD_DIR/build/scanner-revision.txt"
+          cat ios/Sources/Services/ContinuousKeyframeBank.swift | sed -n '/static let identifier/p' >> "$CM_BUILD_DIR/build/scanner-revision.txt"
+          cat "$CM_BUILD_DIR/build/scanner-revision.txt"
       - name: Apply existing iOS signing profile
         script: |
           cd "$CM_BUILD_DIR/ios"
@@ -77,5 +90,6 @@ workflows:
             --scheme "DrVanTruongScanner" \
             --config "Release"
     artifacts:
+      - build/scanner-revision.txt
       - ios/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log

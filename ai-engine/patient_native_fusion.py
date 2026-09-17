@@ -249,6 +249,7 @@ class PatientNativeReconstructor:
     def __init__(self, package_dir: str | Path):
         self.package_dir = Path(package_dir)
         self.frames = []
+        self.depth_report = []
         self.manifest = {}
         self._load_package()
 
@@ -294,8 +295,15 @@ class PatientNativeReconstructor:
         # package/route.ts directly before this fix, not assumed). The
         # legacy per-file scan below still runs as a fallback for the
         # synthetic fixture package layout, so it stays additive.
+        if not self.manifest:
+            # RGB CLI explicitly supplies its own observations after construction.
+            # Never discover files implicitly, even for legacy callers.
+            self.input_report = {"inputEntries": 0, "independentFrames": 0, "rejected": []}
+            return
+        from native_capture_contract import independent_entries, package_file, face_to_portrait_camera
+        entries, self.input_report = independent_entries(self.manifest, frames_dir)
         manifest_by_view: dict[str, dict] = {}
-        for entry in self.manifest.get("frames", []):
+        for entry in entries:
             view = entry.get("view") or entry.get("viewTag")
             if view:
                 manifest_by_view[view] = entry
@@ -319,14 +327,11 @@ class PatientNativeReconstructor:
             except Exception:
                 pass
 
-            # Scan all RGB frames
-        for img_file in sorted(frames_dir.glob("*.*")):
-            if img_file.suffix.lower() not in [".jpg", ".jpeg", ".png"]:
-                continue
-            stem = img_file.stem.replace("_rgb", "")
+        # Only immutable manifest observations; clinical photos and stale files are excluded.
+        for entry in entries:
+            img_file = package_file(frames_dir, entry["rgbFileName"])
+            stem = entry["view"]
             img_bgr = cv2.imread(str(img_file))
-            if img_bgr is None:
-                continue
 
             # Auto-orient landscape images (1440x1080) from TrueDepth/iOS sensors to upright portrait (1080x1440)
             was_rotated_cw = False
@@ -350,12 +355,21 @@ class PatientNativeReconstructor:
                 "roll_deg": None,
             }
 
-            # Detect WFLW 98 facial landmarks on the upright portrait frame
+            # Normalize only the detector's temporary image using measured roll;
+            # map its independent 2D evidence back into the original RGB pixels.
+            # Raw RGB, intrinsics and native transforms remain untouched.
             try:
                 from detect_pose import detect_face_landmarks
-                lms_res = detect_face_landmarks(img_bgr)
+                roll = float((entry.get("pose") or {}).get("eulerRotationDeg", {}).get("roll", 0))
+                ih, iw = img_bgr.shape[:2]
+                rotation = cv2.getRotationMatrix2D((iw/2, ih/2), roll, 1.)
+                detector_image = cv2.warpAffine(img_bgr, rotation, (iw, ih), borderMode=cv2.BORDER_REFLECT)
+                lms_res = detect_face_landmarks(detector_image)
                 if lms_res.get("has_face") and lms_res.get("landmarks_98") is not None:
-                    frame_entry["landmarks_98"] = np.array(lms_res["landmarks_98"], dtype=np.float64)
+                    points = np.asarray(lms_res["landmarks_98"], dtype=np.float64)
+                    inverse = cv2.invertAffineTransform(rotation)
+                    frame_entry["landmarks_98"] = np.column_stack([points, np.ones(len(points))]) @ inverse.T
+                    frame_entry["landmarks_roll_normalized"] = True
             except Exception as lms_exc:
                 print(f"Landmark detection note for {stem}: {lms_exc}")
 
@@ -404,7 +418,7 @@ class PatientNativeReconstructor:
                 )
                 raw_w = idata.get("imageWidth", img_w)
                 raw_h = idata.get("imageHeight", img_h)
-                needs_portrait_transform = was_rotated_cw or (img_h > img_w and raw_w > raw_h) or (img_h > img_w and raw_K[0, 2] > img_w / 2 + 50)
+                needs_portrait_transform = was_rotated_cw or (img_h > img_w and raw_w > raw_h)
                 if needs_portrait_transform:
                     # Adjust camera intrinsics for 90-degree CW image rotation
                     orig_h = raw_h
@@ -449,16 +463,9 @@ class PatientNativeReconstructor:
             if pdata:
                 try:
                     if "cameraTransformColumnMajor" in pdata and "faceTransformColumnMajor" in pdata:
-                        camera_to_world = _column_major_4x4(pdata["cameraTransformColumnMajor"])
-                        face_to_world = _column_major_4x4(pdata["faceTransformColumnMajor"])
-                        face_to_arkit_camera = np.linalg.inv(camera_to_world) @ face_to_world
-                        arkit_to_portrait_cv = np.array([
-                            [0.0, 1.0, 0.0, 0.0],
-                            [1.0, 0.0, 0.0, 0.0],
-                            [0.0, 0.0, -1.0, 0.0],
-                            [0.0, 0.0, 0.0, 1.0]
-                        ], dtype=np.float64) if was_rotated_cw else np.diag([1.0, -1.0, -1.0, 1.0])
-                        frame_entry["camera_pose"] = arkit_to_portrait_cv @ face_to_arkit_camera
+                        # iOS schema 2/3 JPEGs are already clockwise portrait.
+                        # Image rotation on this server must not determine the camera basis.
+                        frame_entry["camera_pose"] = face_to_portrait_camera(pdata)
                     elif "cameraTransformColumnMajor" in pdata:
                         frame_entry["camera_pose"] = _column_major_4x4(pdata["cameraTransformColumnMajor"])
                     elif "cameraPose" in pdata:
@@ -528,6 +535,9 @@ class PatientNativeReconstructor:
                     except Exception as exc:
                         print(f"Warning reading depth for {stem}: {exc}")
 
+            frame_entry["timestamp"] = entry["timestamp"]
+            frame_entry["physical_hash"] = entry["physicalHash"]
+            frame_entry["measured_sharpness"] = entry["measuredSharpness"]
             self.frames.append(frame_entry)
 
     def reconstruct_patient_surface(self) -> dict:
@@ -569,8 +579,8 @@ class PatientNativeReconstructor:
         if is_native_ios:
             # Support 10-sector clinical packages, continuous sweeps, and clinical angle checkpoints
             tracked_frames = [f for f in self.frames if f.get("arface_vertices") is not None and f["arface_vertices"].shape == (1220, 3)]
-            if len(tracked_frames) < 4:
-                raise ValueError(f"Native TrueDepth package has insufficient tracked frames ({len(tracked_frames)}/4 minimum required).")
+            if len(tracked_frames) < 7:
+                raise ValueError(f"Native TrueDepth package has insufficient tracked frames ({len(tracked_frames)}/7 independent frames required).")
 
         # Check if native ARFaceGeometry is available across frames
         arface_frames = [f for f in self.frames if f["arface_vertices"] is not None]
@@ -603,40 +613,8 @@ class PatientNativeReconstructor:
             if has_native_depth:
                 fused_mesh = self._refine_surface_with_truedepth(fused_mesh, depth_frames)
 
-            # D-posedrift — REAL EVIDENCE (patient f34e1035, 31 sweep frames):
-            # per-view silhouette IoU forms a sharp, symmetric V centered on
-            # the very first captured frame (sweep_00: IoU 0.76) and
-            # monotonically degrades with each step away from it in EITHER
-            # rotation direction (down to 0.12-0.13 at the frames furthest
-            # from the start, sweep_12/13), then recovers again as the sweep
-            # continues back around. This is the textbook signature of POSE
-            # DRIFT accumulating in ARKit's own face-anchor tracking over the
-            # course of a long continuous rotation -- not a per-vertex
-            # geometry problem, so no amount of vertex-averaging fixes it.
-            # Fix: re-solve each frame's OWN camera pose from real, freshly
-            # re-detected 2D evidence (this frame's own WFLW-98 landmarks,
-            # `detect_face_landmarks`, already computed per-frame) against
-            # REAL 3D anatomical points on the just-fused mesh -- grounding
-            # every frame's pose in its own real observation instead of
-            # trusting ARKit's cumulative tracking. The 4 WFLW indices used
-            # (57=nose tip, 16=chin/jaw-midpoint, 64/68=inner eye corners)
-            # are NOT invented for this: they are the exact same indices
-            # this codebase's own gnm_correspondence.py already validated
-            # ("reprojection error measured on 2 real patients across all 4
-            # angles before any point here was trusted") for pose-solving
-            # elsewhere in this pipeline.
-            # Two passes: the first refines poses against the naive-mean
-            # mesh's own landmarks (already better than raw ARKit poses);
-            # the second re-refines against the now-corrected mesh, letting
-            # the pose estimate and the mesh estimate converge together
-            # (standard alternating pose/structure refinement) rather than
-            # assuming one pass reaches a fixed point.
-            for _ in range(2):
-                fused_mesh = self._refine_frame_poses_from_landmarks(fused_mesh, arface_frames)
-                fused_mesh = self._fuse_arface_geometry(arface_frames)
-            fused_mesh = self._optimize_joint_bundle_adjustment(fused_mesh, arface_frames)
-            if has_native_depth:
-                fused_mesh = self._refine_surface_with_truedepth(fused_mesh, depth_frames)
+            # Keep measured native extrinsics. A four-landmark PnP solve must not
+            # overwrite sensor calibration or redefine the frame's depth rays.
         elif has_native_depth:
             fused_mesh = self._refine_surface_with_truedepth(None, depth_frames)
         else:
@@ -745,11 +723,12 @@ class PatientNativeReconstructor:
             "faces": mesh.faces.astype(np.int64),
             "normals": mesh.vertex_normals.astype(np.float64),
             "landmarks": landmarks_3d,
-            "pts_2d": fused_mesh.get("pts_2d"),
-            "rgb_img": fused_mesh.get("rgb_img"),
+            "pts_2d": None if is_native_ios else fused_mesh.get("pts_2d"),
+            "rgb_img": None if is_native_ios else fused_mesh.get("rgb_img"),
             "frames_used": [f["stem"] for f in self.frames],
             "has_native_arface": has_native_arface,
             "has_native_depth": has_native_depth,
+            "depth_observations": self.depth_report,
             # None (not a fabricated number) when this reconstruction path
             # doesn't produce real per-region reprojection error — currently
             # only the RGB SfM path (_reconstruct_from_rgb_multiview) does;
@@ -1488,7 +1467,16 @@ class PatientNativeReconstructor:
 
             sampled_depth = depth[py_i[idx], px_i[idx]].astype(np.float64)
             depth_ok = np.isfinite(sampled_depth) & (sampled_depth > 0.05) & (sampled_depth < 0.85)
-            consistent = depth_ok & (np.abs(sampled_depth - z_est[idx]) < MAX_CONSISTENCY_GAP_M)
+            gap = np.abs(sampled_depth - z_est[idx])
+            median_gap = float(np.median(gap[depth_ok])) if depth_ok.any() else float("inf")
+            # A whole observation offset by >10mm cannot safely correct the
+            # face. Keep the measured ARFace surface and expose the rejection;
+            # never average a mismatched depth map at 6x weight.
+            self.depth_report.append({"view": f["stem"], "medianDisagreementMm": median_gap*1000 if np.isfinite(median_gap) else None,
+                                      "used": median_gap <= .010})
+            if median_gap > .010:
+                continue
+            consistent = depth_ok & (gap < .020)
             idx2 = idx[consistent]
             if len(idx2) == 0:
                 continue

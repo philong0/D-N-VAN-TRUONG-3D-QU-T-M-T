@@ -1,3 +1,4 @@
+import { reconstructNative } from "./native-reconstruction";
 import { execFile } from "child_process";
 import { readdir, writeFile, readFile, copyFile } from "fs/promises";
 import path from "path";
@@ -81,6 +82,13 @@ export class PythonGNMReconstructionService implements IReconstructionService {
       const framesFolder = scanFramesDir(patientId, sessionId);
       const outputDir = path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction");
 
+      // Native sessions never fall through to RGB/GNM/interpolator routes.
+      let nativeManifest = false;
+      try {
+        const manifest = JSON.parse(await readFile(path.join(framesFolder, "manifest.json"), "utf8"));
+        nativeManifest = manifest.captureSource === "native_ios";
+      } catch {}
+      if (data.scannerKind === "ios_native" || nativeManifest) return await reconstructNative(data);
       await ensureDir(outputDir);
 
       // Check available frame files
@@ -186,7 +194,7 @@ export class PythonGNMReconstructionService implements IReconstructionService {
         hasManifest = false;
       }
 
-      const useNativeFusion = data.scannerKind === "ios_native" || hasManifest;
+      const useNativeFusion = hasManifest;
 
       if (!useNativeFusion && frameArgs.length === 0 && burstDirArg.length === 0) {
         return {

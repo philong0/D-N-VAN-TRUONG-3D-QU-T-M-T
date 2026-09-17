@@ -9,7 +9,15 @@ export async function GET(
 ) {
   const { id: patientId } = await context.params;
 
+  const patientRoot = path.join(DATA_DIR, "patients", patientId);
+  const acceptedPaths: string[] = [];
+  try {
+    const pointer = JSON.parse(await readFile(path.join(patientRoot, "native-baseline.json"), "utf8"));
+    const selected = path.resolve(patientRoot, pointer.directory, "baseline.glb");
+    if (selected.startsWith(path.resolve(patientRoot, "native-baselines") + path.sep)) acceptedPaths.push(selected);
+  } catch {}
   const candidatePaths = [
+    ...acceptedPaths,
     path.join(process.cwd(), "public", "models", "patients", patientId, "reconstruction", "baseline.glb"),
     path.join(process.cwd(), ".data", "patients", patientId, "reconstruction", "baseline.glb"),
     path.join(process.cwd(), ".data", "patients", patientId, "models", "baseline.glb"),

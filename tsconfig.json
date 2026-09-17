@@ -27,7 +27,9 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".next-truedepth-v3/types/**/*.ts",
+    ".next-truedepth-v3/dev/types/**/*.ts"
   ],
   "exclude": ["node_modules", "scratchpad", ".backups"]
 }

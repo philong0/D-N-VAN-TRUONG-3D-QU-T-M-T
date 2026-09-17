@@ -458,7 +458,7 @@ export default function GuidedFaceScan({ patientId }: { patientId: string }) {
     } catch (err) {
       console.warn("Native ARKit scan error:", err);
       setIsArkitScanning(false);
-      startCamera(cameraFacing);
+      setErrorMessage(err instanceof Error ? err.message : "Không mở được máy quét TrueDepth. Vui lòng thử lại.");
     }
   }, [cameraFacing, patientId, stopCamera]);
 

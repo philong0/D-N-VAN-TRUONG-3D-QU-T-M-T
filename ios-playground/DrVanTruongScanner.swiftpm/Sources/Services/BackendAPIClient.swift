@@ -40,6 +40,9 @@ public final class BackendAPIClient: ObservableObject {
     @Published public var studioURL: URL? = nil
     public var onProgressUpdate: ((Float, String) -> Void)?
 
+    private var sealedRequest: URLRequest?
+    public var onPackageFinalized: (() -> Void)?
+    private let serializationQueue = DispatchQueue(label: "com.drvantruong.package.serialization")
     public init() {}
 
     // D-patientpicker — the setup screen used to make the operator hand-type
@@ -132,6 +135,7 @@ public final class BackendAPIClient: ObservableObject {
         patientId: String,
         sessionId: String,
         frames: [String: CapturedFramePackage],
+        clinicalPhotos: [String: CapturedFramePackage] = [:],
         scannerMode: ScannerMode = .faceIdSelfScan,
         completion: @escaping (Result<URL, Error>) -> Void
     ) {
@@ -140,6 +144,11 @@ public final class BackendAPIClient: ObservableObject {
             return
         }
         
+        serializationQueue.async {
+        if let sealed = self.sealedRequest, sealed.url == url {
+            self.performUploadRequest(sealed, patientId: patientId, sessionId: sessionId, attempt: 1, completion: completion)
+            return
+        }
         let isRear = scannerMode == .rearClinicalAssistant
         DispatchQueue.main.async {
             self.isUploading = true
@@ -151,7 +160,7 @@ public final class BackendAPIClient: ObservableObject {
         // (geometry/intrinsics/pose), matching package/route.ts's actual
         // read contract exactly (see D-contractfix in ScanModels.swift).
         var frameDTOs: [ScanPackageManifestDTO.FrameEntryDTO] = []
-        for (viewTag, frame) in frames {
+        for (viewTag, frame) in frames.sorted(by: { $0.key < $1.key }) {
             let entry = ScanPackageManifestDTO.FrameEntryDTO(
                 view: viewTag,
                 timestamp: frame.timestamp,
@@ -171,8 +180,8 @@ public final class BackendAPIClient: ObservableObject {
             frameDTOs.append(entry)
         }
         
-        let manifest = ScanPackageManifestDTO(
-            schemaVersion: "2.0.0",
+        var manifest = ScanPackageManifestDTO(
+            schemaVersion: isRear ? "2.0.0" : "3.0.0",
             captureSource: isRear ? "native_ios_rear" : "native_ios",
             deviceModel: UIDevice.current.model,
             systemVersion: UIDevice.current.systemVersion,
@@ -180,9 +189,19 @@ public final class BackendAPIClient: ObservableObject {
             patientId: patientId,
             sessionId: sessionId,
             capturedAt: ISO8601DateFormatter().string(from: Date()),
-            frames: frameDTOs
+            frames: isRear ? frameDTOs : nil
         )
         
+        manifest.scannerBuild = ScannerRelease.identifier
+        if !isRear {
+            manifest.imageOrientation = "portrait_cw"
+            manifest.reconstructionFrames = frameDTOs
+            manifest.clinicalPhotos = clinicalPhotos.sorted(by: { $0.key < $1.key }).map { role, frame in
+                ScanPackageManifestDTO.ClinicalPhotoDTO(role: role, timestamp: frame.timestamp,
+                    yawDeg: frame.quality.yawDeg, pitchDeg: frame.quality.pitchDeg,
+                    rgbFileName: "clinical_\(role).jpg")
+            }
+        }
         guard let manifestData = try? JSONEncoder().encode(manifest),
               let manifestStr = String(data: manifestData, encoding: .utf8) else {
             completion(.failure(NSError(domain: "API", code: 500, userInfo: [NSLocalizedDescriptionKey: "Không thể mã hóa manifest.json."])))
@@ -209,11 +228,15 @@ public final class BackendAPIClient: ObservableObject {
         
         appendFormField(name: "manifest", value: manifestStr)
         
-        for (viewTag, frame) in frames {
+        for (viewTag, frame) in frames.sorted(by: { $0.key < $1.key }) {
             appendFileData(name: "\(viewTag).jpg", fileName: "\(viewTag).jpg", mimeType: "image/jpeg", data: frame.rgbData)
             if let depthData = frame.depthData {
                 appendFileData(name: "\(viewTag)_depth.raw", fileName: "\(viewTag)_depth.raw", mimeType: "application/octet-stream", data: depthData)
             }
+        }
+        for (role, frame) in clinicalPhotos.sorted(by: { $0.key < $1.key }) {
+            let name = "clinical_\(role).jpg"
+            appendFileData(name: name, fileName: name, mimeType: "image/jpeg", data: frame.rgbData)
         }
         body.append("--\(boundary)--\r\n".data(using: .utf8)!)
         
@@ -230,7 +253,10 @@ public final class BackendAPIClient: ObservableObject {
             self.onProgressUpdate?(0.20, initialMsg)
         }
 
-        performUploadRequest(request, patientId: patientId, sessionId: sessionId, attempt: 1, completion: completion)
+        self.sealedRequest = request
+        DispatchQueue.main.async { self.onPackageFinalized?() }
+        self.performUploadRequest(request, patientId: patientId, sessionId: sessionId, attempt: 1, completion: completion)
+        }
     }
 
     // D-networkretry — gói quét TrueDepth liên tục (36 frame + depth) nặng
@@ -459,9 +485,8 @@ public final class BackendAPIClient: ObservableObject {
                 
                 let status = session["status"] as? String
                 let recon = session["reconstruction"] as? [String: Any]
-                let baselineGLB = recon?["baselineModelFileName"] as? String
                 
-                if status == "ready" || (baselineGLB != nil && !baselineGLB!.isEmpty) {
+                if ScanReconstructionState(status: status) == .ready {
                     DispatchQueue.main.async {
                         self.uploadProgress = 1.0
                         let successMsg = "✓ Dựng 3D hoàn tất! Đang chuyển vào 3D Studio..."
@@ -478,7 +503,7 @@ public final class BackendAPIClient: ObservableObject {
                     return
                 }
                 
-                if status == "failed" {
+                if ScanReconstructionState(status: status) == .rejected {
                     let errReason = recon?["error"] as? String ?? "AI Engine không thể tái tạo mô hình 3D từ dữ liệu quét này."
                     DispatchQueue.main.async {
                         self.isUploading = false

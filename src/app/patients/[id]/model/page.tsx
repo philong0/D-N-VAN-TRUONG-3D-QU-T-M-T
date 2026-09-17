@@ -16,7 +16,7 @@ export default async function PatientModelPage({
   const patient = await getPatient(id);
   if (!patient) notFound();
 
-  const slotLabels = getSlotLabels(patient.services);
+  const slotLabels = getSlotLabels(patient.services, patient.scanPhotoMapping);
   // "ready" is only ever set server-side after a real reconstruction
   // succeeded (see the scan-sessions PATCH route's request_reconstruction
   // handler) — that's the actual trust boundary, whether the session came

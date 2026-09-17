@@ -122,6 +122,7 @@ def bake_visibility_aware_texture(
     uvs: np.ndarray,
     frames: list[dict],
     tex_size: int = 2048,
+    diagnostics: dict | None = None,
 ) -> tuple[np.ndarray, bytes]:
     """
     Projects authentic RGB frames onto the patient's UV map with multi-band Laplacian blending.
@@ -187,8 +188,18 @@ def bake_visibility_aware_texture(
     pt_weights = np.zeros((n_frames, n_pts), dtype=np.float32)
     pt_colors = np.zeros((n_frames, n_pts, 3), dtype=np.float32)
 
+    from native_diagnostics import rasterize
+    exposure_medians = []
+    for f in frames:
+        im = f["image_bgr"]
+        h, w = im.shape[:2]
+        exposure_medians.append(np.median(im[h//4:3*h//4, w//4:3*w//4].reshape(-1, 3), axis=0))
+    reference_color = np.median(exposure_medians, axis=0)
+    color_gains = []
     for k, f in enumerate(frames):
-        img = f["image_bgr"]
+        gain = np.clip(reference_color / np.maximum(exposure_medians[k], 20), .8, 1.25)
+        color_gains.append(gain.tolist())
+        img = np.clip(f["image_bgr"].astype(np.float32) * gain, 0, 255)
         ih, iw = img.shape[:2]
         K = f.get("intrinsics")
         if K is None:
@@ -214,6 +225,12 @@ def bake_visibility_aware_texture(
         # Clinical key photos (front, left_45, right_45) get extra priority for facial feature clarity
         is_clinical = stem in ("front", "left_45", "right_45", "basal_nostrils", "left_profile", "right_profile") or stem == "sweep_00"
         clinical_boost = 1.6 if is_clinical else 1.0
+        if f.get("physical_hash"):
+            # Native view names are arbitrary package IDs, not quality labels.
+            # Calibrated projection already accounts for measured head roll.
+            roll_penalty = 1.0
+            sharpness = [max(1., float(v.get("measured_sharpness", 1.))) for v in frames]
+            clinical_boost = float(np.clip(np.sqrt(max(1., float(f.get("measured_sharpness", 1.))) / np.median(sharpness)), .5, 2.))
 
         facing_weight = (np.clip(cos_angle, 0.0, 1.0) ** 3.2) * roll_penalty * clinical_boost
 
@@ -224,7 +241,15 @@ def bake_visibility_aware_texture(
         px = fx * Xc[:, 0] / np.clip(z, 1e-6, None) + cx_c
         py = fy * Xc[:, 1] / np.clip(z, 1e-6, None) + cy_c
 
-        valid = (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (facing_weight > 0.005)
+        # Visibility requires a depth test, not just a facing normal.
+        zscale = 1.0  # visibility in the actual RGB pixel grid, not an undersampled silhouette
+        zK = np.asarray(K, dtype=np.float64).copy()
+        zK[:2] *= zscale
+        zmap, _ = rasterize(vertices, faces, cam_pose, zK, (round(ih*zscale), round(iw*zscale)))
+        zx = np.clip((px*zscale).astype(int), 0, zmap.shape[1]-1)
+        zy = np.clip((py*zscale).astype(int), 0, zmap.shape[0]-1)
+        visible = np.isfinite(zmap[zy, zx]) & (np.abs(z - zmap[zy, zx]) < .003)
+        valid = visible & (z > 0.05) & (px >= 0) & (px < iw) & (py >= 0) & (py < ih) & (facing_weight > 0.005)
 
         img_f = img.astype(np.float32)
         pxc = np.clip(px, 0, iw - 1)
@@ -261,18 +286,32 @@ def bake_visibility_aware_texture(
     flat_img[valid_lin_idx] = accum_color
     tex_img = flat_img.reshape(tex_size, tex_size, 3)
 
-    # 5. Inpaint background with natural skin tone
-    mask = texel_valid.astype(np.uint8)
-    sampled_valid = has_photo.reshape(-1)
-    if sampled_valid.any():
-        med_skin = np.median(accum_color[sampled_valid], axis=0)
-    else:
-        med_skin = np.array([160.0, 180.0, 210.0], dtype=np.float32)
-
+    # Three distinct masks. Missing observations inside UV islands are not
+    # background and must never silently turn into black pixels.
+    observed = np.zeros((tex_size, tex_size), bool)
+    observed.reshape(-1)[valid_lin_idx] = has_photo
+    unobserved = texel_valid & ~observed
+    if not observed.any():
+        raise ValueError("No photographic texture observations after calibrated projection")
+    from scipy.ndimage import distance_transform_edt
+    distance, nearest = distance_transform_edt(~observed, return_indices=True)
     tex_uint8 = np.clip(tex_img, 0, 255).astype(np.uint8)
-    tex_uint8[mask == 0] = med_skin.astype(np.uint8)
-    inpainted = cv2.inpaint(tex_uint8, (mask == 0).astype(np.uint8), 5, cv2.INPAINT_TELEA)
-    final_texture = np.where(mask[:, :, None] > 0, tex_uint8, inpainted)
+    neutral = np.median(tex_uint8[observed], axis=0).astype(np.uint8)
+    final_texture = np.broadcast_to(neutral, tex_uint8.shape).copy()
+    final_texture[observed] = tex_uint8[observed]
+    # Only local pinholes/seam padding are extrapolated from real observations.
+    local_fill = (~observed) & (distance <= 8)
+    final_texture[local_fill] = tex_uint8[nearest[0][local_fill], nearest[1][local_fill]]
+    if diagnostics is not None:
+        diagnostics.update({
+            "meshTexels": int(texel_valid.sum()), "observedTexels": int(observed.sum()),
+            "unobservedTexels": int(unobserved.sum()),
+            "observedFraction": float(observed.sum() / max(1, texel_valid.sum())),
+            "unfilledFraction": float((unobserved & (distance > 8)).sum() / max(1, texel_valid.sum())),
+            "nearBlackFraction": float((final_texture[texel_valid].max(axis=1) < 5).mean()),
+            "colorGains": color_gains,
+            "observedMask": observed, "unobservedMask": unobserved, "outsideMask": ~texel_valid,
+        })
 
     ok, png_bytes = cv2.imencode(".png", final_texture, [cv2.IMWRITE_PNG_COMPRESSION, 4])
     return final_texture, png_bytes.tobytes()

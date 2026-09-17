@@ -175,7 +175,7 @@ def validate_render_back_fidelity(
         # error at that frame. Excluded from scoring (not counted as
         # "warning"/"pass") rather than silently trusted or penalized.
         roll_deg = f.get("roll_deg")
-        if roll_deg is not None and abs(roll_deg) > 8.0:
+        if roll_deg is not None and abs(roll_deg) > 8.0 and not f.get("landmarks_roll_normalized"):
             view_errors[stem] = {
                 "silhouetteCoverage": round(render_coverage, 4) if np.isfinite(render_coverage) else 0.0,
                 "silhouetteIoU": None,
@@ -282,12 +282,33 @@ def validate_render_back_fidelity(
     passing_view_count = sum(1 for v in measured_status_views if v.get("status") == "pass")
     view_gate_failed = len(measured_status_views) > 0 and passing_view_count * 2 < len(measured_status_views)
 
+    rejection_reasons = []
     if is_native:
-        reconstruction_status = "completed" if (
-            mesh_vert_count >= 1000
-            and not anatomical_gate_failed
-            and not view_gate_failed
-        ) else "reconstruction_failed"
+        geometry_mesh = mesh.copy()
+        # UV atlas islands duplicate vertex records, not physical geometry.
+        geometry_mesh.merge_vertices(merge_tex=True, merge_norm=True)
+        if not 7 <= len(frames) <= 10:
+            rejection_reasons.append("Need 7–10 usable independent physical frames")
+        identities = [f.get("physical_hash") for f in frames]
+        timestamps = [f.get("timestamp") for f in frames]
+        if None in identities or len(set(identities)) != len(frames) or len(set(timestamps)) != len(frames):
+            rejection_reasons.append("Duplicate/missing physical observation identity")
+        if (not np.isfinite(mesh.vertices).all() or mesh_vert_count < 1000
+                or np.any(mesh.area_faces <= 1e-12) or len(geometry_mesh.split(only_watertight=False)) != 1):
+            rejection_reasons.append("Invalid/disconnected geometry")
+        if measured_views < max(3, int(np.ceil(.7 * len(frames)))):
+            rejection_reasons.append("Insufficient independently measurable RGB reprojections")
+        if not valid_view_errors or avg_error_mm > 5.0:
+            rejection_reasons.append("Median projected contour error exceeds 5mm or is unavailable")
+        reliable = [v for v in view_errors.values() if v.get("silhouetteIoU") is not None]
+        if not reliable or np.median([v["silhouetteIoU"] for v in reliable]) < .8:
+            rejection_reasons.append("Median silhouette IoU below 0.8")
+        texture = reconstruction_metrics.get("texture_stats", {})
+        if texture.get("observedFraction", 0) < .95:
+            rejection_reasons.append("Photographic texture coverage below 95%")
+        if texture.get("nearBlackFraction", 1) > .01:
+            rejection_reasons.append("Abnormal near-black mesh texels exceed 1%")
+        reconstruction_status = "reconstruction_failed" if rejection_reasons else "completed"
     else:
         # RGB-only estimation path
         reconstruction_status = "completed" if (
@@ -298,6 +319,10 @@ def validate_render_back_fidelity(
 
     report = {
         "reconstructionStatus": reconstruction_status,
+        "rejectionReasons": rejection_reasons,
+        "textureMetrics": reconstruction_metrics.get("texture_stats"),
+        "independentFrameCount": len(set(f.get("physical_hash") for f in frames)),
+        "depthObservations": reconstruction_metrics.get("depth_observations", []),
         "frameCountUsed": len(frames),
         "depthFrameCount": sum(1 for f in frames if f.get("depth_f32") is not None),
         "trackedFrameCount": sum(1 for f in frames if f.get("arface_vertices") is not None),

@@ -52,14 +52,18 @@ public final class ArkitScanBridge: NSObject, ObservableObject, WKScriptMessageH
             guard let self = self else { return }
             switch action {
             case "start":
+                guard !self.isPresentingScanner else {
+                    self.reject(requestId, "Một phiên quét đang mở; không khởi động lại phiên hiện tại.")
+                    return
+                }
                 guard let pid = body["patientId"] as? String, let sid = body["sessionId"] as? String else {
                     self.reject(requestId, "Thiếu patientId/sessionId cho action start.")
                     return
                 }
+                self.captureSession.resetScan()
                 self.captureSession.patientId = pid
                 self.captureSession.sessionId = sid
                 UserDefaults.standard.set(pid, forKey: "lastActivePatientId")
-                self.captureSession.startActiveSweep()
                 
                 self.captureSession.onScanCompleted = { [weak self] studioURL in
                     DispatchQueue.main.async {

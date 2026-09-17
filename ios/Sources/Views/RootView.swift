@@ -80,9 +80,8 @@ struct WebView: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {
-        if let currentURL = uiView.url?.absoluteString, currentURL != url.absoluteString {
-            uiView.load(URLRequest(url: url))
-        }
+        // Bridge presentation must not reload the current /scan route.
+        // Explicit reload/server changes recreate the view via .id(reloadTrigger).
     }
 }
 

@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import fs, { writeFile } from "fs/promises";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
@@ -6,10 +6,12 @@ import { getPatient, updatePatient } from "@/lib/db";
 import { evaluateScanQuality } from "@/lib/scan/quality";
 import { ensureDir, scanFramesDir } from "@/lib/storage";
 import type { ScanCaptureView, ScanFrame, ScanSession, PhotoAngle } from "@/lib/types";
+import { beginPackage, PackageConflict, safePackageName } from "@/lib/scan/immutable-package";
 export async function POST(
   request: NextRequest,
   context: { params: Promise<{ id: string; sessionId: string }> }
 ) {
+  let transaction: Awaited<ReturnType<typeof beginPackage>> | undefined;
   try {
     const { id: patientId, sessionId } = await context.params;
     const patient = await getPatient(patientId);
@@ -32,8 +34,7 @@ export async function POST(
       patient.scanSessions = [...(patient.scanSessions ?? []), currentSession];
     }
 
-    const dir = scanFramesDir(patientId, sessionId);
-    await ensureDir(dir);
+    const destination = scanFramesDir(patientId, sessionId);
 
     const formData = await request.formData();
     const manifestStr = formData.get("manifest") as string | null;
@@ -41,6 +42,13 @@ export async function POST(
     if (!manifestStr) {
       return NextResponse.json({ error: "Thiếu file manifest.json trong TrueDepth package." }, { status: 400 });
     }
+
+    transaction = await beginPackage(destination, formData);
+    if (transaction.replay) {
+      return NextResponse.json({ success: true, replay: true, session: currentSession,
+        studioUrl: `/patients/${patientId}/studio` });
+    }
+    let dir = transaction.stage;
 
     interface PackageFrameDTO {
       view: ScanCaptureView;
@@ -64,7 +72,50 @@ export async function POST(
     }
 
     const manifest = JSON.parse(manifestStr);
-    const framesDTO: PackageFrameDTO[] = manifest.frames || [];
+    const modern = manifest.schemaVersion === "3.0.0";
+    const framesDTO: PackageFrameDTO[] = modern ? manifest.reconstructionFrames : manifest.frames || [];
+    if (!Array.isArray(framesDTO)) throw new Error("Missing reconstructionFrames");
+    if (modern) {
+      if (manifest.imageOrientation !== "portrait_cw" || framesDTO.length < 7 || framesDTO.length > 10) {
+        return NextResponse.json({ error: "Cần 7–10 physical frames với portrait_cw." }, { status: 422 });
+      }
+      const timestamps = new Set<number>();
+      const hashes = new Set<string>();
+      const names = new Set<string>();
+      for (const frame of framesDTO) {
+        if (!/^sweep_\d+$/.test(frame.view)) throw new Error("Invalid reconstruction view identity");
+        safePackageName(frame.rgbFileName);
+        if (frame.rgbFileName !== `${frame.view}.jpg`) throw new Error("RGB view/name mismatch");
+        if (frame.depthFileName) {
+          safePackageName(frame.depthFileName);
+          if (!(formData.get(frame.depthFileName) instanceof File)) throw new Error("Missing declared depth buffer");
+        }
+        if (!Number.isFinite(frame.yawDeg) || !Number.isFinite(frame.pitchDeg)
+            || frame.quality?.isTracked !== true || frame.quality?.isBlurry !== false
+            || frame.quality?.isLightingAdequate !== true || frame.quality?.isDistanceOptimal !== true) {
+          throw new Error("Missing/failed measured capture quality");
+        }
+        const rgb = formData.get(frame.rgbFileName!);
+        if (!(rgb instanceof File) || !Number.isFinite(frame.timestamp)) throw new Error("Missing RGB/timestamp");
+        const hash = createHash("sha256").update(Buffer.from(await rgb.arrayBuffer())).digest("hex");
+        if (timestamps.has(frame.timestamp!) || hashes.has(hash) || names.has(frame.view)) {
+          return NextResponse.json({ error: "Duplicate physical reconstruction frame." }, { status: 422 });
+        }
+        timestamps.add(frame.timestamp!); hashes.add(hash); names.add(frame.view);
+      }
+      if (!Array.isArray(manifest.clinicalPhotos) || manifest.clinicalPhotos.length !== 4) throw new Error("Need four clinical photos");
+      const roles = new Set<string>();
+      for (const photo of manifest.clinicalPhotos) {
+        if (!["front", "left_oblique", "left_lateral", "right_oblique"].includes(photo.role) || roles.has(photo.role)) throw new Error("Invalid clinical role");
+        roles.add(photo.role);
+        const name = safePackageName(photo.rgbFileName);
+        if (name !== `clinical_${photo.role}.jpg`) throw new Error("Invalid clinical filename");
+        const file = formData.get(name);
+        if (!(file instanceof File)) throw new Error("Missing clinical RGB");
+        await ensureDir(path.join(dir, "clinical"));
+        await writeFile(path.join(dir, "clinical", name), Buffer.from(await file.arrayBuffer()));
+      }
+    }
 
     // Reject invalid native capture packages before they reach reconstruction.
     // The values are measured ARFaceAnchor angles, not labels supplied by the
@@ -93,7 +144,7 @@ export async function POST(
       if (!isContinuousSweep && framesDTO.length < 5) {
         return NextResponse.json({ error: "Gói quét phải có đủ 5 góc quét chuẩn." }, { status: 422 });
       }
-      if (isContinuousSweep && framesDTO.length < 8) {
+      if (isContinuousSweep && framesDTO.length < (modern ? 7 : 8)) {
         return NextResponse.json({ error: "Gói quét Face ID liên tục phải có ít nhất 8 khung hình đo đạc." }, { status: 422 });
       }
       const seenViews = new Set<string>();
@@ -278,6 +329,7 @@ export async function POST(
           });
         }
 
+        if (modern && reasons.length > 0) return NextResponse.json({ error: "Invalid native frame", reasons }, { status: 422 });
         if (reasons.length > 0) {
           console.warn(
             `FRAME QUALITY WARNING (Proceeding with best-effort 3D reconstruction)\n` +
@@ -370,10 +422,20 @@ export async function POST(
       savedFrames.push(scanFrame);
     }
 
+    // Publish only a fully serialized dataset. Readers never see partial files.
+    // Clinical assets live in a separate folder and are not frame observations.
+    if (modern) for (const photo of manifest.clinicalPhotos) photo.rgbFileName = `clinical/${photo.rgbFileName}`;
     // Save manifest to disk for worker consumption
-    await writeFile(path.join(dir, "manifest.json"), Buffer.from(manifestStr));
+    await writeFile(path.join(dir, "manifest.json"), Buffer.from(JSON.stringify(manifest)));
+    await transaction.commit();
+    dir = destination;
 
     const qualityReport = evaluateScanQuality(savedFrames, "ios_native");
+    if (modern) {
+      qualityReport.overall = "warning";
+      qualityReport.coverage = { status: "pass", detail: `${savedFrames.length} independent capture frames; reconstruction QC pending.` };
+      qualityReport.geometryConsistency = { status: "not_available", detail: "Geometry is not verified until native reconstruction QC." };
+    }
 
     const updatedSession: ScanSession = {
       ...currentSession,
@@ -412,7 +474,7 @@ export async function POST(
     };
 
     const framePhotoEntries: Partial<Record<PhotoAngle, { fileName: string; angle: PhotoAngle; uploadedAt: string; width: number; height: number }>> = {};
-    for (const frame of savedFrames) {
+    for (const frame of modern ? [] : savedFrames) {
       // 1. Luôn sao chép các ảnh chụp lâm sàng có tên (front, left_45, basal_nostrils...) vào photosDir
       try {
         await fs.copyFile(path.join(framesDir, frame.fileName), path.join(photosDir, frame.fileName));
@@ -447,9 +509,27 @@ export async function POST(
       };
     }
 
+    if (modern) {
+      const slots: Record<string, PhotoAngle> = { front: "angle1", left_oblique: "angle2", left_lateral: "angle3", right_oblique: "angle4" };
+      for (const photo of manifest.clinicalPhotos) {
+        const source = path.join(dir, photo.rgbFileName);
+        const name = `${sessionId}_${photo.role}.jpg`;
+        const buffer = await fs.readFile(source);
+        await fs.writeFile(path.join(photosDir, name), buffer);
+        const dimensions = imageSize(buffer);
+        const slot = slots[photo.role];
+        framePhotoEntries[slot] = { fileName: name, angle: slot, uploadedAt: new Date().toISOString(),
+          width: dimensions.width!, height: dimensions.height! };
+      }
+    }
+
     await updatePatient(patientId, (stored) => ({
       ...stored,
       photos: { ...stored.photos, ...framePhotoEntries },
+      ...(modern ? { scanPhotoMapping: "continuous_v3" as const,
+        optionalClinicalPhotos: stored.scanPhotoMapping !== "continuous_v3" && stored.photos.angle4
+          ? { ...stored.optionalClinicalPhotos, legacy_angle4: stored.photos.angle4 }
+          : stored.optionalClinicalPhotos } : {}),
       scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
     }));
 
@@ -458,6 +538,10 @@ export async function POST(
     await updatePatient(patientId, (stored) => ({
       ...stored,
       photos: { ...stored.photos, ...framePhotoEntries },
+      ...(modern ? { scanPhotoMapping: "continuous_v3" as const,
+        optionalClinicalPhotos: stored.scanPhotoMapping !== "continuous_v3" && stored.photos.angle4
+          ? { ...stored.optionalClinicalPhotos, legacy_angle4: stored.photos.angle4 }
+          : stored.optionalClinicalPhotos } : {}),
       scanSessions: (stored.scanSessions ?? []).map((s) => (s.id === sessionId ? updatedSession : s)),
     }));
 
@@ -522,7 +606,10 @@ export async function POST(
       studioUrl: `/patients/${patientId}/studio`,
     });
   } catch (error) {
+    if (error instanceof PackageConflict) return NextResponse.json({ error: error.message }, { status: 409 });
     console.error("Error importing TrueDepth package:", error);
     return NextResponse.json({ error: "Lỗi hệ thống khi nạp TrueDepth package.", details: String(error) }, { status: 500 });
+  } finally {
+    if (transaction && !transaction.replay) await transaction.close();
   }
 }

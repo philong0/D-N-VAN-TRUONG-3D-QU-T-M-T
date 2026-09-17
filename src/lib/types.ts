@@ -237,6 +237,8 @@ export type PatientStatus =
   | "da-mo-phong";
 
 export interface Patient {
+  scanPhotoMapping?: "continuous_v3";
+  optionalClinicalPhotos?: { legacy_angle4?: PhotoAsset };
   id: string;
   createdAt: string;
   updatedAt: string;

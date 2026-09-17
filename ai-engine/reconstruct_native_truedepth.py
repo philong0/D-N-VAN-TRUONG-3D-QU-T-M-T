@@ -57,29 +57,21 @@ def reconstruct_native_package(
 
     print(f"Surface fused: {len(vertices)} vertices, {len(faces)} faces from {len(frames)} frames.", flush=True)
 
-    # 2. Authentic Texture Mapping
-    # See reconstruct_cli.py's D-noneguard comment — same bug, same fix:
-    # `surface_result` always carries these two keys (possibly None), so
-    # presence-check alone doesn't tell you whether a single-photo UV
-    # shortcut is actually available.
-    if surface_result.get("pts_2d") is not None and surface_result.get("rgb_img") is not None:
-        pts_2d = surface_result["pts_2d"]
-        rgb_img = surface_result["rgb_img"]
-        h, w = rgb_img.shape[:2]
-        uvs_2d = np.column_stack([
-            pts_2d[:, 0] / float(w),
-            1.0 - (pts_2d[:, 1] / float(h))
-        ])
-        unwrapped_verts = vertices
-        unwrapped_faces = faces
-        bgr_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
-        _, png_buf = cv2.imencode(".png", bgr_img, [cv2.IMWRITE_PNG_COMPRESSION, 4])
-        texture_png_bytes = png_buf.tobytes()
-    else:
-        unwrapped_verts, unwrapped_faces, uvs_2d = unwrap_mesh_uv_xatlas(vertices, faces)
-        _, texture_png_bytes = bake_visibility_aware_texture(
-            unwrapped_verts, unwrapped_faces, uvs_2d, frames, tex_size=2048
-        )
+    # Always bake independently calibrated native observations.
+    texture_stats = {}
+    unwrapped_verts, unwrapped_faces, uvs_2d = unwrap_mesh_uv_xatlas(vertices, faces)
+    _, texture_png_bytes = bake_visibility_aware_texture(
+        unwrapped_verts, unwrapped_faces, uvs_2d, frames, tex_size=2048,
+        diagnostics=texture_stats,
+    )
+    for key in ("observedMask", "unobservedMask", "outsideMask"):
+        cv2.imwrite(str(out_dir / (key + ".png")), texture_stats.pop(key).astype(np.uint8)*255)
+    surface_result["texture_stats"] = texture_stats
+    surface_result["input_report"] = reconstructor.input_report
+    with open(out_dir / "input_report.json", "w") as f:
+        json.dump(reconstructor.input_report, f, indent=2)
+    with open(out_dir / "texture_report.json", "w") as f:
+        json.dump(texture_stats, f, indent=2)
 
     # 4. Save raw arrays & assets
     unwrapped_verts.astype("<f4").tofile(out_dir / "positions.f32")
@@ -101,6 +93,8 @@ def reconstruct_native_package(
     # 6. Execute Render-Back Verification Gate
     report_path = out_dir / "reconstruction_report.json"
     report = validate_render_back_fidelity(glb_path, frames, surface_result, report_path)
+    from native_diagnostics import write_diagnostics
+    write_diagnostics(out_dir / "diagnostics", frames, vertices, faces, glb_path)
 
     elapsed_ms = int((time.time() - t0) * 1000)
 
@@ -119,6 +113,7 @@ def reconstruct_native_package(
         "viewsUsed": surface_result["frames_used"],
         "hasNativeARFace": surface_result["has_native_arface"],
         "hasNativeDepth": surface_result["has_native_depth"],
+        "depthObservations": surface_result.get("depth_observations", []),
         "reconstructionStatus": report["reconstructionStatus"],
     }
 
@@ -168,12 +163,19 @@ def main():
     parser.add_argument("--output-dir", type=str, required=True, help="Output folder for baseline.glb and artifacts")
     args = parser.parse_args()
 
-    result = reconstruct_native_package(
-        package_dir=args.package_dir,
-        patient_id=args.patient_id,
-        session_id=args.session_id,
-        output_dir=args.output_dir,
-    )
+    try:
+        result = reconstruct_native_package(
+            package_dir=args.package_dir, patient_id=args.patient_id,
+            session_id=args.session_id, output_dir=args.output_dir,
+        )
+    except Exception as exc:
+        result = {"ok": False, "error": str(exc)}
+    if not result.get("ok"):
+        report = Path(args.output_dir) / "reconstruction_report.json"
+        report.parent.mkdir(parents=True, exist_ok=True)
+        if not report.exists():
+            report.write_text(json.dumps({"reconstructionStatus": "reconstruction_failed",
+                "rejectionReasons": [result.get("error", "Native reconstruction rejected")]}))
     print(json.dumps(result, indent=2))
     if not result.get("ok"):
         sys.exit(1)

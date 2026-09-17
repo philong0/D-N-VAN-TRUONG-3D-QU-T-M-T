@@ -50,7 +50,7 @@ export default async function PatientStudioPage({
         <StudioClient
           patientId={patient.id}
           photos={patient.photos}
-          slotLabels={getSlotLabels(patient.services)}
+          slotLabels={getSlotLabels(patient.services, patient.scanPhotoMapping)}
           services={patient.services}
           clinicalBaseline={patient.clinicalBaseline}
           initialParams={patient.simulation?.params}

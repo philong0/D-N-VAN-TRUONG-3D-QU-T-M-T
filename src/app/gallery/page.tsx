@@ -24,7 +24,7 @@ export default async function GalleryPage() {
       ) : (
         <div className="mt-8 flex flex-col gap-8">
           {withPhotos.map((patient) => {
-            const slotLabels = getSlotLabels(patient.services);
+            const slotLabels = getSlotLabels(patient.services, patient.scanPhotoMapping);
             return (
               <div key={patient.id} className={CARD_CLASS + " p-5"}>
                 <div className="mb-3 flex items-center justify-between">
