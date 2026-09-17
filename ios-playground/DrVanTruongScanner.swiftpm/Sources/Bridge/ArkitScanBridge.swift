@@ -48,35 +48,42 @@ public final class ArkitScanBridge: NSObject, ObservableObject, WKScriptMessageH
             return
         }
 
-        switch action {
-        case "start":
-            guard let pid = body["patientId"] as? String, let sid = body["sessionId"] as? String else {
-                reject(requestId, "Thiếu patientId/sessionId cho action start.")
-                return
-            }
-            captureSession.patientId = pid
-            captureSession.sessionId = sid
-            UserDefaults.standard.set(pid, forKey: "lastActivePatientId")
-            captureSession.startActiveSweep()
-            
-            captureSession.onScanCompleted = { [weak self] studioURL in
-                self?.isPresentingScanner = false
-                self?.resolve(requestId, payload: ["completed": true, "studioURL": studioURL.absoluteString])
-            }
-            captureSession.onScanCancelled = { [weak self] in
-                self?.isPresentingScanner = false
-                self?.reject(requestId, "Người dùng đã hủy phiên quét.")
-            }
-            
-            isPresentingScanner = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            switch action {
+            case "start":
+                guard let pid = body["patientId"] as? String, let sid = body["sessionId"] as? String else {
+                    self.reject(requestId, "Thiếu patientId/sessionId cho action start.")
+                    return
+                }
+                self.captureSession.patientId = pid
+                self.captureSession.sessionId = sid
+                UserDefaults.standard.set(pid, forKey: "lastActivePatientId")
+                self.captureSession.startActiveSweep()
+                
+                self.captureSession.onScanCompleted = { [weak self] studioURL in
+                    DispatchQueue.main.async {
+                        self?.isPresentingScanner = false
+                        self?.resolve(requestId, payload: ["completed": true, "studioURL": studioURL.absoluteString])
+                    }
+                }
+                self.captureSession.onScanCancelled = { [weak self] in
+                    DispatchQueue.main.async {
+                        self?.isPresentingScanner = false
+                        self?.reject(requestId, "Người dùng đã hủy phiên quét.")
+                    }
+                }
+                
+                self.isPresentingScanner = true
 
-        case "stop":
-            captureSession.pauseSession()
-            isPresentingScanner = false
-            resolve(requestId, payload: ["stopped": true])
+            case "stop":
+                self.captureSession.pauseSession()
+                self.isPresentingScanner = false
+                self.resolve(requestId, payload: ["stopped": true])
 
-        default:
-            reject(requestId, "Hành động không hỗ trợ: \(action)")
+            default:
+                self.reject(requestId, "Hành động không hỗ trợ: \(action)")
+            }
         }
     }
 
