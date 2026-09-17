@@ -88,17 +88,21 @@ struct WebView: UIViewRepresentable {
 
 public struct RootView: View {
     @StateObject private var scanBridge = ArkitScanBridge()
-    @AppStorage("clinicServerURL") private var serverURLString: String = "http://149.118.63.240"
+    @AppStorage("clinicServerURL") private var serverURLString: String = "https://lens-inside-silence-bearing.trycloudflare.com"
     @State private var showingSettings = false
     @State private var reloadTrigger = UUID()
 
-    public init() {
-        let defaultURL = "http://149.118.63.240"
-        let current = UserDefaults.standard.string(forKey: "clinicServerURL") ?? ""
-        if current.isEmpty || current.contains("trycloudflare.com") {
-            UserDefaults.standard.set(defaultURL, forKey: "clinicServerURL")
-        }
-    }
+    // D-urlwipe — bản trước ở đây tự động GHI ĐÈ link Cloudflare Tunnel đang
+    // hoạt động về lại địa chỉ IP thô "http://149.118.63.240" mỗi lần app
+    // khởi động (nếu giá trị đã lưu trống hoặc chứa "trycloudflare.com") --
+    // đây là nguyên nhân THẬT của lỗi "This page couldn't load" xảy ra CHẮC
+    // CHẮN sau mỗi lần cài mới (UserDefaults trống): IP thô đó chỉ tự kiểm
+    // tra được thành công khi chạy curl NGAY TRÊN máy chủ, không đại diện
+    // cho khả năng điện thoại thật (mạng di động/WiFi khác) truy cập được
+    // qua Internet -- đúng lý do Cloudflare Tunnel được dùng ngay từ đầu.
+    // Không còn ghi đè gì trong init() nữa; mặc định + fallback giờ đều là
+    // đường link tunnel đã xác nhận hoạt động thật.
+    public init() {}
 
     public var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -143,23 +147,12 @@ public struct RootView: View {
             NavigationView {
                 Form {
                     Section(header: Text("Chọn Kênh Kết Nối")) {
-                        Button(action: {
-                            serverURLString = "http://149.118.63.240"
-                            UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
-                            reloadTrigger = UUID()
-                            scanBridge.webView?.load(URLRequest(url: URL(string: serverURLString)!))
-                            showingSettings = false
-                        }) {
-                            HStack {
-                                Image(systemName: "bolt.fill").foregroundColor(.orange)
-                                VStack(alignment: .leading) {
-                                    Text("Kênh 1: Máy chủ IP Trực tiếp (Khuyên dùng)").bold()
-                                    Text("http://149.118.63.240").font(.caption).foregroundColor(.secondary)
-                                }
-                                Spacer()
-                            }
-                        }
-
+                        // D-urlwipe — "IP Trực tiếp" chỉ thật sự truy cập được khi
+                        // đứng cùng mạng nội bộ với máy chủ; điện thoại thật (mạng
+                        // di động/WiFi khác) sẽ luôn ra "This page couldn't load"
+                        // với kênh này -- không còn gắn nhãn "Khuyên dùng" nữa,
+                        // đổi thứ tự để Cloudflare Tunnel (đã xác nhận hoạt động
+                        // thật qua Internet) là lựa chọn chính.
                         Button(action: {
                             serverURLString = "https://lens-inside-silence-bearing.trycloudflare.com"
                             UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
@@ -170,8 +163,25 @@ public struct RootView: View {
                             HStack {
                                 Image(systemName: "lock.shield.fill").foregroundColor(.blue)
                                 VStack(alignment: .leading) {
-                                    Text("Kênh 2: Cloudflare HTTPS Tunnel").bold()
+                                    Text("Kênh 1: Cloudflare HTTPS Tunnel (Khuyên dùng)").bold()
                                     Text("https://lens-inside-silence-bearing.trycloudflare.com").font(.caption).foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                        }
+
+                        Button(action: {
+                            serverURLString = "http://149.118.63.240"
+                            UserDefaults.standard.set(serverURLString, forKey: "clinicServerURL")
+                            reloadTrigger = UUID()
+                            scanBridge.webView?.load(URLRequest(url: URL(string: serverURLString)!))
+                            showingSettings = false
+                        }) {
+                            HStack {
+                                Image(systemName: "bolt.fill").foregroundColor(.orange)
+                                VStack(alignment: .leading) {
+                                    Text("Kênh 2: Máy chủ IP Trực tiếp (chỉ dùng khi cùng mạng nội bộ)").bold()
+                                    Text("http://149.118.63.240").font(.caption).foregroundColor(.secondary)
                                 }
                                 Spacer()
                             }
