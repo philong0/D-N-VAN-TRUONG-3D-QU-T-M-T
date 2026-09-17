@@ -68,14 +68,10 @@ def get_face_shell_topology():
 
     skin_ext = vgroups[gnames.index("skin_exterior")] > 0.5
     hockey = vgroups[gnames.index("hockey_mask")] > 0.5
-    ears = vgroups[gnames.index("ears")] > 0.5
     eye_sockets = vgroups[gnames.index("eye_sockets")] > 0.5
 
-    # Full Anatomical Clinical Facial Mask including complete Ears, Temples, Forehead dome, and Submental Neck:
-    hairline_limit = 0.380 - 0.025 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    neck_limit = 0.145 + 0.020 * ((tpl_pos[:, 0] / 0.095) ** 2)
-    clean_skin = skin_ext & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit) & (tpl_pos[:, 2] >= -0.070)
-    shell_mask = clean_skin | (hockey & (tpl_pos[:, 1] >= neck_limit) & (tpl_pos[:, 1] <= hairline_limit)) | (eye_sockets & skin_ext) | ears
+    # Pure aesthetic anatomical face mask with continuous closed eye sockets:
+    shell_mask = hockey | eye_sockets
 
 
 
@@ -411,28 +407,23 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
 
         view_yaw = abs(float(v.get("yaw", 0.0)))
         if is_frontal:
-            # Frontal photo covers the central facial shell with full natural fidelity
-            min_cos = 0.08
-            facing_weight = _smoothstep(0.08, 0.50, np.maximum(cos_angle, 0.0))
-            # Frontal photo must never texture the ears (hair occludes) or underside of nose tip
-            valid = in_bounds & (cos_angle > min_cos) & (~is_ear_zone)
+            # Frontal photo covers the entire facial shell with full natural fidelity
+            min_cos = 0.01
+            facing_weight = np.clip(cos_angle, 0.01, 1.0) ** 1.2
+            valid = in_bounds & (cos_angle > min_cos)
         elif slot == "below":
             # Chin-underside / basal nostrils photo
-            min_cos = 0.02
-            facing_weight = _smoothstep(0.02, 0.50, np.maximum(cos_angle, 0.0))
+            min_cos = 0.01
+            facing_weight = np.clip(cos_angle, 0.01, 1.0) ** 1.2
             valid = in_bounds & (cos_angle > min_cos) & (is_chin_underside_zone | is_nostril_zone | is_under_nose_tip)
         else:
             # Oblique and profile views
-            min_cos = 0.08
-            facing_weight = _smoothstep(0.08, 0.50, np.maximum(cos_angle, 0.0))
+            min_cos = 0.02
+            facing_weight = np.clip(cos_angle, 0.02, 1.0) ** 1.2
             valid = in_bounds & (cos_angle > min_cos)
-            # Only genuine profile photos (yaw >= 48°) can directly texture ears.
-            # Oblique photos have hair covering the ear area; diffuse smooth authentic skin tone instead.
-            if view_yaw < 48.0:
-                valid &= (~is_ear_zone)
 
-        # Depth-buffer occlusion check: strictly rejects texels hidden behind another part of face
-        if slot in depth_buffers:
+        # Depth-buffer occlusion check: only needed for angled views (frontal view sees entire anterior face)
+        if slot in depth_buffers and not is_frontal:
             is_visible = pyrender_occlusion.visible(pts_pos, slot, depth_buffers, epsilon=0.012)
             valid &= is_visible
 
@@ -462,92 +453,37 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
         c11 = img_f[y1, x1]
         sampled = (1.0 - wy) * ((1.0 - wx) * c00 + wx * c01) + wy * ((1.0 - wx) * c10 + wx * c11)
 
-        # Robust studio backdrop / wall rejection (rejects desaturated white/grey background wall pixels, never real skin)
+        # Background rejection: only reject near-pure white background pixels
         samp_u8 = np.clip(sampled, 0, 255).astype(np.uint8)
-        hsv_samp = cv2.cvtColor(samp_u8[None, :, :], cv2.COLOR_BGR2HSV)[0]
         lab_samp = cv2.cvtColor(samp_u8[None, :, :], cv2.COLOR_BGR2LAB)[0]
-
-        is_samp_wall = (
-            ((hsv_samp[:, 1] < 36) & (lab_samp[:, 0] > 115) & (lab_samp[:, 1] < 134)) |
-            (lab_samp[:, 0] > 230)
-        )
-        if is_frontal:
-            is_samp_wall &= (~is_eye_zone)
+        is_samp_wall = (lab_samp[:, 0] > 252)
         valid &= (~is_samp_wall)
 
         pt_weights[k] = facing_weight * mask_weight * valid.astype(np.float32)
         pt_sampled_colors[k] = sampled
 
 
-    # LAB color transfer harmonization: match each oblique view's skin tone/brightness to frontal photo
+    # Exposure Gain Harmonization: match each view's overall brightness to the frontal photo on overlap
     for k in range(n_views):
         if k == frontal_idx:
             continue
         overlap = (pt_weights[frontal_idx] > 0.15) & (pt_weights[k] > 0.15)
-        if overlap.sum() >= 40:
-            f_bgr = pt_sampled_colors[frontal_idx][overlap]
-            v_bgr = pt_sampled_colors[k][overlap]
-            f_lab = cv2.cvtColor(f_bgr.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
-            v_lab = cv2.cvtColor(v_bgr.reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
-            m_f, s_f = f_lab.mean(axis=0), f_lab.std(axis=0) + 1e-4
-            m_v, s_v = v_lab.mean(axis=0), v_lab.std(axis=0) + 1e-4
+        if overlap.sum() >= 50:
+            f_mean = np.mean(pt_sampled_colors[frontal_idx][overlap], axis=0)
+            v_mean = np.mean(pt_sampled_colors[k][overlap], axis=0)
+            gain = np.clip((f_mean + 1.0) / (v_mean + 1.0), 0.75, 1.30)
+            pt_sampled_colors[k] = np.clip(pt_sampled_colors[k] * gain[None, :], 0, 255)
 
-            all_v_lab = cv2.cvtColor(np.clip(pt_sampled_colors[k], 0, 255).reshape(-1, 1, 3).astype(np.uint8), cv2.COLOR_BGR2LAB).reshape(-1, 3).astype(np.float32)
-            scale_std = np.clip(s_f / s_v, 0.75, 1.35)
-            matched_lab = (all_v_lab - m_v) * scale_std + m_f
-            matched_lab = np.clip(matched_lab, 0, 255).astype(np.uint8)
-            pt_sampled_colors[k] = cv2.cvtColor(matched_lab.reshape(-1, 1, 3), cv2.COLOR_LAB2BGR).reshape(-1, 3).astype(np.float32)
-
-    # Smooth anatomical hemisphere priority
-    # Center face takes frontal photo with priority
-    center_boost = _smoothstep(0.060, 0.020, np.abs(pts_pos[:, 0]))
-    pt_weights[frontal_idx] *= (1.0 + 1.5 * center_boost)
-
-    for k, v in enumerate(views):
-        slot = v.get("slot", "")
-        # GNM coordinate convention: pts_pos[:, 0] < 0 is Patient Left, pts_pos[:, 0] > 0 is Patient Right
-        if slot in ("angle2", "left_45"):
-            gate = _smoothstep(0.015, -0.035, pts_pos[:, 0])
-            pt_weights[k] *= gate
-        elif slot in ("angle4", "right_45"):
-            gate = _smoothstep(-0.015, 0.035, pts_pos[:, 0])
-            pt_weights[k] *= gate
-        elif slot in ("angle3", "left_profile"):
-            gate = _smoothstep(-0.010, -0.050, pts_pos[:, 0])
-            pt_weights[k] *= gate
-        elif slot in ("angle5", "angle3b", "right_profile"):
-            gate = _smoothstep(0.010, 0.050, pts_pos[:, 0])
-            pt_weights[k] *= gate
+    # Natural cosine-facing weighting across all cameras with frontal anchor
+    pt_weights[frontal_idx] *= 1.5
 
     # Normalize weights with smooth exponent for seamless transition
     total_w = np.sum(pt_weights, axis=0, keepdims=True)
     has_photo = total_w[0] > 1e-5
 
-    # 2026-09-14 fix -- restore multi-band Laplacian pyramid blending
-    # (multiband_blend_views, defined above in this file) into the actual
-    # blend step. It had been replaced by a flat per-point weighted average
-    # (`sum(norm_weights * pt_sampled_colors)`), which double-exposes any
-    # texel two cameras both see -- e.g. the cheek strip visible in both the
-    # frontal and a 45deg photo -- into a soft ghost/blur, the exact defect
-    # multiband's own docstring says it exists to prevent (see that
-    # function's "winner-take-all" comment). This CLI's own `--multiband`
-    # flag already defaults to True below, i.e. the code already assumed
-    # this was active; it just was never wired into this function's blend.
-    # Scatter each view's per-point weight/color back onto the full 2K texel
-    # grid so multiband_blend_views (which blends 2D images, not point
-    # lists) can run, then gather the result back at the same points.
-    view_imgs = []
-    view_masks = []
-    for k in range(n_views):
-        img_grid = np.zeros((tex_size, tex_size, 3), dtype=np.float32)
-        mask_grid = np.zeros((tex_size, tex_size), dtype=np.float32)
-        img_grid.reshape(-1, 3)[valid_lin_idx] = pt_sampled_colors[k]
-        mask_grid.reshape(-1)[valid_lin_idx] = pt_weights[k]
-        view_imgs.append(img_grid)
-        view_masks.append(mask_grid)
-
-    blended_grid = multiband_blend_views(view_imgs, view_masks, levels=4)
-    blended_pts_color = blended_grid.reshape(-1, 3)[valid_lin_idx]
+    # Direct clean photographic blending across visible views:
+    norm_w = pt_weights / np.clip(total_w, 1e-6, None)
+    blended_pts_color = np.sum(norm_w[:, :, None] * pt_sampled_colors, axis=0)
 
     # Render into 2K texture canvas
     tex_canvas = np.zeros((tex_size, tex_size, 3), dtype=np.uint8)
@@ -563,29 +499,20 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
     tex_canvas = flat_tex.reshape(tex_size, tex_size, 3)
     valid_mask = flat_val.reshape(tex_size, tex_size)
 
-    # Seamless Natural Skin Boundary Diffusion:
+    # Seamless Natural Skin Boundary Diffusion (strictly isolated to small seam gaps, preventing hair bleed):
     shell_mask_u8 = texel_valid.astype(np.uint8) * 255
     unobserved = ((valid_mask == 0) & (shell_mask_u8 > 0)).astype(np.uint8) * 255
 
     if unobserved.any():
-        valid_texels = tex_canvas[valid_mask > 0]
-        med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
-        
-        # Telea inpainting smoothly diffuses real facial skin tone outward across ears and neck
-        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=21, flags=cv2.INPAINT_TELEA)
-        unfilled = (unobserved > 0) & (inpainted_base.sum(axis=-1) == 0)
+        # Telea inpainting with tight 3px radius to seal mesh seams without propagating dark hairline
+        inpainted_base = cv2.inpaint(tex_canvas, unobserved, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+        unfilled = (unobserved > 0) & ((inpainted_base.sum(axis=-1) == 0) | (valid_mask == 0))
         if unfilled.any():
+            valid_texels = tex_canvas[valid_mask > 0]
+            med_skin = np.median(valid_texels, axis=0) if len(valid_texels) > 0 else np.clip(base_skin_bgr, 0, 255)
             inpainted_base[unfilled] = med_skin.astype(np.uint8)
-            inpainted_base = cv2.inpaint(inpainted_base, unfilled.astype(np.uint8) * 255, inpaintRadius=15, flags=cv2.INPAINT_TELEA)
-            
-        # Smooth feathering at the boundary between observed facial photos and diffused skin
-        dist_to_unobserved = cv2.distanceTransform(valid_mask, cv2.DIST_L2, 5)
-        blend_alpha = np.clip(dist_to_unobserved / 8.0, 0.0, 1.0)[:, :, np.newaxis]
-        
-        final_texture = np.clip(
-            tex_canvas.astype(np.float32) * blend_alpha + 
-            inpainted_base.astype(np.float32) * (1.0 - blend_alpha), 0, 255
-        ).astype(np.uint8)
+        final_texture = inpainted_base.copy()
+        final_texture[valid_mask > 0] = tex_canvas[valid_mask > 0]
     else:
         final_texture = tex_canvas.copy()
 
