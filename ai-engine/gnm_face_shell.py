@@ -105,6 +105,50 @@ def get_face_shell_topology():
     remapped_triangles = np.array(remapped_tris, dtype=np.int32)
     shell_pos = tpl_pos[shell_vids]
 
+    # Anatomical Nostril Capping: close open nostril loops with natural interior floors
+    from collections import Counter
+    import networkx as nx
+    edge_counts = Counter([tuple(sorted(e)) for tri in remapped_triangles for e in [(tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])]])
+    boundary_edges = [e for e, c in edge_counts.items() if c == 1]
+    bg = nx.Graph()
+    for u, v in boundary_edges:
+        bg.add_edge(u, v)
+    cycles = list(nx.cycle_basis(bg))
+
+    extra_vids_list = []
+    extra_uvs_list = []
+    extra_tris_list = []
+    
+    for cyc in cycles:
+        c_orig_vids = shell_vids[cyc]
+        c_pos = tpl_pos[c_orig_vids]
+        centroid = c_pos.mean(axis=0)
+        # Nostril opening loop (y in [0.24, 0.28], |x| < 0.02, 10-35 vertices)
+        if 0.24 <= centroid[1] <= 0.28 and abs(centroid[0]) < 0.02 and len(cyc) < 36:
+            sub_g = bg.subgraph(cyc)
+            ordered_cyc = [cyc[0]]
+            while len(ordered_cyc) < len(cyc):
+                curr = ordered_cyc[-1]
+                neighbors = [n for n in sub_g.neighbors(curr) if n not in ordered_cyc]
+                if not neighbors:
+                    break
+                ordered_cyc.append(neighbors[0])
+            center_vid_idx = len(shell_vids) + len(extra_vids_list)
+            center_uv = shell_uvs[ordered_cyc].mean(axis=0)
+            extra_vids_list.append(shell_vids[ordered_cyc[0]])
+            extra_uvs_list.append(center_uv)
+            N = len(ordered_cyc)
+            for i in range(N):
+                v0 = ordered_cyc[i]
+                v1 = ordered_cyc[(i + 1) % N]
+                extra_tris_list.append([v0, v1, center_vid_idx])
+
+    if extra_vids_list:
+        shell_vids = np.concatenate([shell_vids, np.array(extra_vids_list, dtype=np.int32)])
+        shell_uvs = np.concatenate([shell_uvs, np.array(extra_uvs_list, dtype=np.float32)])
+        remapped_triangles = np.vstack([remapped_triangles, np.array(extra_tris_list, dtype=np.int32)])
+        shell_pos = tpl_pos[shell_vids]
+
     _shell_cache = (shell_vids, remapped_triangles, shell_uvs, shell_pos.astype(np.float32))
     return _shell_cache
 
@@ -473,6 +517,15 @@ def bake_unified_face_texture(fitted_positions_17821: np.ndarray, normals_17821:
             v_mean = np.mean(pt_sampled_colors[k][overlap], axis=0)
             gain = np.clip((f_mean + 1.0) / (v_mean + 1.0), 0.75, 1.30)
             pt_sampled_colors[k] = np.clip(pt_sampled_colors[k] * gain[None, :], 0, 255)
+
+    # Gaze & Eye Sharpness Guard: eyes smoothly prioritize frontal photo without sharp rectangular boundaries
+    d_left = np.sqrt((pts_pos[:, 0] - 0.0308) ** 2 + (pts_pos[:, 1] - 0.3031) ** 2)
+    d_right = np.sqrt((pts_pos[:, 0] - (-0.0309)) ** 2 + (pts_pos[:, 1] - 0.3031) ** 2)
+    d_eye = np.minimum(d_left, d_right)
+    eye_factor = _smoothstep(0.026, 0.016, d_eye)
+    for k in range(n_views):
+        if k != frontal_idx:
+            pt_weights[k] *= (1.0 - eye_factor)
 
     # Natural cosine-facing weighting across all cameras with frontal anchor
     pt_weights[frontal_idx] *= 1.5
